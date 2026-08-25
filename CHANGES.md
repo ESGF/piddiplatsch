@@ -5,20 +5,16 @@ All notable changes to this project are documented here.
 ## [Unreleased]
 
 ### Changed
-- Resolve persistence output directories after user configuration is loaded.
-- Isolate all test output from retained local runtime data.
-- Validate distributions and the mock Handle Docker image in CI.
-- Align the Conda environment, package dependencies, and development tooling with Python 3.11+.
+- Tests now use temporary folders and leave local output files untouched.
+- Cleaned up dependencies, development tools, CI, and packaging.
 
 ### Fixed
-- Preserve malformed retry inputs instead of silently dropping invalid JSONL records.
-- Keep nested retry counts and treat skipped records as retryable rather than successful.
-- Honor configured statistics settings when starting a consumer.
-- Enable HTTPS certificate verification for Handle clients by default.
-- Repair the mock Handle Docker build and record representations.
+- Made retries safer and fixed retry counts and skipped records.
+- Fixed configured output folders, statistics, HTTPS defaults, and Docker builds.
+- Fixed a few small code issues.
 
 ### Documentation
-- Add configuration and operations references.
+- Added short configuration and operations guides.
 
 ## [2.2.1] - 2026-08-25
 ### Changed
