@@ -1,0 +1,33 @@
+{
+  "metadata": {"time": "2026-07-21T10:48:14.724730"},
+  "data": {
+    "type": "STAC",
+    "payload": {
+      "collection_id": "CORDEX-CMIP6",
+      "method": "POST",
+      "item": {
+        "type": "Feature",
+        "stac_version": "1.1.0",
+        "id": "CORDEX-CMIP6.DD.EUR-12.CLMcom-BTU.CNRM-ESM2-1.historical.r1i1p1f2.ICON-CLM-202407-1-1.v1-r1.day.rsdsdir.v20260415",
+        "collection": "CORDEX-CMIP6",
+        "properties": {
+          "project": "CORDEX-CMIP6",
+          "created": "2026-07-21T10:48:13.093552Z",
+          "retracted": false,
+          "cordex-cmip6:pid": "hdl:21.14103/b3eaa573-aee5-3f33-b36f-8970df2eba9a"
+        },
+        "assets": {
+          "rsdsdir_EUR-12_CNRM-ESM2-1_historical_r1i1p1f2_CLMcom-BTU_ICON-CLM-202407-1-1_v1-r1_day_19500101-19501231.nc": {
+            "href": "https://esgf1.dkrz.de/thredds/fileServer/rsdsdir_EUR-12_CNRM-ESM2-1_historical_r1i1p1f2_CLMcom-BTU_ICON-CLM-202407-1-1_v1-r1_day_19500101-19501231.nc",
+            "roles": ["data"],
+            "file:size": 200818284,
+            "file:checksum": "1220274092b5cd54fc4ee292dce45ccd5d43e4d83f90e75d100e62971e618d87ed1f",
+            "alternate:name": "esgf1.dkrz.de",
+            "created": "2026-05-04T09:14:43Z",
+            "cordex-cmip6:tracking_id": "hdl:21.14103/415fb9b8-f11a-47ae-ab62-a5c5e17c77bf"
+          }
+        }
+      }
+    }
+  }
+}

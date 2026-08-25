@@ -7,7 +7,7 @@
 
 ---
 
-**Piddiplatsch** is a [Kafka](https://kafka.apache.org/) consumer for **CMIP6 records** that integrates with a [Handle Service](https://pypi.org/project/pyhandle/) to reliably register and maintain persistent identifiers (PIDs).
+**Piddiplatsch** is a [Kafka](https://kafka.apache.org/) consumer for **ESGF STAC publication records** that integrates with a [Handle Service](https://pypi.org/project/pyhandle/) to reliably register and maintain persistent identifiers (PIDs).
 
 *Curious by nature. Persistent by design.*
 
@@ -29,15 +29,31 @@ The project is fully open-source and documented. ESGF sites and other organizati
 
 ---
 
-## 🧭 About CMIP6 (and the future)
+## 🧭 Project support
 
-At the moment, **Piddiplatsch processes CMIP6-style records only**.  
-CMIP7 does not yet exist as a concrete standard.
+CMIP6, CMIP6Plus, CMIP7, and CORDEX-CMIP6 are implemented as built-in project
+plugins.
 
-The codebase is intentionally structured so that future CMIP phases (e.g. CMIP7) can be supported by adding a new processor, without rewriting the consumer core. The existing `cmip6` processor serves both as:
+One consumer can read the shared ESGF publication topic and route records to one,
+several, or all selected project plugins. Unrelated records are filtered without
+being treated as failures. The plugins share the publication-envelope,
+Handle-output schema, and mapping workflow; their small plugin modules declare
+project identity, PID field names, and genuine project-specific behaviour.
 
-- the production implementation today
-- a reference implementation for future extensions
+```mermaid
+flowchart LR
+    K[Shared Kafka topic] --> R{Project router}
+    K -. optional ordered dump .-> D[outputs/dump]
+    R --> C6[cmip6]
+    R --> C7[cmip7]
+    R --> CX[cordex-cmip6]
+    R --> CP[cmip6plus]
+    R -->|unselected| F[Filtered: log and stats]
+    C6 --> O6[outputs/cmip6/handles]
+    C7 --> O7[outputs/cmip7/handles]
+    CX --> OX[outputs/cordex-cmip6/handles]
+    CP --> OP[outputs/cmip6plus/handles]
+```
 
 ---
 
@@ -90,7 +106,7 @@ piddi --config observe.toml consume --dry-run --dump --force
 
 What this does:
 - no external Handle Service calls
-- records written locally as JSONL
+- records written to `outputs/<plugin>/handles/` as JSONL
 - continues through transient skips (`--force`)
 - dumps incoming messages to `outputs/dump/` when `--dump` is used
 
@@ -100,12 +116,12 @@ See the configuration at [etc/observe.toml](etc/observe.toml).
 
 ## ✨ Features
 
-- Kafka consumer for CMIP6 records
+- Kafka consumer and project router for the shared ESGF publication stream
 - Register and update PIDs via Handle Service
 - CLI commands: `consume`, `retry`
 - Multihash checksum support
-- Simple processor mechanism (pure Python, no plugin framework)
-- Designed for future CMIP phases via additional processors
+- Explicit built-in project plugin registry (pure Python, no dynamic framework)
+- Select one, several, or all registered project plugins
 
 For full usage details and local Docker smoke tests, see [CONTRIBUTING.md](CONTRIBUTING.md).
 
@@ -122,6 +138,12 @@ Common first runs:
 - Observe without stopping on skips:
   ```bash
   piddi consume --dry-run --force
+  ```
+- Override configured projects for one run:
+  ```bash
+  piddi consume --project cmip6
+  piddi consume --project cmip6 --project cmip7
+  piddi consume --all-projects
   ```
 - Use a custom configuration:
   ```bash
@@ -172,7 +194,7 @@ Run with your custom configuration:
 piddi --config custom.toml
 ```
 
-Kafka, Handle Service, consumer behaviour, and processor selection are all controlled via this file.
+Kafka, Handle Service, consumer behaviour, and project selection are all controlled via this file.
 See [docs/configuration.md](docs/configuration.md) for the supported application
 settings and override behavior.
 
@@ -250,20 +272,34 @@ Implementation details:
 
 ---
 
-## 🧩 Processors (Overview)
+## 🧩 Project plugins (Overview)
 
-Piddiplatsch uses a small, explicit **processor interface** to handle record formats.
+Piddiplatsch uses a small, explicit plugin interface and a router in front of
+project-specific processors.
 
-This is **not** a dynamic plugin ecosystem. The mechanism exists to:
-- isolate CMIP6-specific logic
-- allow future formats (e.g. CMIP7) to be added cleanly
+This is **not currently** a dynamic plugin ecosystem. Plugins organize built-in
+project code through a deliberately small interface. The mechanism exists to:
+- isolate project-specific logic
+- allow further ESGF projects to be added cleanly
 - keep testing and evolution predictable
 
-Currently, the only supported processor is:
+The same plugin specification can later become the boundary for external Python
+packages discovered through standard package entry points, without adding that
+complexity today.
+
+Currently implemented project plugins are:
 
 - `cmip6` (default)
+- `cmip6plus`
+- `cmip7`
+- `cordex-cmip6`
+
+The raw dump stays global to preserve Kafka order. JSONL Handle output is
+project-scoped, and `pid.log` records selected and filtered projects.
 
 Configuration and implementation guidance are documented in [CONTRIBUTING.md](CONTRIBUTING.md).
+The message flow and consumer-group constraints are documented in
+[docs/architecture.md](docs/architecture.md).
 
 ---
 

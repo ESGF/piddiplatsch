@@ -5,7 +5,7 @@ import click
 import toml
 
 from piddiplatsch.config import config
-from piddiplatsch.consumer import start_consumer
+from piddiplatsch.consumer import configured_projects, start_consumer
 from piddiplatsch.persist.retry import RetryRunner
 
 CONTEXT_SETTINGS = dict(help_option_names=["-h", "--help"])
@@ -54,16 +54,29 @@ def cli(ctx, config_file, debug, verbose, log):
     is_flag=True,
     help="Continue on transient external failures (e.g., STAC down).",
 )
+@click.option(
+    "--project",
+    "projects",
+    multiple=True,
+    help="Project plugin to run; repeat to select several (overrides config).",
+)
+@click.option(
+    "--all-projects",
+    is_flag=True,
+    help="Run all registered project plugins (overrides config).",
+)
 @click.pass_context
-def consume(ctx, dump, dry_run, force):
+def consume(ctx, dump, dry_run, force, projects, all_projects):
     """Start the Kafka consumer."""
+    if projects and all_projects:
+        raise click.UsageError("--project cannot be combined with --all-projects")
     topic = config.get("consumer", "topic")
     kafka_cfg = config.get("kafka")
-    processor = config.get("consumer", "processor")
+    selection = "all" if all_projects else (projects or None)
     start_consumer(
         topic,
         kafka_cfg,
-        processor,
+        projects=selection,
         dump_messages=dump,
         verbose=ctx.obj["verbose"],
         dry_run=dry_run,
@@ -104,7 +117,7 @@ def retry(ctx, path: tuple[Path, ...], delete_after: bool, dry_run: bool):
     inputs, invoke the processing pipeline, and optionally remove source files
     when `--delete-after` is set and all items succeed.
     """
-    processor = config.get("consumer", "processor")
+    projects = configured_projects()
     verbose = ctx.obj.get("verbose", False)
     failure_dir = (
         Path(config.get("consumer", {}).get("output_dir", "outputs")) / "failures"
@@ -123,7 +136,7 @@ def retry(ctx, path: tuple[Path, ...], delete_after: bool, dry_run: bool):
                 click.echo("(empty)")
 
     runner = RetryRunner(
-        processor,
+        projects=projects,
         failure_dir=failure_dir,
         delete_after=delete_after,
         dry_run=dry_run,
@@ -146,6 +159,10 @@ def retry(ctx, path: tuple[Path, ...], delete_after: bool, dry_run: bool):
         )
         if result.skipped:
             click.echo(f"  {result.skipped} item(s) were skipped and remain retryable")
+        if result.filtered:
+            click.echo(
+                f"  {result.filtered} item(s) did not match a selected project plugin"
+            )
         for error in result.errors:
             click.echo(f"  - {error}")
         if result.failure_files:

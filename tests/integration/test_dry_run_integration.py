@@ -8,6 +8,7 @@ import pytest
 
 from piddiplatsch.config import config
 from piddiplatsch.consumer import ConsumerPipeline, DirectConsumer
+from piddiplatsch.core.routing import ProjectRouter
 
 pytestmark = pytest.mark.integration
 
@@ -51,14 +52,14 @@ def test_consumer_pipeline_writes_handles_jsonl(tmp_path: Path):
 
     pipeline = ConsumerPipeline(
         consumer=DirectConsumer([msg]),
-        processor="cmip6",
+        processor=ProjectRouter(["cmip6"], dry_run=True),
         dry_run=True,
         verbose=False,
     )
 
     pipeline.run()
 
-    handles_dir = tmp_path / "handles"
+    handles_dir = tmp_path / "cmip6" / "handles"
     assert handles_dir.exists() and handles_dir.is_dir()
 
     files = list(handles_dir.glob("handles_*.jsonl"))

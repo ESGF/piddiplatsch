@@ -128,6 +128,9 @@ markers = [
     "smoke: End-to-end tests (requires Docker services: Kafka and Handle server)",
   "plugin: Plugin tests (extensibility, discovery, and plugin logic)",
   "cmip6: CMIP6 plugin tests",
+  "cmip7: CMIP7 plugin tests",
+  "cmip6plus: CMIP6Plus plugin tests",
+  "cordex_cmip6: CORDEX-CMIP6 plugin tests",
 ]
 # Note: Tests without markers are considered unit tests (fast, no external dependencies)
 

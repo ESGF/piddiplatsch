@@ -1,7 +1,7 @@
-## Processor selection belongs under [consumer]
+## Project plugin selection belongs under [consumer]
 
 [consumer]
-processor = "cmip6"
+projects = ["cmip6"]
 topic = "CMIP6"
 retry_topic = "CMIP6"
 output_dir = "outputs"

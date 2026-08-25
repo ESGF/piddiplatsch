@@ -67,7 +67,7 @@ def test_malformed_retry_input_is_retained(tmp_path):
     source = tmp_path / "retry.jsonl"
     source.write_text(json.dumps({"key": "valid"}) + "\n{broken\n", encoding="utf-8")
     runner = RetryRunner(
-        "cmip6",
+        projects=["cmip6"],
         failure_dir=tmp_path / "failures",
         delete_after=True,
         dry_run=True,

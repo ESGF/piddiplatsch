@@ -15,9 +15,9 @@ piddi --config custom.toml config show
 
 | Section | Key | Purpose |
 | --- | --- | --- |
-| `consumer` | `processor` | Registered processor name; currently `cmip6`. |
+| `consumer` | `projects` | Plugin names to run, as a list or the string `all`. |
 | `consumer` | `topic` | Kafka topic to consume. |
-| `consumer` | `output_dir` | Root for failure, skipped, dump, and dry-run Handle JSONL files. |
+| `consumer` | `output_dir` | Root for global dump/recovery files and `<plugin>/handles/` JSONL output. |
 | `consumer` | `max_errors` | Stop after this many processing errors; `-1` disables the limit. |
 | `consumer.transient` | `stop_on_skip` | Stop after a transient external failure unless `--force` is used. |
 | `consumer.transient` | `retries` | Number of retries for transient STAC patch retrieval. |
@@ -30,7 +30,7 @@ piddi --config custom.toml config show
 | `lookup` | `enabled`, `backend` | Enable version lookup using `stac` or `es`. |
 | `elasticsearch` | `base_url`, `index` | Elasticsearch lookup settings when `lookup.backend = "es"`. |
 | `schema` | `strict_mode` | Reject incomplete or unsupported CMIP6 records when enabled. |
-| `plugins.cmip6` | `landing_page_url`, `max_parts`, `excluded_asset_keys` | CMIP6 Handle-record behavior. |
+| `plugins.<name>` | `landing_page_url`, `max_parts`, `excluded_asset_keys` | Project-specific Handle-record behavior. |
 | `stats` | `interval_seconds`, `summary_interval` | Statistics reporting intervals. |
 | `stats` | `enable_db`, `db_path` | Optional SQLite statistics reporter. |
 
@@ -40,3 +40,17 @@ librdkafka keys must be quoted in TOML, for example
 
 Use `etc/observe.toml` for safe exploration and `etc/esgf-example.toml` as a
 starting point for authenticated ESGF Kafka settings.
+
+Select projects in configuration:
+
+```toml
+[consumer]
+projects = ["cmip6"]
+# projects = ["cmip6", "cmip7"]
+# projects = "all"
+```
+
+For a single invocation, repeat `--project` or use `--all-projects`. CLI
+selection overrides configuration. Separate project-specific processes reading
+the same topic must use different Kafka `group.id` values; otherwise Kafka can
+deliver a project's records to a process that filters them out.

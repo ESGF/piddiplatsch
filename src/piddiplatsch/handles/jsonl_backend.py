@@ -14,13 +14,18 @@ class JsonlHandleBackend(HandleBackend):
     JSONL backend for testing, similar to DumpRecorder.
     Writes one file per day under the configured dump directory.
     Format per line:
-      {"handle": "<HANDLE>", "URL": "<location>", "data": {...}, "timestamp": "<ISO8601>"}
+      {"handle": "<HANDLE>", "URL": "<location>", "data": {...},
+       "timestamp": "<ISO8601>", "project": "<plugin>"}
     """
 
-    def __init__(self):
+    def __init__(self, project: str | None = None):
         # Read output_dir from [consumer] section, fallback to outputs
         base_dir = config.get("consumer", {}).get("output_dir", "outputs")
-        dump_dir = Path(base_dir) / "handles"
+        self.project = project
+        dump_dir = Path(base_dir)
+        if project:
+            dump_dir /= project
+        dump_dir /= "handles"
         # Use shared JSONL writer for daily rotation and append semantics
         self.writer = DailyJsonlWriter(Path(dump_dir))
 
@@ -32,6 +37,8 @@ class JsonlHandleBackend(HandleBackend):
             "data": handle_data,
             "timestamp": utc_now().isoformat(),
         }
+        if self.project:
+            record["project"] = self.project
         path = self.writer.write("handles", record)
         logging.debug(f"Wrote handle {handle} to {path}")
 

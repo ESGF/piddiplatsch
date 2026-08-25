@@ -1,0 +1,33 @@
+{
+  "metadata": {"time": "2026-08-06T17:22:58.978441"},
+  "data": {
+    "type": "STAC",
+    "payload": {
+      "collection_id": "CMIP7",
+      "method": "POST",
+      "item": {
+        "type": "Feature",
+        "stac_version": "1.1.0",
+        "id": "MIP-DRS7.CMIP7.CMIP.CCCma.CanESM5-1.piControl.r1i1p2f1.glb.mon.tas.tavg-h2m-hxy-u.g120.v20190429",
+        "collection": "CMIP7",
+        "properties": {
+          "project": "CMIP7",
+          "created": "2026-08-06T17:22:58.060038Z",
+          "retracted": false,
+          "cmip7:pid": "hdl:21.14107/1f062cde-b12d-335d-a30b-988188098842"
+        },
+        "assets": {
+          "tas_tavg-h2m-hxy-u_mon_glb_g120_CanESM5-1_piControl_r1i1p2f1_660101-670012.nc": {
+            "href": "https://crd-esgf-drc.ec.gc.ca/thredds/fileServer/tas_tavg-h2m-hxy-u_mon_glb_g120_CanESM5-1_piControl_r1i1p2f1_660101-670012.nc",
+            "roles": ["data"],
+            "file:size": 22753608,
+            "file:checksum": "122088ebf351f596eb286d31519ed333e6b33606ca386735525d5fb4a247f6bc715f",
+            "alternate:name": "crd-esgf-drc.ec.gc.ca",
+            "created": "2026-08-05T19:22:58Z",
+            "cmip7:tracking_id": "hdl:21.14107/7c4a583c-0bfe-4517-98fa-325084b02684"
+          }
+        }
+      }
+    }
+  }
+}

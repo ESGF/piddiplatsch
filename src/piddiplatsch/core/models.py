@@ -17,10 +17,6 @@ ALLOWED_CHECKSUM_METHODs = {
 }
 
 
-def get_max_parts() -> int:
-    return config.get("cmip6", {}).get("max_parts", -1)
-
-
 def strict_mode() -> bool:
     return config.get("schema", {}).get("strict_mode", False)
 

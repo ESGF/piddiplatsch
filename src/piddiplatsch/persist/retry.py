@@ -48,7 +48,7 @@ class RetryRunner:
         from piddiplatsch.persist.retry import RetryRunner
 
         runner = RetryRunner(
-            "cmip6",
+            projects=["cmip6"],
             failure_dir=Path("outputs/failures"),
             delete_after=False,
             dry_run=True,
@@ -61,14 +61,14 @@ class RetryRunner:
 
     def __init__(
         self,
-        processor: str,
         *,
+        projects: list[str] | tuple[str, ...] | str,
         failure_dir: Path,
         delete_after: bool = False,
         dry_run: bool = False,
         logger: logging.Logger | None = None,
     ) -> None:
-        self.processor = processor
+        self.projects = projects
         self.failure_dir = failure_dir
         self.delete_after = delete_after
         self.dry_run = dry_run
@@ -90,7 +90,7 @@ class RetryRunner:
             return result
 
         self.logger.info(
-            f"Retrying {len(messages)} messages from {jsonl_path} using '{self.processor}'..."
+            f"Retrying {len(messages)} messages from {jsonl_path} using '{self.projects}'..."
         )
 
         # Track failure files before retry
@@ -101,7 +101,7 @@ class RetryRunner:
         # Process messages through pipeline
         feed_result = feed_messages_direct(
             messages,
-            processor=self.processor,
+            projects=self.projects,
             dry_run=self.dry_run,
             failure_dir=self.failure_dir,
             force=True,
@@ -119,7 +119,10 @@ class RetryRunner:
         # Use stats from feed_result
         result.succeeded = feed_result.succeeded
         result.skipped = feed_result.skipped
-        result.failed = feed_result.failed + feed_result.skipped
+        result.filtered = feed_result.filtered
+        # A filtered retry was not handled by a selected plugin. Keep the
+        # original input instead of treating it as successfully recovered.
+        result.failed = feed_result.failed + feed_result.skipped + feed_result.filtered
 
         if self.delete_after and result.failed == 0:
             try:
@@ -159,6 +162,7 @@ class RetryRunner:
             overall.succeeded += result.succeeded
             overall.failed += result.failed
             overall.skipped += result.skipped
+            overall.filtered += result.filtered
             overall.failure_files.update(result.failure_files)
             overall.errors.extend(result.errors)
 
@@ -167,8 +171,7 @@ class RetryRunner:
 
             if verbose:
                 self.logger.info(
-                    f"[{idx}/{total_files}] {file.name}: total={result.total}, "
-                    f"succeeded={result.succeeded}, failed={result.failed}"
+                    f"[{idx}/{total_files}] {file.name}: total={result.total}, succeeded={result.succeeded}, failed={result.failed}"
                 )
 
         return overall

@@ -70,12 +70,14 @@ class Progress(BaseProgress):
         return f"{h:02}:{m:02}:{s:02}"
 
     def _format_desc(self):
-        # Short labels: msg=messages, hdl=handles, E=errors, W=warn, D=retracted, replica=replicas, skip=skipped, patch=patched
+        # Short labels: msg=messages, hdl=handles, E=errors, F=filtered,
+        # W=warn, D=retracted, replica=replicas, skip=skipped, patch=patched
         return (
             f"{self.title:<8}"
             f"| msg:{millify(stats.messages, precision=1)} ({stats.message_rate:.2f}/s)"
             f"| hdl:{millify(stats.handles, precision=1)} ({stats.handle_rate:.2f}/s)"
             f"| E:{millify(stats.errors, precision=1)}"
+            f"| F:{millify(stats.filtered_messages, precision=1)}"
             f"| W:{millify(stats.warnings, precision=1)}"
             f"| D:{millify(stats.retracted_messages, precision=1)}"
             f"| replica:{millify(stats.replicas, precision=1)}"

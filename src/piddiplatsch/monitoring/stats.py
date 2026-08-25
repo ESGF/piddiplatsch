@@ -36,6 +36,7 @@ class CounterKey(StrEnum):
     REPLICAS = "replicas"
     WARNINGS = "warnings"
     SKIPPED = "skipped_messages"
+    FILTERED = "filtered_messages"
     PATCHED = "patched_messages"
     HANDLE_TIME = "total_handle_processing_time"  # float seconds
     EXTERNAL_FAILS = "external_failures"
@@ -73,6 +74,7 @@ class SQLiteReporter(StatsReporter):
                 replicas INTEGER,
                 warnings INTEGER,
                 skipped_messages INTEGER,
+                filtered_messages INTEGER,
                 patched_messages INTEGER,
                 external_failures INTEGER,
                 total_handle_processing_time REAL,
@@ -113,6 +115,7 @@ class SQLiteReporter(StatsReporter):
                 "replicas": "INTEGER",
                 "warnings": "INTEGER",
                 "skipped_messages": "INTEGER",
+                "filtered_messages": "INTEGER",
                 "patched_messages": "INTEGER",
                 "external_failures": "INTEGER",
                 "total_handle_processing_time": "REAL",
@@ -148,9 +151,9 @@ class SQLiteReporter(StatsReporter):
             """
             INSERT INTO message_stats (ts, messages, errors, retries, handles,
                                        retracted_messages, replicas, warnings,
-                                       skipped_messages, patched_messages, external_failures, total_handle_processing_time,
+                                       skipped_messages, filtered_messages, patched_messages, external_failures, total_handle_processing_time,
                                        uptime, message_rate, handle_rate, messages_per_sec)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 ts,
@@ -162,6 +165,7 @@ class SQLiteReporter(StatsReporter):
                 summary[CounterKey.REPLICAS.value],
                 summary[CounterKey.WARNINGS.value],
                 summary[CounterKey.SKIPPED.value],
+                summary[CounterKey.FILTERED.value],
                 summary[CounterKey.PATCHED.value],
                 summary[CounterKey.EXTERNAL_FAILS.value],
                 summary[CounterKey.HANDLE_TIME.value],
@@ -334,6 +338,11 @@ class Stats:
         if message:
             logger.info(f"SKIPPED: {message}")
 
+    def filtered(self, message: str | None = None, n=1):
+        self.increment(CounterKey.FILTERED, n)
+        if message:
+            logger.debug(f"FILTERED: {message}")
+
     def patch(self, message: str | None = None, n=1):
         self.increment(CounterKey.PATCHED, n)
         if message:
@@ -388,6 +397,10 @@ class Stats:
     @property
     def skipped_messages(self) -> int:
         return self._counters[CounterKey.SKIPPED]
+
+    @property
+    def filtered_messages(self) -> int:
+        return self._counters[CounterKey.FILTERED]
 
     @property
     def patched_messages(self) -> int:

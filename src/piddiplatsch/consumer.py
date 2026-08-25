@@ -9,8 +9,7 @@ from confluent_kafka import Consumer as ConfluentConsumer
 from confluent_kafka import KafkaException
 
 from piddiplatsch.config import config
-from piddiplatsch.core.processing import BaseProcessor
-from piddiplatsch.core.registry import get_processor
+from piddiplatsch.core.routing import ProjectRouter
 from piddiplatsch.exceptions import MaxErrorsExceededError, StopOnTransientSkipError
 from piddiplatsch.monitoring.stats import CounterKey, stats
 from piddiplatsch.persist.dump import DumpRecorder
@@ -19,6 +18,34 @@ from piddiplatsch.persist.skipped import SkipRecorder
 from piddiplatsch.result import FeedResult, ProcessingResult
 
 logger = logging.getLogger(__name__)
+
+
+def configured_projects() -> list[str] | str:
+    """Return the configured project plugin selection."""
+    consumer_cfg = config.get("consumer", {})
+    projects = consumer_cfg.get("projects")
+    if projects is None:
+        raise ValueError("No projects configured; set [consumer].projects")
+    return projects
+
+
+def build_processing_target(
+    *,
+    processor=None,
+    projects: list[str] | tuple[str, ...] | str | None = None,
+    dry_run: bool = False,
+):
+    """Build a project router or use an explicitly supplied processing object."""
+    if processor is not None and projects is not None:
+        raise ValueError("Specify either processor or projects, not both")
+    if processor is not None:
+        if isinstance(processor, str):
+            raise TypeError(
+                "String processor selection is not supported; use projects or a processing object"
+            )
+        return processor
+    selection = configured_projects() if projects is None else projects
+    return ProjectRouter(selection, dry_run=dry_run)
 
 
 class StopCause(StrEnum):
@@ -122,11 +149,12 @@ class ConsumerPipeline:
         processor: processor name
         """
         self.consumer = consumer
-        # Allow either processor name (str) or a BaseProcessor instance
-        if isinstance(processor, BaseProcessor):
-            self.processor = processor
-        else:
-            self.processor = get_processor(processor, dry_run=dry_run)
+        # String names remain supported for direct/test callers. Runtime
+        # ingestion passes a ProjectRouter or another processing object.
+        self.processor = build_processing_target(
+            processor=processor,
+            dry_run=dry_run,
+        )
         self.dump_messages = dump_messages
         self.max_errors = int(max_errors)
         self.force = force
@@ -148,7 +176,7 @@ class ConsumerPipeline:
         try:
             from piddiplatsch.monitoring import get_progress
 
-            self.progress = get_progress(f"{processor}", use_tqdm=verbose)
+            self.progress = get_progress(f"{self.processor}", use_tqdm=verbose)
         except ImportError:
             pass
 
@@ -158,7 +186,10 @@ class ConsumerPipeline:
             result = self._safe_process_message(key, value)
 
             # Track metrics
-            if result.skipped:
+            if result.filtered:
+                self.stats.tick()
+                self.stats.filtered(message=f"message={key} project={result.project}")
+            elif result.skipped:
                 # A skipped message was consumed, but it did not complete successfully.
                 self.stats.tick()
             elif result.success:
@@ -220,7 +251,8 @@ class ConsumerPipeline:
             self.progress.close()
         logger.info(
             f"Total messages: {self.stats.messages}, total errors: {self.stats.errors}, "
-            f"handles: {self.stats[CounterKey.HANDLES]}, skipped: {self.stats.skipped_messages}"
+            f"handles: {self.stats[CounterKey.HANDLES]}, skipped: {self.stats.skipped_messages}, "
+            f"filtered: {self.stats.filtered_messages}"
         )
         self.stats.close()
 
@@ -232,15 +264,21 @@ class ConsumerPipeline:
 
 def feed_messages_direct(
     messages,
-    processor="cmip6",
+    processor=None,
+    projects: list[str] | tuple[str, ...] | str | None = None,
     dry_run=False,
     failure_dir: Path | None = None,
     force: bool = False,
 ) -> FeedResult:
     consumer = DirectConsumer(messages)
+    target = build_processing_target(
+        processor=processor,
+        projects=projects,
+        dry_run=dry_run,
+    )
     pipeline = ConsumerPipeline(
         consumer,
-        processor=processor,
+        processor=target,
         dry_run=dry_run,
         failure_dir=failure_dir,
         force=force,
@@ -250,6 +288,7 @@ def feed_messages_direct(
     messages_before = pipeline.stats.messages
     errors_before = pipeline.stats.errors
     skipped_before = pipeline.stats.skipped_messages
+    filtered_before = pipeline.stats.filtered_messages
 
     pipeline.run()
 
@@ -257,21 +296,29 @@ def feed_messages_direct(
     processed = pipeline.stats.messages - messages_before
     failed = pipeline.stats.errors - errors_before
     skipped = pipeline.stats.skipped_messages - skipped_before
-    succeeded = processed - skipped
+    filtered = pipeline.stats.filtered_messages - filtered_before
+    succeeded = processed - skipped - filtered
 
     return FeedResult(
-        total=len(messages), succeeded=succeeded, failed=failed, skipped=skipped
+        total=len(messages),
+        succeeded=succeeded,
+        failed=failed,
+        skipped=skipped,
+        filtered=filtered,
     )
 
 
-def feed_test_files(testfile_paths, processor="cmip6"):
+def feed_test_files(
+    testfile_paths,
+    projects: list[str] | tuple[str, ...] | str = ("cmip6",),
+):
     messages = []
     for path in testfile_paths:
         if isinstance(path, str):
             path = Path(path)
         with path.open("r", encoding="utf-8") as f:
             messages.append((path.name, json.load(f)))
-    feed_messages_direct(messages, processor=processor)
+    feed_messages_direct(messages, projects=projects)
 
 
 # ----------------------------
@@ -282,8 +329,9 @@ def feed_test_files(testfile_paths, processor="cmip6"):
 def start_consumer(
     topic=None,
     kafka_cfg=None,
-    processor="cmip6",
+    processor=None,
     *,
+    projects: list[str] | tuple[str, ...] | str | None = None,
     dump_messages=False,
     verbose=False,
     enable_db: bool | None = None,
@@ -303,19 +351,12 @@ def start_consumer(
         log_interval_messages=stats_config.get("summary_interval"),
     )
 
-    if direct_messages is not None:
-        consumer = DirectConsumer(direct_messages)
-    elif topic and kafka_cfg:
-        consumer = KafkaConsumer(topic, kafka_cfg)
-    else:
-        raise ValueError("Either Kafka config or direct_messages must be provided")
-
     max_errors = config.get("consumer", {}).get("max_errors", -1)
     # Build processor instance to run preflight and pass into pipeline
-    proc_instance = (
-        processor
-        if isinstance(processor, BaseProcessor)
-        else get_processor(processor, dry_run=dry_run)
+    proc_instance = build_processing_target(
+        processor=processor,
+        projects=projects,
+        dry_run=dry_run,
     )
     # Optional STAC preflight
     try:
@@ -336,6 +377,15 @@ def start_consumer(
         logger.error(str(e))
         # Stop as transient external failure
         sys.exit(1)
+
+    # Subscribe only after project selection, plugin construction, and preflight
+    # have succeeded. Invalid selections must not create an orphaned consumer.
+    if direct_messages is not None:
+        consumer = DirectConsumer(direct_messages)
+    elif topic and kafka_cfg:
+        consumer = KafkaConsumer(topic, kafka_cfg)
+    else:
+        raise ValueError("Either Kafka config or direct_messages must be provided")
 
     pipeline = ConsumerPipeline(
         consumer,

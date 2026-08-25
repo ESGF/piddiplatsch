@@ -16,10 +16,30 @@ from pydantic import (
 class ConsumerConfig(BaseModel):
     model_config = ConfigDict(extra="allow")
 
-    processor: str
+    projects: list[str] | Literal["all"]
     topic: str
     output_dir: str | None = None
     max_errors: int | None = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def _reject_processor_setting(cls, data):
+        if isinstance(data, dict) and "processor" in data:
+            raise ValueError(
+                "[consumer].processor is not supported; use [consumer].projects"
+            )
+        return data
+
+    @field_validator("projects")
+    @classmethod
+    def _check_projects(cls, value: list[str] | str | None):
+        if isinstance(value, list):
+            normalized = [project.strip().casefold() for project in value]
+            if not normalized or any(not project for project in normalized):
+                raise ValueError("[consumer].projects must not be empty")
+            if len(normalized) != len(set(normalized)):
+                raise ValueError("[consumer].projects must not contain duplicates")
+        return value
 
 
 class KafkaConfig(BaseModel):
@@ -98,14 +118,17 @@ class SchemaConfig(BaseModel):
     strict_mode: bool | None = None
 
 
-class PluginsCmip6Config(BaseModel):
+class ProjectPluginConfig(BaseModel):
     model_config = ConfigDict(extra="allow")
     landing_page_url: str | None = None
 
 
 class PluginsConfig(BaseModel):
     model_config = ConfigDict(extra="allow")
-    cmip6: PluginsCmip6Config | None = None
+    cmip6: ProjectPluginConfig | None = None
+    cmip6plus: ProjectPluginConfig | None = None
+    cmip7: ProjectPluginConfig | None = None
+    cordex_cmip6: ProjectPluginConfig | None = Field(None, alias="cordex-cmip6")
 
 
 class AppConfig(BaseModel):

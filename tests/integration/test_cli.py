@@ -52,7 +52,7 @@ def test_retry_with_dry_run(runner, tmp_path):
     assert "All items processed successfully!" in result.output
 
     # Verify handles were created in dry-run mode
-    handles_dir = tmp_path / "handles"
+    handles_dir = tmp_path / "cmip6" / "handles"
     assert handles_dir.exists()
     handle_files = list(handles_dir.glob("handles_*.jsonl"))
     assert len(handle_files) > 0

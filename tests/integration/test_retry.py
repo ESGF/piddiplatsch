@@ -80,7 +80,7 @@ def test_retry_loads_and_processes_failed_messages(tmp_path: Path):
 
     # Retry the failed messages
     runner = RetryRunner(
-        "cmip6",
+        projects=["cmip6"],
         failure_dir=tmp_path / "failures",
         delete_after=False,
         dry_run=True,
@@ -96,7 +96,7 @@ def test_retry_loads_and_processes_failed_messages(tmp_path: Path):
     assert failure_file.exists()
 
     # Verify handles were created in dry-run mode
-    handles_dir = tmp_path / "handles"
+    handles_dir = tmp_path / "cmip6" / "handles"
     assert handles_dir.exists()
 
     files = list(handles_dir.glob("handles_*.jsonl"))
@@ -139,7 +139,7 @@ def test_retry_deletes_file_when_delete_after_true(tmp_path: Path):
 
     # Retry with delete_after=True
     runner = RetryRunner(
-        "cmip6",
+        projects=["cmip6"],
         failure_dir=tmp_path / "failures",
         delete_after=True,
         dry_run=True,
@@ -160,7 +160,7 @@ def test_retry_handles_nonexistent_file(tmp_path: Path):
 
     # Should return empty result and not raise an exception
     runner = RetryRunner(
-        "cmip6",
+        projects=["cmip6"],
         failure_dir=tmp_path / "failures",
     )
     result = runner.run_file(nonexistent_file)
@@ -177,7 +177,7 @@ def test_retry_handles_empty_file(tmp_path: Path):
     empty_file.touch()
 
     runner = RetryRunner(
-        "cmip6",
+        projects=["cmip6"],
         failure_dir=tmp_path / "failures",
     )
     result = runner.run_file(empty_file)
