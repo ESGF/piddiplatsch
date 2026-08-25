@@ -40,7 +40,7 @@ Changelog = "https://github.com/ESGF/piddiplatsch/blob/main/CHANGES.md"
 [project.optional-dependencies]
 dev = [
   "pip >=24.2.0",
-  "flit >=3.9.0,<4.0",
+  "build >=1.2.0",
   "ipython>=8.13.0",
   "flask",
   "pytest >=8.0.0",

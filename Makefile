@@ -133,11 +133,11 @@ coverage: ## check code coverage quickly with the default Python
 ## Deployment targets:
 
 dist: clean ## builds source and wheel package
-	python -m flit build
+	python -m build
 	ls -l dist
 
 release: dist ## package and upload a release
-	python -m flit publish dist/*
+	python -m twine upload dist/*
 
 ## Versioning targets
 
