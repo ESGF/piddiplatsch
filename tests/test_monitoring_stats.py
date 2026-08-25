@@ -1,6 +1,7 @@
 import datetime
+import sqlite3
 
-from piddiplatsch.monitoring.stats import CounterKey, Stats
+from piddiplatsch.monitoring.stats import CounterKey, SQLiteReporter, Stats
 
 
 def test_counters_increment():
@@ -76,3 +77,19 @@ def test_timestamps_are_utc():
     # uptime should be positive float
     assert isinstance(s.uptime, float)
     assert s.uptime >= 0
+
+
+def test_sqlite_reporter_persists_filtered_counter(tmp_path):
+    db_path = tmp_path / "stats.db"
+    reporter = SQLiteReporter(str(db_path))
+    summary = Stats(enable_db=False).summary()
+    summary[CounterKey.FILTERED.value] = 3
+
+    reporter.log(summary)
+    reporter.close()
+
+    with sqlite3.connect(db_path) as connection:
+        row = connection.execute(
+            "SELECT filtered_messages FROM message_stats"
+        ).fetchone()
+    assert row == (3,)

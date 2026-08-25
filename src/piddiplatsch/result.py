@@ -11,6 +11,10 @@ class ProcessingResult:
     skipped: bool = False
     skip_reason: str | None = None
     transient_skip: bool = False
+    filtered: bool = False
+    filtered_reason: str | None = None
+    project: str | None = None
+    plugin: str | None = None
     patched: bool = False
     elapsed: float = 0.0
 
@@ -26,6 +30,7 @@ class FeedResult:
     succeeded: int = 0
     failed: int = 0
     skipped: int = 0
+    filtered: int = 0
 
 
 @dataclass
@@ -36,6 +41,7 @@ class RetryResult:
     succeeded: int = 0
     failed: int = 0
     skipped: int = 0
+    filtered: int = 0
     failure_files: set[Path] = field(default_factory=set)
     errors: list[str] = field(default_factory=list)
 

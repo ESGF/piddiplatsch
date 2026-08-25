@@ -4,10 +4,19 @@ from .models import (
     get_max_parts,
     strict_mode,
 )
-from .plugin import PluginSpec
+from .plugin import PluginSpec, normalize_project_id
 from .processing import BaseProcessor
 from .records import BaseRecord
-from .registry import get_processor, list_processors, register_processor
+from .routing import ProjectRouter, extract_project_id
+from .registry import (
+    get_plugin,
+    get_plugins,
+    get_processor,
+    list_plugins,
+    list_processors,
+    register_plugin,
+    register_processor,
+)
 
 __all__ = [
     "ALLOWED_CHECKSUM_METHODs",
@@ -15,9 +24,16 @@ __all__ = [
     "BaseRecord",
     "HostingNode",
     "PluginSpec",
+    "ProjectRouter",
+    "extract_project_id",
     "get_max_parts",
+    "get_plugin",
+    "get_plugins",
     "get_processor",
+    "list_plugins",
     "list_processors",
+    "normalize_project_id",
+    "register_plugin",
     "register_processor",
     "strict_mode",
 ]

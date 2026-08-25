@@ -7,7 +7,7 @@
 
 ---
 
-**Piddiplatsch** is a [Kafka](https://kafka.apache.org/) consumer for **CMIP6 records** that integrates with a [Handle Service](https://pypi.org/project/pyhandle/) to reliably register and maintain persistent identifiers (PIDs).
+**Piddiplatsch** is a [Kafka](https://kafka.apache.org/) consumer for **ESGF STAC publication records** that integrates with a [Handle Service](https://pypi.org/project/pyhandle/) to reliably register and maintain persistent identifiers (PIDs).
 
 *Curious by nature. Persistent by design.*
 
@@ -31,10 +31,11 @@ The project is fully open-source and documented. ESGF sites and other organizati
 
 ## 🧭 About CMIP6 (and the future)
 
-At the moment, **Piddiplatsch processes CMIP6-style records only**.  
-CMIP7 does not yet exist as a concrete standard.
+At the moment, **CMIP6 is the only implemented project plugin**.
 
-The codebase is intentionally structured so that future CMIP phases (e.g. CMIP7) can be supported by adding a new processor, without rewriting the consumer core. The existing `cmip6` processor serves both as:
+One consumer can read the shared ESGF publication topic and route records to one,
+several, or all selected project plugins. Unrelated records are filtered without
+being treated as failures. The existing `cmip6` plugin serves both as:
 
 - the production implementation today
 - a reference implementation for future extensions
@@ -100,12 +101,12 @@ See the configuration at [etc/observe.toml](etc/observe.toml).
 
 ## ✨ Features
 
-- Kafka consumer for CMIP6 records
+- Kafka consumer and project router for the shared ESGF publication stream
 - Register and update PIDs via Handle Service
 - CLI commands: `consume`, `retry`
 - Multihash checksum support
-- Simple processor mechanism (pure Python, no plugin framework)
-- Designed for future CMIP phases via additional processors
+- Explicit built-in project plugin registry (pure Python, no dynamic framework)
+- Select one, several, or all registered project plugins
 
 For full usage details and local Docker smoke tests, see [CONTRIBUTING.md](CONTRIBUTING.md).
 
@@ -122,6 +123,13 @@ Common first runs:
 - Observe without stopping on skips:
   ```bash
   piddi consume --dry-run --force
+  ```
+- Override configured projects for one run:
+  ```bash
+  piddi consume --project cmip6
+  # once additional plugins are available:
+  piddi consume --project cmip6 --project cmip7
+  piddi consume --all-projects
   ```
 - Use a custom configuration:
   ```bash
@@ -172,7 +180,7 @@ Run with your custom configuration:
 piddi --config custom.toml
 ```
 
-Kafka, Handle Service, consumer behaviour, and processor selection are all controlled via this file.
+Kafka, Handle Service, consumer behaviour, and project selection are all controlled via this file.
 See [docs/configuration.md](docs/configuration.md) for the supported application
 settings and override behavior.
 
@@ -250,20 +258,23 @@ Implementation details:
 
 ---
 
-## 🧩 Processors (Overview)
+## 🧩 Project plugins (Overview)
 
-Piddiplatsch uses a small, explicit **processor interface** to handle record formats.
+Piddiplatsch uses a small, explicit plugin interface and a router in front of
+project-specific processors.
 
 This is **not** a dynamic plugin ecosystem. The mechanism exists to:
 - isolate CMIP6-specific logic
 - allow future formats (e.g. CMIP7) to be added cleanly
 - keep testing and evolution predictable
 
-Currently, the only supported processor is:
+Currently, the only implemented project plugin is:
 
 - `cmip6` (default)
 
 Configuration and implementation guidance are documented in [CONTRIBUTING.md](CONTRIBUTING.md).
+The message flow and consumer-group constraints are documented in
+[docs/architecture.md](docs/architecture.md).
 
 ---
 

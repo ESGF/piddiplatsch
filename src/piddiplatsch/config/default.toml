@@ -17,7 +17,9 @@
 #############################################
 
 [consumer]
-processor = "cmip6"
+# Project plugins selected from the shared publication stream.
+# Use multiple names or the string "all" to run every registered plugin.
+projects = ["cmip6"]
 topic = "CMIP6"
 output_dir = "outputs"
 # Maximum number of errors before stopping; -1 = unlimited.

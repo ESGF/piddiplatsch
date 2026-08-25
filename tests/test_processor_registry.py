@@ -1,5 +1,7 @@
 """Test to verify processor registry extensibility."""
 
+import pytest
+
 from piddiplatsch.core.processing import BaseProcessor
 from piddiplatsch.core.registry import (
     get_processor,
@@ -27,7 +29,7 @@ def test_unknown_processor_raises_error():
         raise AssertionError("Should have raised ValueError")
     except ValueError as e:
         assert "unknown_processor" in str(e)
-        assert "Available processors" in str(e)
+        assert "Available plugins" in str(e)
 
 
 def test_register_custom_processor():
@@ -78,8 +80,8 @@ def test_list_processors_returns_all():
     assert len(processors) >= 1
 
 
-def test_register_overwrites_existing():
-    """Test that registering with same name overwrites previous registration."""
+def test_register_requires_explicit_replace():
+    """Test that duplicate plugin names fail unless replacement is explicit."""
 
     class FirstProcessor(BaseProcessor):
         processor_version = "v1"
@@ -98,8 +100,10 @@ def test_register_overwrites_existing():
     processor1 = get_processor("overwrite_test", dry_run=True)
     assert processor1.processor_version == "v1"
 
-    # Overwrite with second version
-    register_processor("overwrite_test", SecondProcessor)
+    with pytest.raises(ValueError, match="already registered"):
+        register_processor("overwrite_test", SecondProcessor)
+
+    register_processor("overwrite_test", SecondProcessor, replace=True)
     processor2 = get_processor("overwrite_test", dry_run=True)
     assert processor2.processor_version == "v2"
 
@@ -143,6 +147,4 @@ def test_processor_dry_run_flag():
     processor = get_processor("cmip6", dry_run=True)
 
     # Should be using JSONL backend
-    assert isinstance(
-        getattr(processor.handle_backend, "backend", None), JsonlHandleBackend
-    )
+    assert isinstance(getattr(processor.handle_backend, "backend", None), JsonlHandleBackend)

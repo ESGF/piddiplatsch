@@ -36,6 +36,7 @@ class CounterKey(StrEnum):
     REPLICAS = "replicas"
     WARNINGS = "warnings"
     SKIPPED = "skipped_messages"
+    FILTERED = "filtered_messages"
     PATCHED = "patched_messages"
     HANDLE_TIME = "total_handle_processing_time"  # float seconds
     EXTERNAL_FAILS = "external_failures"
@@ -73,6 +74,7 @@ class SQLiteReporter(StatsReporter):
                 replicas INTEGER,
                 warnings INTEGER,
                 skipped_messages INTEGER,
+                filtered_messages INTEGER,
                 patched_messages INTEGER,
                 external_failures INTEGER,
                 total_handle_processing_time REAL,
@@ -82,9 +84,7 @@ class SQLiteReporter(StatsReporter):
                 messages_per_sec REAL
             )
             """)
-        self._cursor.execute(
-            "CREATE INDEX IF NOT EXISTS idx_message_stats_ts ON message_stats(ts)"
-        )
+        self._cursor.execute("CREATE INDEX IF NOT EXISTS idx_message_stats_ts ON message_stats(ts)")
         # Ensure existing databases have all expected columns
         self._ensure_schema()
         self._conn.commit()
@@ -113,6 +113,7 @@ class SQLiteReporter(StatsReporter):
                 "replicas": "INTEGER",
                 "warnings": "INTEGER",
                 "skipped_messages": "INTEGER",
+                "filtered_messages": "INTEGER",
                 "patched_messages": "INTEGER",
                 "external_failures": "INTEGER",
                 "total_handle_processing_time": "REAL",
@@ -126,14 +127,10 @@ class SQLiteReporter(StatsReporter):
                 if col not in existing_cols:
                     # Use DEFAULT 0 to avoid NULLs for numeric columns
                     try:
-                        self._cursor.execute(
-                            f"ALTER TABLE message_stats ADD COLUMN {col} {col_type} DEFAULT 0"
-                        )
+                        self._cursor.execute(f"ALTER TABLE message_stats ADD COLUMN {col} {col_type} DEFAULT 0")
                     except sqlite3.OperationalError:
                         # If ALTER fails for any reason, log and continue
-                        logger.exception(
-                            "Failed to add missing column '%s' to message_stats", col
-                        )
+                        logger.exception("Failed to add missing column '%s' to message_stats", col)
         except Exception:
             # Do not block startup; logging will surface issues if inserts fail
             logger.exception("Schema check failed for message_stats table")
@@ -148,9 +145,9 @@ class SQLiteReporter(StatsReporter):
             """
             INSERT INTO message_stats (ts, messages, errors, retries, handles,
                                        retracted_messages, replicas, warnings,
-                                       skipped_messages, patched_messages, external_failures, total_handle_processing_time,
+                                       skipped_messages, filtered_messages, patched_messages, external_failures, total_handle_processing_time,
                                        uptime, message_rate, handle_rate, messages_per_sec)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 ts,
@@ -162,6 +159,7 @@ class SQLiteReporter(StatsReporter):
                 summary[CounterKey.REPLICAS.value],
                 summary[CounterKey.WARNINGS.value],
                 summary[CounterKey.SKIPPED.value],
+                summary[CounterKey.FILTERED.value],
                 summary[CounterKey.PATCHED.value],
                 summary[CounterKey.EXTERNAL_FAILS.value],
                 summary[CounterKey.HANDLE_TIME.value],
@@ -281,9 +279,7 @@ class Stats:
             try:
                 self.reporters.append(SQLiteReporter(db_path=db_path))
             except Exception:
-                logger.exception(
-                    "Failed to initialize SQLiteReporter; continuing without DB reporter"
-                )
+                logger.exception("Failed to initialize SQLiteReporter; continuing without DB reporter")
 
     # --- Core increment ---
     def increment(self, key: CounterKey, n=1):
@@ -334,6 +330,11 @@ class Stats:
         if message:
             logger.info(f"SKIPPED: {message}")
 
+    def filtered(self, message: str | None = None, n=1):
+        self.increment(CounterKey.FILTERED, n)
+        if message:
+            logger.debug(f"FILTERED: {message}")
+
     def patch(self, message: str | None = None, n=1):
         self.increment(CounterKey.PATCHED, n)
         if message:
@@ -347,16 +348,12 @@ class Stats:
     # --- Logging / persistence ---
     def _maybe_log(self):
         now = time.time()
-        messages_since_last = (
-            self._counters[CounterKey.MESSAGES] - self._last_logged_messages
-        )
+        messages_since_last = self._counters[CounterKey.MESSAGES] - self._last_logged_messages
 
         if messages_since_last == 0:
             return
 
-        if (now - self._last_log_time >= self.log_interval_seconds) or (
-            messages_since_last >= self.log_interval_messages
-        ):
+        if (now - self._last_log_time >= self.log_interval_seconds) or (messages_since_last >= self.log_interval_messages):
             self._log_stats()
             self._last_log_time = now
             self._last_logged_messages = self._counters[CounterKey.MESSAGES]
@@ -388,6 +385,10 @@ class Stats:
     @property
     def skipped_messages(self) -> int:
         return self._counters[CounterKey.SKIPPED]
+
+    @property
+    def filtered_messages(self) -> int:
+        return self._counters[CounterKey.FILTERED]
 
     @property
     def patched_messages(self) -> int:

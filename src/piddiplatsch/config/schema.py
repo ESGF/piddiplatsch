@@ -16,10 +16,28 @@ from pydantic import (
 class ConsumerConfig(BaseModel):
     model_config = ConfigDict(extra="allow")
 
-    processor: str
+    projects: list[str] | Literal["all"] | None = None
+    processor: str | None = None
     topic: str
     output_dir: str | None = None
     max_errors: int | None = None
+
+    @field_validator("projects")
+    @classmethod
+    def _check_projects(cls, value: list[str] | str | None):
+        if isinstance(value, list):
+            normalized = [project.strip().casefold() for project in value]
+            if not normalized or any(not project for project in normalized):
+                raise ValueError("[consumer].projects must not be empty")
+            if len(normalized) != len(set(normalized)):
+                raise ValueError("[consumer].projects must not contain duplicates")
+        return value
+
+    @model_validator(mode="after")
+    def _check_project_selection(self) -> ConsumerConfig:
+        if self.projects is None and not self.processor:
+            raise ValueError("Set [consumer].projects (preferred) or legacy [consumer].processor")
+        return self
 
 
 class KafkaConfig(BaseModel):
@@ -49,8 +67,7 @@ class KafkaConfig(BaseModel):
         invalid = [t for t in v.split(",") if not _valid_hostport(t)]
         if invalid:
             raise ValueError(
-                "[kafka].bootstrap.servers must be a comma-separated list of host:port; invalid: "
-                + ", ".join(s.strip() for s in invalid)
+                "[kafka].bootstrap.servers must be a comma-separated list of host:port; invalid: " + ", ".join(s.strip() for s in invalid)
             )
         return v
 
@@ -128,9 +145,7 @@ class AppConfig(BaseModel):
                     raise ValueError("Missing required setting: [stac].base_url")
             elif self.lookup.backend == "es":
                 if not (self.elasticsearch and self.elasticsearch.base_url):
-                    raise ValueError(
-                        "Missing required setting: [elasticsearch].base_url"
-                    )
+                    raise ValueError("Missing required setting: [elasticsearch].base_url")
         return self
 
 
@@ -152,28 +167,22 @@ def validate_config(data: dict) -> tuple[list[str], list[str]]:
         return errors, warnings
 
     # warnings
-    if cfg.handle and (
-        cfg.handle.username == "300:21.TEST/testuser"
-        and cfg.handle.password == "testpass"
-    ):
+    if cfg.handle and (cfg.handle.username == "300:21.TEST/testuser" and cfg.handle.password == "testpass"):
         warnings.append("[handle] demo credentials detected; do not use in production")
     if cfg.lookup and cfg.lookup.enabled and cfg.lookup.backend == "es":
         if cfg.elasticsearch and not (cfg.elasticsearch.index):
-            warnings.append(
-                "[elasticsearch].index is not set; some features may be unavailable"
-            )
+            warnings.append("[elasticsearch].index is not set; some features may be unavailable")
 
     # schema strict_mode type handled by Pydantic; add no-op
 
+    if cfg.consumer.processor and cfg.consumer.projects is None:
+        warnings.append("[consumer].processor is deprecated; use [consumer].projects instead")
+    elif cfg.consumer.processor and cfg.consumer.projects is not None:
+        warnings.append("[consumer].processor is ignored when [consumer].projects is set")
+
     # plugins cmip6 hint
-    lp = (
-        cfg.plugins.cmip6.landing_page_url
-        if (cfg.plugins and cfg.plugins.cmip6)
-        else None
-    )
+    lp = cfg.plugins.cmip6.landing_page_url if (cfg.plugins and cfg.plugins.cmip6) else None
     if lp in (None, ""):
-        warnings.append(
-            "[plugins.cmip6].landing_page_url not set; landing pages may be missing"
-        )
+        warnings.append("[plugins.cmip6].landing_page_url not set; landing pages may be missing")
 
     return errors, warnings

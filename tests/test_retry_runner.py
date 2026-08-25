@@ -95,3 +95,31 @@ def test_run_file_reports_appended_daily_failure(monkeypatch, tmp_path: Path):
 
     assert result.failed == 1
     assert result.failure_files == {existing_failure}
+
+
+def test_filtered_retry_is_not_deleted_as_success(monkeypatch, tmp_path: Path):
+    from piddiplatsch import consumer
+    from piddiplatsch.persist import retry as retry_mod
+
+    source = tmp_path / "source.jsonl"
+    source.write_text("{}\n", encoding="utf-8")
+    failure_dir = tmp_path / "failures"
+    failure_dir.mkdir()
+
+    monkeypatch.setattr(retry_mod, "load_failed_messages", lambda _path: [("key", {})])
+    monkeypatch.setattr(
+        consumer,
+        "feed_messages_direct",
+        lambda *args, **kwargs: FeedResult(total=1, filtered=1),
+    )
+    runner = RetryRunner(
+        projects=["cmip6"],
+        failure_dir=failure_dir,
+        delete_after=True,
+    )
+
+    result = runner.run_file(source)
+
+    assert result.filtered == 1
+    assert result.failed == 1
+    assert source.exists()

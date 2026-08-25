@@ -15,7 +15,8 @@ piddi --config custom.toml config show
 
 | Section | Key | Purpose |
 | --- | --- | --- |
-| `consumer` | `processor` | Registered processor name; currently `cmip6`. |
+| `consumer` | `projects` | Plugin names to run, as a list or the string `all`. |
+| `consumer` | `processor` | Deprecated single-plugin setting used only when `projects` is absent. |
 | `consumer` | `topic` | Kafka topic to consume. |
 | `consumer` | `output_dir` | Root for failure, skipped, dump, and dry-run Handle JSONL files. |
 | `consumer` | `max_errors` | Stop after this many processing errors; `-1` disables the limit. |
@@ -40,3 +41,17 @@ librdkafka keys must be quoted in TOML, for example
 
 Use `etc/observe.toml` for safe exploration and `etc/esgf-example.toml` as a
 starting point for authenticated ESGF Kafka settings.
+
+Select projects in configuration:
+
+```toml
+[consumer]
+projects = ["cmip6"]
+# projects = ["cmip6", "cmip7"]
+# projects = "all"
+```
+
+For a single invocation, repeat `--project` or use `--all-projects`. CLI
+selection overrides configuration. Separate project-specific processes reading
+the same topic must use different Kafka `group.id` values; otherwise Kafka can
+deliver a project's records to a process that filters them out.

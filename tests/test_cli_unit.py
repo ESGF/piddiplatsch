@@ -55,6 +55,8 @@ class TestConsumeCommand:
         assert "Start the Kafka consumer" in result.output
         assert "--dump" in result.output
         assert "--dry-run" in result.output
+        assert "--project" in result.output
+        assert "--all-projects" in result.output
 
     @patch("piddiplatsch.cli.start_consumer")
     def test_consume_basic(self, mock_start_consumer, runner):
@@ -87,6 +89,31 @@ class TestConsumeCommand:
         assert mock_start_consumer.called
         call_kwargs = mock_start_consumer.call_args.kwargs
         assert call_kwargs.get("verbose") is True
+
+    @patch("piddiplatsch.cli.start_consumer")
+    def test_consume_with_several_projects(self, mock_start_consumer, runner):
+        result = runner.invoke(
+            cli,
+            ["consume", "--project", "cmip6", "--project", "cmip7"],
+        )
+        assert result.exit_code == 0
+        assert mock_start_consumer.call_args.kwargs["projects"] == ("cmip6", "cmip7")
+
+    @patch("piddiplatsch.cli.start_consumer")
+    def test_consume_with_all_projects(self, mock_start_consumer, runner):
+        result = runner.invoke(cli, ["consume", "--all-projects"])
+        assert result.exit_code == 0
+        assert mock_start_consumer.call_args.kwargs["projects"] == "all"
+
+    @patch("piddiplatsch.cli.start_consumer")
+    def test_consume_rejects_named_and_all_projects(self, mock_start_consumer, runner):
+        result = runner.invoke(
+            cli,
+            ["consume", "--project", "cmip6", "--all-projects"],
+        )
+        assert result.exit_code == 2
+        assert "cannot be combined" in result.output
+        mock_start_consumer.assert_not_called()
 
 
 class TestRetryCommand:
@@ -137,9 +164,7 @@ class TestRetryCommand:
 
         from piddiplatsch.result import RetryResult
 
-        mock_run_batch.return_value = RetryResult(
-            total=5, succeeded=5, failed=0, failure_files=set()
-        )
+        mock_run_batch.return_value = RetryResult(total=5, succeeded=5, failed=0, failure_files=set())
 
         result = runner.invoke(cli, ["retry", str(test_file)])
         assert result.exit_code == 0
@@ -154,9 +179,7 @@ class TestRetryCommand:
 
         from piddiplatsch.result import RetryResult
 
-        mock_run_batch.return_value = RetryResult(
-            total=10, succeeded=7, failed=3, failure_files=set()
-        )
+        mock_run_batch.return_value = RetryResult(total=10, succeeded=7, failed=3, failure_files=set())
 
         result = runner.invoke(cli, ["retry", str(test_file)])
         assert result.exit_code == 0
@@ -178,9 +201,7 @@ class TestRetryCommand:
 
         from piddiplatsch.result import RetryResult
 
-        mock_run_batch.return_value = RetryResult(
-            total=5, succeeded=3, failed=2, failure_files={new_failure}
-        )
+        mock_run_batch.return_value = RetryResult(total=5, succeeded=3, failed=2, failure_files={new_failure})
 
         from piddiplatsch.config import config
 
