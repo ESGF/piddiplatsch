@@ -23,14 +23,14 @@ piddi --config custom.toml config show
 | `consumer.transient` | `retries` | Number of retries for transient STAC patch retrieval. |
 | `consumer.transient` | `backoff_initial`, `backoff_max` | Exponential retry delay bounds in seconds. |
 | `consumer.transient` | `preflight_stac` | Probe the configured STAC service before consuming. |
-| `handle` | `backend` | `rest` for publication, legacy `pyhandle`, or `jsonl` for local output. |
+| `handle` | `backend` | `jsonl` (default) for local output, `rest` for publication, or legacy `pyhandle`. |
 | `handle` | `server_url`, `prefix`, `username`, `password` | Handle service connection and credentials. |
 | `handle` | `verify_https` | Verify Handle service TLS certificates; defaults to `true`. |
 | `handle` | `timeout` | Per-request Handle REST timeout in seconds; defaults to `10`. |
 | `stac` | `base_url`, `timeout`, `collection` | STAC lookup and patch retrieval settings. |
 | `lookup` | `enabled`, `backend` | Enable version lookup using `stac` or `es`. |
 | `elasticsearch` | `base_url`, `index` | Elasticsearch lookup settings when `lookup.backend = "es"`. |
-| `schema` | `strict_mode` | Reject incomplete or unsupported CMIP6 records when enabled. |
+| `schema` | `strict_mode` | Reject incomplete or unsupported records; defaults to `true`. |
 | `plugins.<name>` | `landing_page_url`, `max_parts`, `excluded_asset_keys` | Project-specific Handle-record behavior. |
 | `stats` | `interval_seconds`, `summary_interval` | Statistics reporting intervals. |
 | `stats` | `enable_db`, `db_path` | Optional SQLite statistics reporter. |

@@ -24,7 +24,7 @@ def testfile(testdata_path: Path):
 @pytest.fixture
 def handle_client():
     """
-    Returns a HandleClient instance connected to the test/mock Handle Service.
+    Returns the configured REST backend connected to the mock Handle Service.
     Requires Docker services to be running.
     """
     return get_handle_backend()

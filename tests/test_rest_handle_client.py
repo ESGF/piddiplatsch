@@ -5,6 +5,7 @@ import requests
 
 from piddiplatsch.config import config
 from piddiplatsch.handles.api import get_handle_backend
+from piddiplatsch.handles.jsonl_backend import JsonlHandleBackend
 from piddiplatsch.handles.pyhandle_backend import HandleClient
 from piddiplatsch.handles.rest_backend import RestHandleClient
 
@@ -138,15 +139,25 @@ def test_rest_client_rejects_unsuccessful_handle_response():
 def test_handle_backend_factory_selects_rest(monkeypatch):
     sentinel = object()
     config._set("handle", "backend", "rest")
-    monkeypatch.setattr("piddiplatsch.handles.api.RestHandleClient.from_config", lambda: sentinel)
+    monkeypatch.setattr(
+        "piddiplatsch.handles.api.RestHandleClient.from_config", lambda: sentinel
+    )
 
     assert get_handle_backend() is sentinel
+
+
+def test_handle_backend_factory_defaults_to_jsonl():
+    config._set("handle", None, {"prefix": "21.TEST"})
+
+    assert isinstance(get_handle_backend(), JsonlHandleBackend)
 
 
 def test_handle_backend_factory_keeps_pyhandle(monkeypatch):
     sentinel = object()
     config._set("handle", "backend", "pyhandle")
-    monkeypatch.setattr("piddiplatsch.handles.api.HandleClient.from_config", lambda: sentinel)
+    monkeypatch.setattr(
+        "piddiplatsch.handles.api.HandleClient.from_config", lambda: sentinel
+    )
 
     assert get_handle_backend() is sentinel
     assert HandleClient is not RestHandleClient

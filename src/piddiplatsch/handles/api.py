@@ -56,7 +56,7 @@ def get_handle_backend(
         return JsonlHandleBackend(project=project)
 
     backend_type: Literal["rest", "pyhandle", "jsonl"] = config.get(
-        "handle", "backend", fallback="rest"
+        "handle", "backend", fallback="jsonl"
     )
     logging.warning(f"Using handle backend: {backend_type}")
 

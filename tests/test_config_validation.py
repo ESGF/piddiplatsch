@@ -1,4 +1,6 @@
+from piddiplatsch.config import config
 from piddiplatsch.config.schema import validate_config
+from piddiplatsch.core.models import strict_mode
 
 
 def _base_config():
@@ -82,3 +84,9 @@ def test_processor_setting_is_rejected():
     errors, _ = validate_config(cfg)
 
     assert any("processor is not supported" in error for error in errors)
+
+
+def test_schema_is_strict_by_default():
+    config._set("schema", None, {})
+
+    assert strict_mode() is True

@@ -1,3 +1,5 @@
+import json
+import time
 from pathlib import Path
 
 import pytest
@@ -7,122 +9,74 @@ from piddiplatsch.testing.kafka_client import send_message_to_kafka
 pytestmark = pytest.mark.smoke
 
 
-def assert_dataset_record(handle_client, pid: str, all: bool = False):
-    record = handle_client.get(pid)
-    assert record is not None, f"PID {pid} was not registered"
-    print(record)
-    assert "URL" in record
-    assert "AGGREGATION_LEVEL" in record
-    assert "DATASET_ID" in record
-    assert "DATASET_VERSION" in record
-    assert "HOSTING_NODE" in record
-    if all:
-        assert "HAS_PARTS" in record
-
-
-def assert_file_record(handle_client, pid: str):
-    record = handle_client.get(pid)
-    assert record is not None, f"PID {pid} was not registered"
-    print(record)
-    assert "URL" in record
-    assert "AGGREGATION_LEVEL" in record
-    assert "FILE_NAME" in record
-    assert "IS_PART_OF" in record
-    assert "DOWNLOAD_URL" in record
-    assert "CHECKSUM" in record
-    assert "CHECKSUM_METHOD" in record
-    assert "FILE_SIZE" in record
-
-
-def assert_record(handle_client, pid, sub_pids, all: bool = False):
-    wait_for_pid(handle_client, pid)
-    assert_dataset_record(handle_client, pid, all)
-    for sub_pid in sub_pids:
-        assert_file_record(handle_client, sub_pid)
+PUBLICATION_CASES = [
+    pytest.param(
+        "cmip6.json",
+        "c8a64f32-53f9-393b-9fe3-0331dcb7759c",
+        "1b37978f-caf6-4e4a-9893-3266a93077a2",
+        id="cmip6",
+    ),
+    pytest.param(
+        "cmip6plus.json",
+        "bc85369b-44a5-3e57-8d91-251b63c8b9d3",
+        "4485e7f1-06fb-46a5-99b3-2fb951eeb80d",
+        id="cmip6plus",
+    ),
+    pytest.param(
+        "cmip7.json",
+        "1f062cde-b12d-335d-a30b-988188098842",
+        "7c4a583c-0bfe-4517-98fa-325084b02684",
+        id="cmip7",
+    ),
+    pytest.param(
+        "cordex-cmip6.json",
+        "b3eaa573-aee5-3f33-b36f-8970df2eba9a",
+        "415fb9b8-f11a-47ae-ab62-a5c5e17c77bf",
+        id="cordex-cmip6",
+    ),
+]
 
 
 def wait_for_pid(handle_client, pid: str, timeout: float = 15.0):
-    """Wait until a PID is available in the handle service or timeout."""
-    import time
-
-    start = time.time()
-    while time.time() - start < timeout:
-        if handle_client.get(pid):
-            return
+    """Wait until a PID is available in the Handle service or time out."""
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        record = handle_client.get(pid)
+        if record:
+            return record
         time.sleep(0.2)
     raise AssertionError(f"PID {pid} was not registered within {timeout:.1f} seconds")
 
 
-# ----------------------------
-# Smoke Tests
-# ----------------------------
+def assert_dataset_record(record: dict, dataset_pid: str, file_pid: str):
+    assert record["URL"].endswith(f"/21.TEST/{dataset_pid}")
+    assert record["AGGREGATION_LEVEL"] == "DATASET"
+    assert record["DATASET_ID"]
+    assert record["DATASET_VERSION"]
+    assert json.loads(record["HAS_PARTS"]) == [f"hdl:21.TEST/{file_pid}"]
+    assert json.loads(record["HOSTING_NODE"])["host"] != "unknown"
 
 
-def test_send_valid_cmip6_mri_6hr_dc4(testfile, handle_client):
-    p: Path = testfile(
-        "data_challenge_04",
-        "CMIP6",
-        "CMIP6.HighResMIP.MRI.MRI-AGCM3-2-H.highresSST-present.r1i1p1f1.6hrPlevPt.psl.gn.v20190820.json",
-    )
-    send_message_to_kafka(p)
-
-    pid = "b06058a6-1077-35cb-9500-1ccbd341d309"
-    pids = [
-        "7afa385c-faa4-3a5f-85e6-79da95ef3add",
-        "d58dc83b-a23a-308f-aada-1b2b7779d99a",
-        "19d85ef9-bf10-3712-9ad5-c2e9cf124c7e",
-        "321fff12-488d-3605-8e56-c1c4e75f4561",
-        "1e032121-8899-3fd0-9d81-380083338a29",
-        "0b469be3-c851-3c37-96fd-f0f30dd90809",
-        "4764e73c-ee61-38d7-aed5-4e35b8c1b39b",
-    ]
-    assert_record(handle_client, pid, pids)
+def assert_file_record(record: dict, dataset_pid: str, file_pid: str):
+    assert record["URL"].endswith(f"/21.TEST/{file_pid}")
+    assert record["AGGREGATION_LEVEL"] == "FILE"
+    assert record["FILE_NAME"]
+    assert record["IS_PART_OF"] == f"hdl:21.TEST/{dataset_pid}"
+    assert record["DOWNLOAD_URL"].startswith("https://")
+    assert record["CHECKSUM"]
+    assert record["CHECKSUM_METHOD"] == "sha2-256"
+    assert int(record["FILE_SIZE"]) > 0
 
 
-@pytest.mark.skip(reason="checksum failure")
-def test_send_valid_cmip6_ipsl_mon_dc4(testfile, handle_client):
-    p: Path = testfile(
-        "data_challenge_04",
-        "CMIP6",
-        "CMIP6.ScenarioMIP.IPSL.IPSL-CM6A-LR.ssp245.r1i1p1f1.Amon.pr.gr.v20190119.json",
-    )
-    send_message_to_kafka(p)
+@pytest.mark.parametrize("filename,dataset_pid,file_pid", PUBLICATION_CASES)
+def test_real_publication_for_each_project(
+    testfile, handle_client, filename: str, dataset_pid: str, file_pid: str
+):
+    publication: Path = testfile("publication_samples", filename)
 
-    pid = "11da5bd1-157f-3158-b775-ba42ed4e193b"
-    pids = ["d1e2181e-1066-3d33-b56a-f45bf7a40ab5"]
-    assert_record(handle_client, pid, pids)
+    send_message_to_kafka(publication)
 
-
-def test_send_invalid_cmip6_dkrz_yr_dc4(testfile):
-    p: Path = testfile(
-        "data_challenge_04",
-        "CMIP6_invalid",
-        "CMIP6.ScenarioMIP.DKRZ.MPI-ESM1-2-HR.ssp126.r1i1p1f1.Eyr.baresoilFrac.gn.v20190710.json",
-    )
-    send_message_to_kafka(p)
-
-
-def test_send_invalid_cmip6_ipsl_mon_dc4_missing_file_size(testfile):
-    p: Path = testfile(
-        "data_challenge_04",
-        "CMIP6_invalid",
-        "CMIP6.ScenarioMIP.IPSL.IPSL-CM6A-LR.ssp245.r1i1p1f1.Amon.pr.gr.v20190119_missing_file_size.json",
-    )
-    send_message_to_kafka(p)
-
-
-def test_send_multiple_files(testfile, handle_client):
-    files = [
-        testfile(
-            "data_challenge_04",
-            "CMIP6",
-            "CMIP6.HighResMIP.MRI.MRI-AGCM3-2-H.highresSST-present.r1i1p1f1.6hrPlevPt.psl.gn.v20190820.json",
-        ),
-        testfile(
-            "data_challenge_04",
-            "CMIP6",
-            "CMIP6.ScenarioMIP.IPSL.IPSL-CM6A-LR.ssp245.r1i1p1f1.Amon.pr.gr.v20190119.json",
-        ),
-    ]
-    for p in files:
-        send_message_to_kafka(p)
+    dataset = wait_for_pid(handle_client, dataset_pid)
+    file_record = wait_for_pid(handle_client, file_pid)
+    assert_dataset_record(dataset, dataset_pid, file_pid)
+    assert_file_record(file_record, dataset_pid, file_pid)
