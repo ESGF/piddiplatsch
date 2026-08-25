@@ -82,10 +82,14 @@ incremental and preserve the current CMIP6 behaviour with tests.
   `cordex-cmip6:pid` / `cordex-cmip6:tracking_id`, and uses the shared mapper.
   Its real queue fixture covers filename-keyed assets and exclusion of the
   non-file `globus` asset.
+- CMIP6Plus is registered as `cmip6plus`, resolves `cmip6plus:pid` /
+  `cmip6plus:tracking_id`, and uses the shared mapper. Its fixture represents
+  the duplicated 20-file dataset observed in the real queue.
 
 Remaining items below include project-scoped output/provenance, stronger PID
-edge-case coverage and operational rollout checks, plus plugins for the other
-observed projects (next: CMIP6Plus).
+edge-case coverage and operational rollout checks. All projects observed in the
+captured queue now have plugins; CORDEX-CMIP7 remains a future project pending a
+representative publication record.
 
 ### Target design
 

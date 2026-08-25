@@ -67,11 +67,13 @@ def list_plugins() -> list[str]:
 # Built-ins are imported explicitly. Import failures must stop startup rather
 # than leaving a mysteriously incomplete registry.
 from piddiplatsch.plugins.cmip6.plugin import plugin as cmip6_plugin  # noqa: E402
+from piddiplatsch.plugins.cmip6plus.plugin import plugin as cmip6plus_plugin  # noqa: E402
 from piddiplatsch.plugins.cmip7.plugin import plugin as cmip7_plugin  # noqa: E402
 from piddiplatsch.plugins.cordex_cmip6.plugin import (  # noqa: E402
     plugin as cordex_cmip6_plugin,
 )
 
 register_plugin(cmip6_plugin)
+register_plugin(cmip6plus_plugin)
 register_plugin(cmip7_plugin)
 register_plugin(cordex_cmip6_plugin)

@@ -105,6 +105,11 @@ landing_page_url = "https://handle-esgf.dkrz.de/lp"
 max_parts = -1
 excluded_asset_keys = ["reference_file", "globus", "thumbnail", "quicklook"]
 
+[plugins.cmip6plus]
+landing_page_url = "https://handle-esgf.dkrz.de/lp"
+max_parts = -1
+excluded_asset_keys = ["reference_file", "globus", "thumbnail", "quicklook"]
+
 [lookup]
 # Lookup backend: "stac" (requires stac.base_url) or "es" (requires elasticsearch.base_url).
 backend = "stac"

@@ -31,7 +31,8 @@ The project is fully open-source and documented. ESGF sites and other organizati
 
 ## 🧭 Project support
 
-CMIP6, CMIP7, and CORDEX-CMIP6 are implemented as built-in project plugins.
+CMIP6, CMIP6Plus, CMIP7, and CORDEX-CMIP6 are implemented as built-in project
+plugins.
 
 One consumer can read the shared ESGF publication topic and route records to one,
 several, or all selected project plugins. Unrelated records are filtered without
@@ -275,6 +276,7 @@ complexity today.
 Currently implemented project plugins are:
 
 - `cmip6` (default)
+- `cmip6plus`
 - `cmip7`
 - `cordex-cmip6`
 

@@ -41,18 +41,20 @@ until an external plugin actually exists. A hook framework such as `pluggy` is
 only justified later if the plugin contract grows beyond metadata, construction,
 preflight, and processing.
 
-CMIP6, CMIP7, and CORDEX-CMIP6 share `StacProjectProcessor`, narrow STAC record
-adapters, and project-neutral Pydantic Handle output models. Input publication
-records are not validated against a complete STAC schema. Core checks only the
-envelope and the object/field shapes consumed by mapping; Pydantic validates the
-Handle records produced by each plugin. Thin plugin classes declare project PID
-fields and retain genuine differences, such as CMIP6 version lookup.
+CMIP6, CMIP6Plus, CMIP7, and CORDEX-CMIP6 share `StacProjectProcessor`, narrow
+STAC record adapters, and project-neutral Pydantic Handle output models. Input
+publication records are not validated against a complete STAC schema. Core
+checks only the envelope and the object/field shapes consumed by mapping;
+Pydantic validates the Handle records produced by each plugin. Thin plugin
+classes declare project PID fields and retain genuine differences, such as
+CMIP6 version lookup.
 
 Canonical PID fields currently are `cmip6:pid` / `cmip6:tracking_id` and
 `cmip7:pid` / `cmip7:tracking_id`, plus `cordex-cmip6:pid` /
-`cordex-cmip6:tracking_id`. CMIP6 additionally accepts its known legacy
-unnamespaced fields. Relationships are built from resolved source PIDs rather
-than independently generated identifiers.
+`cordex-cmip6:tracking_id` and `cmip6plus:pid` /
+`cmip6plus:tracking_id`. CMIP6 additionally accepts its known legacy unnamespaced
+fields. Relationships are built from resolved source PIDs rather than
+independently generated identifiers.
 
 ## Selection
 
@@ -77,7 +79,7 @@ process may receive and filter records intended for the other.
 
 ## Current scope
 
-CMIP6, CMIP7, and CORDEX-CMIP6 are implemented. The shared queue also contains
-other project identifiers; until their plugins are implemented, those records
-are filtered even when `all` is selected because `all` means all registered
-plugins, not every identifier present on the topic.
+All four project identifiers observed in the 2026-08-25 queue dump are
+implemented: CMIP6, CMIP6Plus, CMIP7, and CORDEX-CMIP6. Unknown future project
+identifiers are filtered even when `all` is selected because `all` means all
+registered plugins, not every identifier that may appear on the topic.
