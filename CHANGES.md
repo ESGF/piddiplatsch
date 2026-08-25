@@ -4,6 +4,11 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+## [2.2.1] - 2026-08-25
+### Changed
+- Transferred the canonical repository from `cehbrecht/piddiplatsch` to `ESGF/piddiplatsch` and updated package metadata, repository links, and contributor instructions.
+- Renamed the notebook environment from `piddiplatsch2` to `piddiplatsch`.
+
 ## [2.2.0] - 2026-03-03
 ### Changed
 - Plugins: Namespace CMIP6 configuration under `[plugins.cmip6]` and switch to a static plugin registry (single active plugin selected via `consumer.processor`).
@@ -38,4 +43,3 @@ All notable changes to this project are documented here.
 - Add bump-my-version configuration and Makefile targets for patch/minor/major bumps.
 - Update README with concise tagline and brief versioning usage.
 - Establish Kafka consumer, CLI entry point, and basic tooling.
-
