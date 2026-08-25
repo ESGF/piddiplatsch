@@ -263,10 +263,15 @@ Implementation details:
 Piddiplatsch uses a small, explicit plugin interface and a router in front of
 project-specific processors.
 
-This is **not** a dynamic plugin ecosystem. The mechanism exists to:
+This is **not currently** a dynamic plugin ecosystem. Plugins organize built-in
+project code through a deliberately small interface. The mechanism exists to:
 - isolate CMIP6-specific logic
 - allow future formats (e.g. CMIP7) to be added cleanly
 - keep testing and evolution predictable
+
+The same plugin specification can later become the boundary for external Python
+packages discovered through standard package entry points, without adding that
+complexity today.
 
 Currently, the only implemented project plugin is:
 

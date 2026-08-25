@@ -33,6 +33,14 @@ Project plugins are built-ins registered explicitly by `PluginSpec`. A spec owns
 the canonical plugin name, accepted publication project identifiers, and the
 processor factory. Import failures are not hidden.
 
+The registry is intentionally static while plugins live in this repository.
+`PluginSpec` is also the future packaging boundary: independently distributed
+plugins could expose specs through a standard Python package entry-point group
+loaded with `importlib.metadata`. That discovery mechanism is not implemented
+until an external plugin actually exists. A hook framework such as `pluggy` is
+only justified later if the plugin contract grows beyond metadata, construction,
+preflight, and processing.
+
 ## Selection
 
 `consumer.projects` selects a list of plugin names or `all`. Repeated

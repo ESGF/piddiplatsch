@@ -424,13 +424,22 @@ extension before designing around one.
 
 ### Plugin/registry cleanup
 
-- Decide between simple static built-in registration and external package
-  discovery. The immediate requirement is project plugins shipped with piddi;
-  do not add a dynamic plugin framework unless there is a concrete external
-  plugin use case.
-- Remove the unused plugin abstraction after that decision, or make it the
-  single source of plugin metadata and factories. Do not keep parallel
-  `PluginSpec` and processor-class registration mechanisms.
+- Keep registration simple and static while plugins are used to organize code
+  shipped inside the piddiplatsch repository. `PluginSpec` is the single source
+  of plugin identity, accepted project identifiers, and processor construction;
+  do not keep a parallel processor-class registry.
+- Preserve a clean future discovery boundary without implementing it yet. If
+  plugins later live in independent Python distributions, prefer standard
+  package entry points discovered with `importlib.metadata` (for example a
+  dedicated `piddiplatsch.plugins` entry-point group) that return the same
+  `PluginSpec` objects used by built-ins.
+- Consider `pluggy`, the hook mechanism used by pytest, only if external plugins
+  eventually require a richer versioned hook/lifecycle API. Do not add it merely
+  for package discovery or the current factory/process interface.
+- When external discovery becomes a real requirement, define API compatibility,
+  plugin version metadata, deterministic load order, name/project-id collision
+  handling, isolation of import failures, and an explicit way to disable
+  third-party plugins before enabling it by default.
 - Do not hide plugin import errors in the registry. Detect duplicate plugin
   names and project identifiers during startup.
 - Reduce global state for configuration and statistics. Pass configuration,
