@@ -134,6 +134,19 @@ piddi --config custom.toml --verbose publish --limit 1000 \
   outputs/cmip6/handles/handles_2026-08-25.jsonl
 ```
 
+Continue with the next batch by combining the offset and limit:
+
+```bash
+piddi --config custom.toml --verbose publish \
+  --offset 1000 --limit 1000 --retries 3 \
+  outputs/cmip6/handles/handles_2026-08-25.jsonl
+```
+
+Retries cover transient connection errors, timeouts, rate limiting, and server
+errors. The delay starts at one second and doubles for each retry; customize it
+with `--retry-delay`. Permanent client errors such as invalid credentials are
+not retried.
+
 You can also pass one file, several files, or a directory. `publish` never
 changes or deletes its inputs. Publication uses Handle overwrite semantics, so
 an immutable file can safely be run again after an interruption. The command

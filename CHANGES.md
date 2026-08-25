@@ -10,6 +10,7 @@ All notable changes to this project are documented here.
 
 ### Changed
 - JSONL is now the safe default Handle backend, and strict schema validation defaults to enabled.
+- Deferred Handle publication supports bounded batches, offsets, and transient retries with exponential backoff.
 - Tests now use temporary folders and leave local output files untouched.
 - Cleaned up dependencies, development tools, CI, and packaging.
 

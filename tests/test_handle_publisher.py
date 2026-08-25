@@ -1,5 +1,7 @@
 import json
 
+import requests
+
 from piddiplatsch.config import config
 from piddiplatsch.handles.jsonl_backend import JsonlHandleBackend
 from piddiplatsch.handles.publish import HandlePublisher
@@ -16,6 +18,20 @@ class FakeBackend:
         if pid == self.failing_pid:
             raise RuntimeError("server unavailable")
         self.published.append((pid, record))
+
+
+class TransientBackend(FakeBackend):
+    def __init__(self, failures, exception=None):
+        super().__init__()
+        self.failures = failures
+        self.exception = exception or requests.ConnectionError("connection lost")
+        self.calls = 0
+
+    def add(self, pid, record):
+        self.calls += 1
+        if self.calls <= self.failures:
+            raise self.exception
+        super().add(pid, record)
 
 
 def write_jsonl(path, records):
@@ -164,3 +180,85 @@ def test_limit_caps_records_across_files_and_stops_reading(tmp_path):
     assert result.total == 3
     assert result.succeeded == 3
     assert [pid for pid, _ in backend.published] == ["one", "two", "three"]
+
+
+def test_offset_skips_records_across_files(tmp_path):
+    write_jsonl(
+        tmp_path / "handles_1.jsonl",
+        [handle_record("one"), handle_record("two")],
+    )
+    write_jsonl(
+        tmp_path / "handles_2.jsonl",
+        [handle_record("three"), handle_record("four")],
+    )
+    backend = FakeBackend()
+
+    result = HandlePublisher(backend).run([tmp_path], offset=2, limit=1)
+
+    assert result.total == 1
+    assert result.succeeded == 1
+    assert [pid for pid, _ in backend.published] == ["three"]
+
+
+def test_offset_and_limit_select_requested_window(tmp_path):
+    source = tmp_path / "handles.jsonl"
+    write_jsonl(source, [handle_record(str(index)) for index in range(5)])
+    backend = FakeBackend()
+
+    result = HandlePublisher(backend).run([source], offset=2, limit=2)
+
+    assert result.succeeded == 2
+    assert [pid for pid, _ in backend.published] == ["2", "3"]
+
+
+def test_retries_transient_failures_with_exponential_backoff(tmp_path):
+    source = tmp_path / "handles.jsonl"
+    write_jsonl(source, [handle_record("abc")])
+    backend = TransientBackend(failures=2)
+    delays = []
+
+    result = HandlePublisher(backend, sleep=delays.append).run(
+        [source], retries=3, retry_delay=0.5
+    )
+
+    assert result.succeeded == 1
+    assert result.failed == 0
+    assert result.retry_attempts == 2
+    assert backend.calls == 3
+    assert delays == [0.5, 1.0]
+
+
+def test_stops_retrying_after_configured_attempts(tmp_path):
+    source = tmp_path / "handles.jsonl"
+    write_jsonl(source, [handle_record("abc")])
+    backend = TransientBackend(failures=3)
+    delays = []
+
+    result = HandlePublisher(backend, sleep=delays.append).run(
+        [source], retries=2, retry_delay=1.0
+    )
+
+    assert result.succeeded == 0
+    assert result.failed == 1
+    assert result.retry_attempts == 2
+    assert backend.calls == 3
+    assert delays == [1.0, 2.0]
+
+
+def test_does_not_retry_permanent_http_error(tmp_path):
+    source = tmp_path / "handles.jsonl"
+    write_jsonl(source, [handle_record("abc")])
+    response = requests.Response()
+    response.status_code = 401
+    backend = TransientBackend(
+        failures=1,
+        exception=requests.HTTPError("authentication failed", response=response),
+    )
+    delays = []
+
+    result = HandlePublisher(backend, sleep=delays.append).run([source], retries=3)
+
+    assert result.failed == 1
+    assert result.retry_attempts == 0
+    assert backend.calls == 1
+    assert delays == []

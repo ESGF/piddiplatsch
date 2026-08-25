@@ -100,8 +100,36 @@ def consume(ctx, dump, dry_run, force, projects, all_projects):
     type=click.IntRange(min=1),
     help="Stop after attempting this many Handle records in total.",
 )
+@click.option(
+    "--offset",
+    type=click.IntRange(min=0),
+    default=0,
+    show_default=True,
+    help="Skip this many Handle records before publishing.",
+)
+@click.option(
+    "--retries",
+    type=click.IntRange(min=0),
+    default=0,
+    show_default=True,
+    help="Retry each transient Handle request this many times.",
+)
+@click.option(
+    "--retry-delay",
+    type=click.FloatRange(min=0),
+    default=1.0,
+    show_default=True,
+    help="Initial retry delay in seconds; subsequent delays double.",
+)
 @click.pass_context
-def publish(ctx, path: tuple[Path, ...], limit: int | None):
+def publish(
+    ctx,
+    path: tuple[Path, ...],
+    limit: int | None,
+    offset: int,
+    retries: int,
+    retry_delay: float,
+):
     """Publish prepared handles from immutable JSONL FILE_OR_DIRECTORY inputs.
 
     The source files are never changed. Re-running a file is safe because the
@@ -117,6 +145,9 @@ def publish(ctx, path: tuple[Path, ...], limit: int | None):
     result = HandlePublisher().run(
         path,
         limit=limit,
+        offset=offset,
+        retries=retries,
+        retry_delay=retry_delay,
         progress_callback=show_progress if verbose else None,
     )
     if result.total == 0:
@@ -126,6 +157,8 @@ def publish(ctx, path: tuple[Path, ...], limit: int | None):
     click.echo(f"Published {result.succeeded}/{result.total} handles.")
     if limit is not None and result.total == limit:
         click.echo(f"Stopped after reaching the limit of {limit} records.")
+    if result.retry_attempts:
+        click.echo(f"Retry attempts: {result.retry_attempts}")
     if result.failed:
         click.echo(f"Failed: {result.failed}")
         for error in result.errors:
