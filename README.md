@@ -72,7 +72,7 @@ make develop
 make test            # unit + integration
 
 # 3) Run the consumer (requires Kafka + Handle)
-piddi --help         # commands: consume, retry
+piddi --help         # commands: consume, publish, retry
 piddi consume --help
 piddi --verbose consume
 ```
@@ -112,13 +112,58 @@ What this does:
 
 See the configuration at [etc/observe.toml](etc/observe.toml).
 
+### Deferred Handle publication
+
+The Kafka consumer can write prepared Handle records to daily JSONL files while
+a separate command publishes a closed file later. Keep `[handle].backend` set to
+`jsonl` (or run `consume --dry-run`) and configure the REST server and
+credentials in the same local configuration file.
+
+For example, publish all project files from yesterday:
+
+```bash
+piddi --config custom.toml --verbose publish \
+  outputs/*/handles/handles_2026-08-24.jsonl
+```
+
+For a limited trial against the current file, cap the total number of attempted
+records:
+
+```bash
+piddi --config custom.toml --verbose publish --limit 1000 \
+  outputs/cmip6/handles/handles_2026-08-25.jsonl
+```
+
+Continue with the next batch by combining the offset and limit:
+
+```bash
+piddi --config custom.toml --verbose publish \
+  --offset 1000 --limit 1000 --retries 3 \
+  outputs/cmip6/handles/handles_2026-08-25.jsonl
+```
+
+Retries cover transient connection errors, timeouts, rate limiting, and server
+errors. The delay starts at one second and doubles for each retry; customize it
+with `--retry-delay`. Permanent client errors such as invalid credentials are
+not retried. Verbose progress shows both the absolute record position and its
+position within the selected batch. Publication outcomes are written to the
+standard log file (`pid.log` by default). Pass the existing global `--verbose`
+option to enable the terminal progress bar; without it, only the final summary
+is printed.
+
+You can also pass one file, several files, or a directory. `publish` never
+changes or deletes its inputs. Publication uses Handle overwrite semantics, so
+an immutable file can safely be run again after an interruption. The command
+continues after individual record failures, prints a summary, and exits non-zero
+if any record could not be published.
+
 ---
 
 ## ✨ Features
 
 - Kafka consumer and project router for the shared ESGF publication stream
 - Register and update PIDs via Handle Service
-- CLI commands: `consume`, `retry`
+- CLI commands: `consume`, `publish`, `retry`
 - Multihash checksum support
 - Explicit built-in project plugin registry (pure Python, no dynamic framework)
 - Select one, several, or all registered project plugins

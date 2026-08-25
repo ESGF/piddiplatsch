@@ -3,9 +3,11 @@ from pathlib import Path
 
 import click
 import toml
+from tqdm import tqdm
 
 from piddiplatsch.config import config
 from piddiplatsch.consumer import configured_projects, start_consumer
+from piddiplatsch.handles.publish import HandlePublisher
 from piddiplatsch.persist.retry import RetryRunner
 
 CONTEXT_SETTINGS = dict(help_option_names=["-h", "--help"])
@@ -82,6 +84,117 @@ def consume(ctx, dump, dry_run, force, projects, all_projects):
         dry_run=dry_run,
         force=force,
     )
+
+
+# publish command
+
+
+@cli.command("publish")
+@click.argument(
+    "path",
+    type=click.Path(exists=True, path_type=Path),
+    nargs=-1,
+    required=True,
+)
+@click.option(
+    "--limit",
+    type=click.IntRange(min=1),
+    help="Stop after attempting this many Handle records in total.",
+)
+@click.option(
+    "--offset",
+    type=click.IntRange(min=0),
+    default=0,
+    show_default=True,
+    help="Skip this many Handle records before publishing.",
+)
+@click.option(
+    "--retries",
+    type=click.IntRange(min=0),
+    default=0,
+    show_default=True,
+    help="Retry each transient Handle request this many times.",
+)
+@click.option(
+    "--retry-delay",
+    type=click.FloatRange(min=0),
+    default=1.0,
+    show_default=True,
+    help="Initial retry delay in seconds; subsequent delays double.",
+)
+@click.pass_context
+def publish(
+    ctx,
+    path: tuple[Path, ...],
+    limit: int | None,
+    offset: int,
+    retries: int,
+    retry_delay: float,
+):
+    """Publish prepared handles from immutable JSONL FILE_OR_DIRECTORY inputs.
+
+    The source files are never changed. Re-running a file is safe because the
+    Handle REST client publishes with overwrite enabled.
+    """
+    verbose = ctx.obj.get("verbose", False)
+    last_record_position = offset
+    progress_bar = None
+    progress_succeeded = 0
+    progress_failed = 0
+
+    def show_progress(index, total, handle, error):
+        nonlocal last_record_position, progress_bar, progress_succeeded, progress_failed
+        last_record_position = offset + index
+        if not verbose:
+            return
+        if progress_bar is None:
+            progress_bar = tqdm(
+                total=total,
+                desc=f"publish records {offset + 1}-{offset + total}",
+                unit="handle",
+                dynamic_ncols=True,
+            )
+        if error is None:
+            progress_succeeded += 1
+        else:
+            progress_failed += 1
+        progress_bar.set_postfix(
+            record=last_record_position,
+            ok=progress_succeeded,
+            failed=progress_failed,
+        )
+        progress_bar.update(1)
+
+    try:
+        result = HandlePublisher().run(
+            path,
+            limit=limit,
+            offset=offset,
+            retries=retries,
+            retry_delay=retry_delay,
+            progress_callback=show_progress,
+        )
+    finally:
+        if progress_bar is not None:
+            progress_bar.close()
+
+    if result.total == 0:
+        click.echo("No handle records found.")
+        return
+
+    click.echo(f"Published {result.succeeded}/{result.total} handles.")
+    if last_record_position > offset:
+        click.echo(f"Processed record range: {offset + 1}-{last_record_position}.")
+    if limit is not None and result.total == limit:
+        click.echo(f"Stopped after reaching the limit of {limit} records.")
+    if result.retry_attempts:
+        click.echo(f"Retry attempts: {result.retry_attempts}")
+    if result.failed:
+        click.echo(f"Failed: {result.failed}")
+        for error in result.errors:
+            click.echo(f"  - {error}")
+    if result.failed:
+        raise click.exceptions.Exit(1)
 
 
 # retry command

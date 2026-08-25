@@ -52,6 +52,17 @@ class RetryResult:
 
 
 @dataclass
+class PublishResult:
+    """Result of publishing prepared Handle records from JSONL files."""
+
+    total: int = 0
+    succeeded: int = 0
+    failed: int = 0
+    retry_attempts: int = 0
+    errors: list[str] = field(default_factory=list)
+
+
+@dataclass
 class PrepareResult:
     payload: dict
     infos: dict | None = None

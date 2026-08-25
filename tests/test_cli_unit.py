@@ -6,6 +6,7 @@ import pytest
 from click.testing import CliRunner
 
 from piddiplatsch.cli import cli
+from piddiplatsch.result import PublishResult
 
 
 @pytest.fixture
@@ -23,6 +24,7 @@ class TestCLIBasics:
         assert result.exit_code == 0
         assert "CLI to interact with Kafka and Handle Service" in result.output
         assert "consume" in result.output
+        assert "publish" in result.output
         assert "retry" in result.output
 
     def test_cli_help_short(self, runner):
@@ -271,6 +273,166 @@ class TestRetryCommand:
         # Check that paths were passed as tuple to run_batch
         call_args = instance.run_batch.call_args.args
         assert len(call_args[0]) == 2
+
+
+class TestPublishCommand:
+    def test_publish_help(self, runner):
+        result = runner.invoke(cli, ["publish", "--help"])
+
+        assert result.exit_code == 0
+        assert "Publish prepared handles" in result.output
+        assert "--limit" in result.output
+        assert "--offset" in result.output
+        assert "--retries" in result.output
+        assert "--retry-delay" in result.output
+
+    @patch("piddiplatsch.cli.HandlePublisher")
+    def test_publish_reports_success(self, publisher_cls, runner, tmp_path):
+        source = tmp_path / "handles.jsonl"
+        source.touch()
+        publisher_cls.return_value.run.return_value = PublishResult(
+            total=3, succeeded=3
+        )
+
+        result = runner.invoke(cli, ["publish", str(source)])
+
+        assert result.exit_code == 0
+        assert "Published 3/3 handles" in result.output
+        publisher_cls.return_value.run.assert_called_once()
+        assert publisher_cls.return_value.run.call_args.kwargs["limit"] is None
+        assert publisher_cls.return_value.run.call_args.kwargs["offset"] == 0
+        assert publisher_cls.return_value.run.call_args.kwargs["retries"] == 0
+        assert publisher_cls.return_value.run.call_args.kwargs["retry_delay"] == 1.0
+
+    @patch("piddiplatsch.cli.HandlePublisher")
+    def test_publish_exits_nonzero_after_failures(
+        self, publisher_cls, runner, tmp_path
+    ):
+        source = tmp_path / "handles.jsonl"
+        source.touch()
+        publisher_cls.return_value.run.return_value = PublishResult(
+            total=3,
+            succeeded=2,
+            failed=1,
+            errors=["handles.jsonl:3: server unavailable"],
+        )
+
+        result = runner.invoke(cli, ["publish", str(source)])
+
+        assert result.exit_code == 1
+        assert "Published 2/3 handles" in result.output
+        assert "server unavailable" in result.output
+
+    @patch("piddiplatsch.cli.tqdm")
+    @patch("piddiplatsch.cli.HandlePublisher")
+    def test_publish_verbose_progress(self, publisher_cls, tqdm_cls, runner, tmp_path):
+        source = tmp_path / "handles.jsonl"
+        source.touch()
+
+        def run(paths, limit, offset, retries, retry_delay, progress_callback):
+            progress_callback(1, 1, "21.TEST/abc", None)
+            return PublishResult(total=1, succeeded=1)
+
+        publisher_cls.return_value.run.side_effect = run
+
+        result = runner.invoke(
+            cli, ["--verbose", "publish", "--offset", "1000", str(source)]
+        )
+
+        assert result.exit_code == 0
+        assert "Processed record range: 1001-1001" in result.output
+        tqdm_cls.assert_called_once_with(
+            total=1,
+            desc="publish records 1001-1001",
+            unit="handle",
+            dynamic_ncols=True,
+        )
+        progress_bar = tqdm_cls.return_value
+        progress_bar.update.assert_called_once_with(1)
+        progress_bar.close.assert_called_once()
+
+    @patch("piddiplatsch.cli.tqdm")
+    @patch("piddiplatsch.cli.HandlePublisher")
+    def test_publish_without_verbose_skips_progress_bar(
+        self, publisher_cls, tqdm_cls, runner, tmp_path
+    ):
+        source = tmp_path / "handles.jsonl"
+        source.touch()
+
+        def run(paths, limit, offset, retries, retry_delay, progress_callback):
+            progress_callback(1, 1, "21.TEST/abc", None)
+            return PublishResult(total=1, succeeded=1)
+
+        publisher_cls.return_value.run.side_effect = run
+
+        result = runner.invoke(cli, ["publish", str(source)])
+
+        assert result.exit_code == 0
+        assert "Published 1/1 handles" in result.output
+        tqdm_cls.assert_not_called()
+
+    @patch("piddiplatsch.cli.HandlePublisher")
+    def test_publish_passes_limit(self, publisher_cls, runner, tmp_path):
+        source = tmp_path / "handles.jsonl"
+        source.touch()
+        publisher_cls.return_value.run.return_value = PublishResult(
+            total=1000, succeeded=1000
+        )
+
+        result = runner.invoke(cli, ["publish", "--limit", "1000", str(source)])
+
+        assert result.exit_code == 0
+        assert publisher_cls.return_value.run.call_args.kwargs["limit"] == 1000
+        assert "Stopped after reaching the limit of 1000 records" in result.output
+
+    @patch("piddiplatsch.cli.HandlePublisher")
+    def test_publish_passes_offset(self, publisher_cls, runner, tmp_path):
+        source = tmp_path / "handles.jsonl"
+        source.touch()
+        publisher_cls.return_value.run.return_value = PublishResult(
+            total=1000, succeeded=1000
+        )
+
+        result = runner.invoke(
+            cli,
+            [
+                "publish",
+                "--offset",
+                "1000",
+                "--limit",
+                "1000",
+                str(source),
+            ],
+        )
+
+        assert result.exit_code == 0
+        assert publisher_cls.return_value.run.call_args.kwargs["offset"] == 1000
+
+    @patch("piddiplatsch.cli.HandlePublisher")
+    def test_publish_passes_retry_options(self, publisher_cls, runner, tmp_path):
+        source = tmp_path / "handles.jsonl"
+        source.touch()
+        publisher_cls.return_value.run.return_value = PublishResult(
+            total=1, succeeded=1, retry_attempts=2
+        )
+
+        result = runner.invoke(
+            cli,
+            [
+                "publish",
+                "--retries",
+                "3",
+                "--retry-delay",
+                "0.25",
+                str(source),
+            ],
+        )
+
+        assert result.exit_code == 0
+        kwargs = publisher_cls.return_value.run.call_args.kwargs
+        assert kwargs["retries"] == 3
+        assert kwargs["retry_delay"] == 0.25
+        assert "Retry attempts: 2" in result.output
 
 
 class TestCLIOptions:

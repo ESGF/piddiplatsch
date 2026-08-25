@@ -41,11 +41,20 @@ class DailyJsonlWriter:
         return target_path
 
 
-def read_jsonl(file_path: Path) -> list[dict]:
-    """Read a JSONL file without silently dropping malformed records."""
+def read_jsonl(
+    file_path: Path,
+    limit: int | None = None,
+    offset: int = 0,
+) -> list[dict]:
+    """Read a bounded window of JSONL records without dropping malformed input."""
+    if limit is not None and limit < 1:
+        raise ValueError("limit must be at least 1")
+    if offset < 0:
+        raise ValueError("offset cannot be negative")
     if not file_path.exists():
         return []
     records: list[dict] = []
+    record_number = 0
     with file_path.open("r", encoding="utf-8") as f:
         for line_number, line in enumerate(f, start=1):
             line = line.strip()
@@ -61,7 +70,12 @@ def read_jsonl(file_path: Path) -> list[dict]:
                 raise JsonlReadError(
                     f"Expected a JSON object in {file_path} at line {line_number}"
                 )
+            record_number += 1
+            if record_number <= offset:
+                continue
             records.append(record)
+            if limit is not None and len(records) >= limit:
+                break
     return records
 
 
