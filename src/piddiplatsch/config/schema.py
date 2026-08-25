@@ -78,20 +78,25 @@ class KafkaConfig(BaseModel):
 class HandleConfig(BaseModel):
     model_config = ConfigDict(extra="allow")
 
-    backend: Literal["pyhandle", "jsonl"] | None = None
+    backend: Literal["rest", "pyhandle", "jsonl"] | None = None
     server_url: str | None = None
     prefix: str | None = None
     username: str | None = None
     password: str | None = None
     verify_https: bool = True
+    timeout: float = Field(default=10.0, gt=0)
 
     @model_validator(mode="after")
-    def _check_pyhandle_requirements(self) -> HandleConfig:
-        if self.backend == "pyhandle":
+    def _check_publication_requirements(self) -> HandleConfig:
+        if self.backend in ("rest", "pyhandle"):
             if not self.server_url:
                 raise ValueError("Missing required setting: [handle].server_url")
             if not self.prefix:
                 raise ValueError("Missing required setting: [handle].prefix")
+            if not self.username:
+                raise ValueError("Missing required setting: [handle].username")
+            if not self.password:
+                raise ValueError("Missing required setting: [handle].password")
         return self
 
 
@@ -115,7 +120,7 @@ class LookupConfig(BaseModel):
 
 class SchemaConfig(BaseModel):
     model_config = ConfigDict(extra="allow")
-    strict_mode: bool | None = None
+    strict_mode: bool = True
 
 
 class ProjectPluginConfig(BaseModel):
@@ -175,9 +180,13 @@ def validate_config(data: dict) -> tuple[list[str], list[str]]:
         return errors, warnings
 
     # warnings
-    if cfg.handle and (
-        cfg.handle.username == "300:21.TEST/testuser"
-        and cfg.handle.password == "testpass"
+    if (
+        cfg.handle
+        and cfg.handle.backend in ("rest", "pyhandle")
+        and (
+            cfg.handle.username == "300:21.TEST/testuser"
+            and cfg.handle.password == "testpass"
+        )
     ):
         warnings.append("[handle] demo credentials detected; do not use in production")
     if cfg.lookup and cfg.lookup.enabled and cfg.lookup.backend == "es":

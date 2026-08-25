@@ -7,6 +7,7 @@ from piddiplatsch.config import config
 from piddiplatsch.handles.base import HandleBackend
 from piddiplatsch.handles.jsonl_backend import JsonlHandleBackend
 from piddiplatsch.handles.pyhandle_backend import HandleClient
+from piddiplatsch.handles.rest_backend import RestHandleClient
 
 
 class HandleAPIProtocol(Protocol):
@@ -47,17 +48,20 @@ def get_handle_backend(
     Return a HandleBackend based on configuration.
 
     Config keys expected in [handle] section:
-      backend = "pyhandle" | "jsonl"
+      backend = "rest" | "pyhandle" | "jsonl"
       jsonl_path = "test-handles.jsonl"  # only for jsonl
     """
     if dry_run:
         logging.warning("Dry-run enabled: using JSONL handle backend")
         return JsonlHandleBackend(project=project)
 
-    backend_type: Literal["pyhandle", "jsonl"] = config.get(
-        "handle", "backend", fallback="pyhandle"
+    backend_type: Literal["rest", "pyhandle", "jsonl"] = config.get(
+        "handle", "backend", fallback="jsonl"
     )
     logging.warning(f"Using handle backend: {backend_type}")
+
+    if backend_type == "rest":
+        return RestHandleClient.from_config()
 
     if backend_type == "pyhandle":
         return HandleClient.from_config()

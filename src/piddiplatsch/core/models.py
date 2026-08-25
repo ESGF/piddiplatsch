@@ -18,7 +18,7 @@ ALLOWED_CHECKSUM_METHODs = {
 
 
 def strict_mode() -> bool:
-    return config.get("schema", {}).get("strict_mode", False)
+    return config.get("schema", {}).get("strict_mode", True)
 
 
 class HostingNode(BaseModel):

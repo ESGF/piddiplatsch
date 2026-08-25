@@ -1,11 +1,14 @@
 ## Project plugin selection belongs under [consumer]
 
 [consumer]
-projects = ["cmip6"]
+projects = "all"
 topic = "CMIP6"
 retry_topic = "CMIP6"
 output_dir = "outputs"
 max_errors = 10
+
+[consumer.transient]
+preflight_stac = false
 
 [kafka]
 "bootstrap.servers" = "localhost:39092"
@@ -15,7 +18,7 @@ max_errors = 10
 "session.timeout.ms" = 45000
 
 [handle]
-backend = "pyhandle"
+backend = "rest"
 server_url = "http://localhost:8000"
 prefix = "21.TEST"
 username = "300:21.TEST/testuser"
@@ -23,6 +26,9 @@ password = "testpass"
 
 [schema]
 strict_mode = true
+
+[lookup]
+enabled = false
 
 [plugins.cmip6]
 landing_page_url = "https://handle-esgf.dkrz.de/lp"

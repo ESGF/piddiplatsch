@@ -52,13 +52,14 @@ preflight_stac = true
 # Note: dotted librdkafka keys are quoted to keep them as literal TOML keys.
 
 [handle]
-# Handle backend: use "pyhandle" to publish, or "jsonl" for local output only.
+# Handle backend: use "jsonl" for safe local output, "rest" to publish,
+# or "pyhandle" for the legacy client.
 # Avoid committing real credentials; set username/password via overrides.
 # Example override (custom.toml):
 # [handle]
 # username = "300:21.TEST/your-user"
 # password = "***"
-backend = "pyhandle"
+backend = "jsonl"
 server_url = "http://localhost:8000"
 prefix = "21.TEST"
 username = "300:21.TEST/testuser"
@@ -66,6 +67,8 @@ password = "testpass"
 # Keep certificate verification enabled in production. Disable only for a
 # deliberately trusted local test service using a self-signed certificate.
 verify_https = true
+# Timeout in seconds for each Handle REST request.
+timeout = 10
 
 [stac]
 # Remote STAC API base URL; omit to use local/dummy client.
