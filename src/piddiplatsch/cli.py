@@ -95,8 +95,13 @@ def consume(ctx, dump, dry_run, force, projects, all_projects):
     nargs=-1,
     required=True,
 )
+@click.option(
+    "--limit",
+    type=click.IntRange(min=1),
+    help="Stop after attempting this many Handle records in total.",
+)
 @click.pass_context
-def publish(ctx, path: tuple[Path, ...]):
+def publish(ctx, path: tuple[Path, ...], limit: int | None):
     """Publish prepared handles from immutable JSONL FILE_OR_DIRECTORY inputs.
 
     The source files are never changed. Re-running a file is safe because the
@@ -111,6 +116,7 @@ def publish(ctx, path: tuple[Path, ...]):
 
     result = HandlePublisher().run(
         path,
+        limit=limit,
         progress_callback=show_progress if verbose else None,
     )
     if result.total == 0:
@@ -118,6 +124,8 @@ def publish(ctx, path: tuple[Path, ...]):
         return
 
     click.echo(f"Published {result.succeeded}/{result.total} handles.")
+    if limit is not None and result.total == limit:
+        click.echo(f"Stopped after reaching the limit of {limit} records.")
     if result.failed:
         click.echo(f"Failed: {result.failed}")
         for error in result.errors:

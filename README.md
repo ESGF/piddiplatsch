@@ -126,6 +126,14 @@ piddi --config custom.toml --verbose publish \
   outputs/*/handles/handles_2026-08-24.jsonl
 ```
 
+For a limited trial against the current file, cap the total number of attempted
+records:
+
+```bash
+piddi --config custom.toml --verbose publish --limit 1000 \
+  outputs/cmip6/handles/handles_2026-08-25.jsonl
+```
+
 You can also pass one file, several files, or a directory. `publish` never
 changes or deletes its inputs. Publication uses Handle overwrite semantics, so
 an immutable file can safely be run again after an interruption. The command

@@ -281,6 +281,7 @@ class TestPublishCommand:
 
         assert result.exit_code == 0
         assert "Publish prepared handles" in result.output
+        assert "--limit" in result.output
 
     @patch("piddiplatsch.cli.HandlePublisher")
     def test_publish_reports_success(self, publisher_cls, runner, tmp_path):
@@ -295,6 +296,7 @@ class TestPublishCommand:
         assert result.exit_code == 0
         assert "Published 3/3 handles" in result.output
         publisher_cls.return_value.run.assert_called_once()
+        assert publisher_cls.return_value.run.call_args.kwargs["limit"] is None
 
     @patch("piddiplatsch.cli.HandlePublisher")
     def test_publish_exits_nonzero_after_failures(
@@ -320,7 +322,7 @@ class TestPublishCommand:
         source = tmp_path / "handles.jsonl"
         source.touch()
 
-        def run(paths, progress_callback):
+        def run(paths, limit, progress_callback):
             progress_callback(1, 1, "21.TEST/abc", None)
             return PublishResult(total=1, succeeded=1)
 
@@ -330,6 +332,20 @@ class TestPublishCommand:
 
         assert result.exit_code == 0
         assert "[1/1] 21.TEST/abc: published" in result.output
+
+    @patch("piddiplatsch.cli.HandlePublisher")
+    def test_publish_passes_limit(self, publisher_cls, runner, tmp_path):
+        source = tmp_path / "handles.jsonl"
+        source.touch()
+        publisher_cls.return_value.run.return_value = PublishResult(
+            total=1000, succeeded=1000
+        )
+
+        result = runner.invoke(cli, ["publish", "--limit", "1000", str(source)])
+
+        assert result.exit_code == 0
+        assert publisher_cls.return_value.run.call_args.kwargs["limit"] == 1000
+        assert "Stopped after reaching the limit of 1000 records" in result.output
 
 
 class TestCLIOptions:

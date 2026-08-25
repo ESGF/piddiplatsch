@@ -33,17 +33,26 @@ class HandlePublisher:
         self,
         paths: Iterable[Path],
         *,
+        limit: int | None = None,
         progress_callback: ProgressCallback | None = None,
     ) -> PublishResult:
+        if limit is not None and limit < 1:
+            raise ValueError("limit must be at least 1")
+
         files = find_jsonl(paths)
         result = PublishResult()
 
         records: list[tuple[Path, int, dict[str, Any]]] = []
         for path in files:
+            remaining = None if limit is None else limit - len(records) - result.failed
+            if remaining == 0:
+                break
             try:
                 records.extend(
                     (path, line_number, record)
-                    for line_number, record in enumerate(read_jsonl(path), start=1)
+                    for line_number, record in enumerate(
+                        read_jsonl(path, limit=remaining), start=1
+                    )
                 )
             except (JsonlReadError, OSError) as exc:
                 result.failed += 1

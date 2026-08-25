@@ -148,3 +148,19 @@ def test_publishes_jsonl_backend_output(tmp_path):
             },
         )
     ]
+
+
+def test_limit_caps_records_across_files_and_stops_reading(tmp_path):
+    first = tmp_path / "handles_1.jsonl"
+    second = tmp_path / "handles_2.jsonl"
+    write_jsonl(first, [handle_record("one"), handle_record("two")])
+    second.write_text(
+        f'{json.dumps(handle_record("three"))}\nmalformed-tail', encoding="utf-8"
+    )
+    backend = FakeBackend()
+
+    result = HandlePublisher(backend).run([tmp_path], limit=3)
+
+    assert result.total == 3
+    assert result.succeeded == 3
+    assert [pid for pid, _ in backend.published] == ["one", "two", "three"]
