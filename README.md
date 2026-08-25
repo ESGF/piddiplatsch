@@ -7,7 +7,7 @@
 
 ---
 
-**Piddiplatsch** is a [Kafka](https://kafka.apache.org/) consumer for **ESGF STAC publication records** that integrates with a [Handle Service](https://pypi.org/project/pyhandle/) to reliably register and maintain persistent identifiers (PIDs).
+**Piddiplatsch** is a [Kafka](https://kafka.apache.org/) consumer for **ESGF STAC publication records** that integrates with the [Handle System](https://www.handle.net/) to reliably register and maintain persistent identifiers (PIDs).
 
 *Curious by nature. Persistent by design.*
 

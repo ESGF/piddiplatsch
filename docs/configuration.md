@@ -23,9 +23,10 @@ piddi --config custom.toml config show
 | `consumer.transient` | `retries` | Number of retries for transient STAC patch retrieval. |
 | `consumer.transient` | `backoff_initial`, `backoff_max` | Exponential retry delay bounds in seconds. |
 | `consumer.transient` | `preflight_stac` | Probe the configured STAC service before consuming. |
-| `handle` | `backend` | `pyhandle` for publication or `jsonl` for local output. |
+| `handle` | `backend` | `rest` for publication, legacy `pyhandle`, or `jsonl` for local output. |
 | `handle` | `server_url`, `prefix`, `username`, `password` | Handle service connection and credentials. |
 | `handle` | `verify_https` | Verify Handle service TLS certificates; defaults to `true`. |
+| `handle` | `timeout` | Per-request Handle REST timeout in seconds; defaults to `10`. |
 | `stac` | `base_url`, `timeout`, `collection` | STAC lookup and patch retrieval settings. |
 | `lookup` | `enabled`, `backend` | Enable version lookup using `stac` or `es`. |
 | `elasticsearch` | `base_url`, `index` | Elasticsearch lookup settings when `lookup.backend = "es"`. |

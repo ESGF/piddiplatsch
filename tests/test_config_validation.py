@@ -4,7 +4,7 @@ from piddiplatsch.config.schema import validate_config
 def _base_config():
     return {
         "consumer": {"projects": ["cmip6"], "topic": "CMIP6"},
-        # Keep handle as jsonl for tests to avoid pyhandle requirements
+        # Keep handle as jsonl for tests to avoid publication credentials
         "handle": {"backend": "jsonl"},
         # Disable lookups unless explicitly tested
         "lookup": {"enabled": False},

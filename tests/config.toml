@@ -15,7 +15,7 @@ max_errors = 10
 "session.timeout.ms" = 45000
 
 [handle]
-backend = "pyhandle"
+backend = "rest"
 server_url = "http://localhost:8000"
 prefix = "21.TEST"
 username = "300:21.TEST/testuser"
