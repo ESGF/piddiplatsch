@@ -29,16 +29,15 @@ The project is fully open-source and documented. ESGF sites and other organizati
 
 ---
 
-## 🧭 About CMIP6 (and the future)
+## 🧭 Project support
 
-At the moment, **CMIP6 is the only implemented project plugin**.
+CMIP6 and CMIP7 are implemented as built-in project plugins.
 
 One consumer can read the shared ESGF publication topic and route records to one,
 several, or all selected project plugins. Unrelated records are filtered without
-being treated as failures. The existing `cmip6` plugin serves both as:
-
-- the production implementation today
-- a reference implementation for future extensions
+being treated as failures. Both plugins share the publication-envelope,
+Handle-output schema, and mapping workflow; their small plugin modules declare
+project identity, PID field names, and genuine project-specific behaviour.
 
 ---
 
@@ -265,17 +264,18 @@ project-specific processors.
 
 This is **not currently** a dynamic plugin ecosystem. Plugins organize built-in
 project code through a deliberately small interface. The mechanism exists to:
-- isolate CMIP6-specific logic
-- allow future formats (e.g. CMIP7) to be added cleanly
+- isolate project-specific logic
+- allow further ESGF projects to be added cleanly
 - keep testing and evolution predictable
 
 The same plugin specification can later become the boundary for external Python
 packages discovered through standard package entry points, without adding that
 complexity today.
 
-Currently, the only implemented project plugin is:
+Currently implemented project plugins are:
 
 - `cmip6` (default)
+- `cmip7`
 
 Configuration and implementation guidance are documented in [CONTRIBUTING.md](CONTRIBUTING.md).
 The message flow and consumer-group constraints are documented in

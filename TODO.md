@@ -48,7 +48,8 @@ Observed field shapes:
 - A sampled CMIP6 asset had source PID
   `hdl:21.14100/1b37978f-caf6-4e4a-9893-3266a93077a2`, while its generated JSONL
   Handle used deterministic suffix `bedf32ab-ef69-3184-b02a-c1dc6cbe3cf5`.
-  This confirms that the current mapper ignores the namespaced file PID.
+  This confirmed the old mapper ignored the namespaced file PID; the shared PID
+  resolver on `dev-plugins` now preserves it.
 - The generated Handle JSONL contains `handle`, `URL`, `data`, and `timestamp`,
   but no project/plugin or source-event identity. The production outbox schema
   must add that provenance before multi-project publishing and retries.
@@ -59,6 +60,28 @@ Observed field shapes:
 
 Do the architecture cleanup before adding further project plugins. Keep it
 incremental and preserve the current CMIP6 behaviour with tests.
+
+### Implemented on `dev-plugins` (2026-08-25)
+
+- One consumer now routes to selected built-in plugins; config and CLI support
+  one, several, or all registered projects. Legacy `consumer.processor` was
+  removed.
+- CMIP6 and CMIP7 plugins are registered. Their common publication-envelope,
+  PATCH, STAC-to-Handle mapping, and Pydantic Handle output schemas live in
+  shared core code; thin plugin classes declare PID fields and differences.
+- Input does not require full STAC Pydantic validation. Shared adapters validate
+  only the envelope and consumed object/field shapes, while Pydantic validates
+  generated dataset/file Handle records.
+- CMIP7 POST mapping is covered by a compact fixture derived from the real
+  queue. The real direct-list RFC 6902 PATCH shape is supported; the older
+  wrapped `patch.operations` form remains readable.
+- CMIP6 resolves namespaced PID fields with explicit legacy fallbacks; CMIP7
+  resolves `cmip7:pid` and `cmip7:tracking_id`. Dataset/file relationships use
+  those resolved PIDs and conflicting populated aliases fail visibly.
+
+Remaining items below include project-scoped output/provenance, stronger PID
+edge-case coverage and operational rollout checks, plus plugins for the other
+observed projects.
 
 ### Target design
 

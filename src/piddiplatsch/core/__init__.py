@@ -1,7 +1,6 @@
 from .models import (
     ALLOWED_CHECKSUM_METHODs,
     HostingNode,
-    get_max_parts,
     strict_mode,
 )
 from .plugin import PluginSpec, normalize_project_id
@@ -23,7 +22,6 @@ __all__ = [
     "PluginSpec",
     "ProjectRouter",
     "extract_project_id",
-    "get_max_parts",
     "get_plugin",
     "get_plugins",
     "list_plugins",

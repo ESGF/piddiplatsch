@@ -117,14 +117,15 @@ class SchemaConfig(BaseModel):
     strict_mode: bool | None = None
 
 
-class PluginsCmip6Config(BaseModel):
+class ProjectPluginConfig(BaseModel):
     model_config = ConfigDict(extra="allow")
     landing_page_url: str | None = None
 
 
 class PluginsConfig(BaseModel):
     model_config = ConfigDict(extra="allow")
-    cmip6: PluginsCmip6Config | None = None
+    cmip6: ProjectPluginConfig | None = None
+    cmip7: ProjectPluginConfig | None = None
 
 
 class AppConfig(BaseModel):

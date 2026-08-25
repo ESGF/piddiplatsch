@@ -41,6 +41,18 @@ until an external plugin actually exists. A hook framework such as `pluggy` is
 only justified later if the plugin contract grows beyond metadata, construction,
 preflight, and processing.
 
+CMIP6 and CMIP7 share `StacProjectProcessor`, narrow STAC record adapters, and
+project-neutral Pydantic Handle output models. Input publication records are not
+validated against a complete STAC schema. Core checks only the envelope and the
+object/field shapes consumed by mapping; Pydantic validates the Handle records
+produced by each plugin. Thin plugin classes declare project PID fields and
+retain genuine differences, such as CMIP6 version lookup.
+
+Canonical PID fields currently are `cmip6:pid` / `cmip6:tracking_id` and
+`cmip7:pid` / `cmip7:tracking_id`. CMIP6 additionally accepts its known legacy
+unnamespaced fields. Relationships are built from resolved source PIDs rather
+than independently generated identifiers.
+
 ## Selection
 
 `consumer.projects` selects a list of plugin names or `all`. Repeated
@@ -64,7 +76,7 @@ process may receive and filter records intended for the other.
 
 ## Current scope
 
-CMIP6 is the only implemented project plugin. The shared queue also contains
-other project identifiers; until their plugins are implemented, those records
-are filtered even when `all` is selected because `all` means all registered
-plugins, not every identifier present on the topic.
+CMIP6 and CMIP7 are implemented. The shared queue also contains other project
+identifiers; until their plugins are implemented, those records are filtered
+even when `all` is selected because `all` means all registered plugins, not
+every identifier present on the topic.

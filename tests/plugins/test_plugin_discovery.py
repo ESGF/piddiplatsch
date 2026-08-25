@@ -8,8 +8,14 @@ pytestmark = [pytest.mark.plugin]
 
 def test_cmip6_plugin_discovered():
     assert "cmip6" in list_plugins()
+    assert "cmip7" in list_plugins()
 
 
 def test_cmip6_plugin_instantiation():
     proc = get_plugin("cmip6").make_processor(dry_run=True)
+    assert isinstance(proc, BaseProcessor)
+
+
+def test_cmip7_plugin_instantiation():
+    proc = get_plugin("cmip7").make_processor(dry_run=True)
     assert isinstance(proc, BaseProcessor)
