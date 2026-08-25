@@ -11,11 +11,8 @@ from .routing import ProjectRouter, extract_project_id
 from .registry import (
     get_plugin,
     get_plugins,
-    get_processor,
     list_plugins,
-    list_processors,
     register_plugin,
-    register_processor,
 )
 
 __all__ = [
@@ -29,11 +26,8 @@ __all__ = [
     "get_max_parts",
     "get_plugin",
     "get_plugins",
-    "get_processor",
     "list_plugins",
-    "list_processors",
     "normalize_project_id",
     "register_plugin",
-    "register_processor",
     "strict_mode",
 ]

@@ -5,7 +5,6 @@ from __future__ import annotations
 from collections.abc import Iterable
 
 from .plugin import PluginSpec, normalize_project_id
-from .processing import BaseProcessor
 
 _PLUGINS: dict[str, PluginSpec] = {}
 
@@ -63,34 +62,6 @@ def get_plugins(names: Iterable[str] | str) -> list[PluginSpec]:
 
 def list_plugins() -> list[str]:
     return sorted(_PLUGINS)
-
-
-def get_processor(name: str, **kwargs) -> BaseProcessor:
-    """Build a processor from the single plugin registry."""
-    return get_plugin(name).make_processor(**kwargs)
-
-
-def list_processors() -> list[str]:
-    """Deprecated compatibility alias for :func:`list_plugins`."""
-    return list_plugins()
-
-
-def register_processor(
-    name: str,
-    processor_class: type[BaseProcessor],
-    *,
-    project_ids: tuple[str, ...] | None = None,
-    replace: bool = False,
-) -> None:
-    """Compatibility helper that registers processor classes as plugin specs."""
-    register_plugin(
-        PluginSpec(
-            name=name,
-            project_ids=project_ids or (name,),
-            make_processor=processor_class,
-        ),
-        replace=replace,
-    )
 
 
 # Built-ins are imported explicitly. Import failures must stop startup rather

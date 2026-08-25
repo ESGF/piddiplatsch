@@ -107,8 +107,8 @@ incremental and preserve the current CMIP6 behaviour with tests.
   and must reject an empty registry.
 - Validate unknown, duplicate, disabled, and conflicting project selections at
   startup. List the effective selection in logs and in a CLI inspection command.
-- Preserve `consumer.processor = "cmip6"` temporarily as a deprecated migration
-  path, then remove it after configs and documentation have moved to projects.
+- Remove `consumer.processor`; require `consumer.projects` and reject the old
+  setting during configuration validation so it cannot be silently ignored.
 - Document Kafka consumer-group safety prominently:
   - one process may route several selected projects from one shared group;
   - separate project-specific processes must use distinct `group.id` values;

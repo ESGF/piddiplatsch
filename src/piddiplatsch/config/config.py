@@ -39,12 +39,6 @@ class Config:
             user_path = Path(user_config_path)
             if user_path.exists():
                 user_data = self._load_toml(user_path)
-                # A legacy processor-only override must replace the default
-                # projects list, otherwise the merged config would silently
-                # keep selecting the default project.
-                user_consumer = user_data.get("consumer", {})
-                if "processor" in user_consumer and "projects" not in user_consumer:
-                    self.config_data.get("consumer", {}).pop("projects", None)
                 self._merge_dicts(self.config_data, user_data)
 
     def _merge_dicts(self, base, override):

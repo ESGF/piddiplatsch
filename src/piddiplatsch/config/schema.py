@@ -16,11 +16,19 @@ from pydantic import (
 class ConsumerConfig(BaseModel):
     model_config = ConfigDict(extra="allow")
 
-    projects: list[str] | Literal["all"] | None = None
-    processor: str | None = None
+    projects: list[str] | Literal["all"]
     topic: str
     output_dir: str | None = None
     max_errors: int | None = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def _reject_processor_setting(cls, data):
+        if isinstance(data, dict) and "processor" in data:
+            raise ValueError(
+                "[consumer].processor is not supported; use [consumer].projects"
+            )
+        return data
 
     @field_validator("projects")
     @classmethod
@@ -32,12 +40,6 @@ class ConsumerConfig(BaseModel):
             if len(normalized) != len(set(normalized)):
                 raise ValueError("[consumer].projects must not contain duplicates")
         return value
-
-    @model_validator(mode="after")
-    def _check_project_selection(self) -> ConsumerConfig:
-        if self.projects is None and not self.processor:
-            raise ValueError("Set [consumer].projects (preferred) or legacy [consumer].processor")
-        return self
 
 
 class KafkaConfig(BaseModel):
@@ -174,11 +176,6 @@ def validate_config(data: dict) -> tuple[list[str], list[str]]:
             warnings.append("[elasticsearch].index is not set; some features may be unavailable")
 
     # schema strict_mode type handled by Pydantic; add no-op
-
-    if cfg.consumer.processor and cfg.consumer.projects is None:
-        warnings.append("[consumer].processor is deprecated; use [consumer].projects instead")
-    elif cfg.consumer.processor and cfg.consumer.projects is not None:
-        warnings.append("[consumer].processor is ignored when [consumer].projects is set")
 
     # plugins cmip6 hint
     lp = cfg.plugins.cmip6.landing_page_url if (cfg.plugins and cfg.plugins.cmip6) else None

@@ -24,7 +24,7 @@ def test_retry_on_skipped_jsonl(tmp_path):
     f.write_text(json.dumps(record) + "\n", encoding="utf-8")
 
     runner = RetryRunner(
-        "cmip6",
+        projects=["cmip6"],
         failure_dir=tmp_path / "failures",
         delete_after=False,
         dry_run=True,

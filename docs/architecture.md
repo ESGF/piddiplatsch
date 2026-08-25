@@ -37,8 +37,7 @@ processor factory. Import failures are not hidden.
 
 `consumer.projects` selects a list of plugin names or `all`. Repeated
 `piddi consume --project NAME` options and `--all-projects` override config for a
-run. The old singular `consumer.processor` setting remains as a deprecated
-migration path when `projects` is absent.
+run.
 
 Only selected plugins are constructed and preflighted.
 

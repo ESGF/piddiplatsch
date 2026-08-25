@@ -1,4 +1,3 @@
-from piddiplatsch.config.config import Config
 from piddiplatsch.config.schema import validate_config
 
 
@@ -59,28 +58,21 @@ def test_projects_must_not_be_empty_or_duplicated():
     assert any("projects" in error and "duplicates" in error for error in errors)
 
 
-def test_legacy_processor_is_valid_but_deprecated():
+def test_projects_are_required():
     cfg = _base_config()
     cfg["kafka"] = {"bootstrap.servers": "localhost:39092"}
     del cfg["consumer"]["projects"]
+
+    errors, _ = validate_config(cfg)
+
+    assert any("projects" in error and "required" in error for error in errors)
+
+
+def test_processor_setting_is_rejected():
+    cfg = _base_config()
+    cfg["kafka"] = {"bootstrap.servers": "localhost:39092"}
     cfg["consumer"]["processor"] = "cmip6"
 
-    errors, warnings = validate_config(cfg)
+    errors, _ = validate_config(cfg)
 
-    assert not errors
-    assert any("processor is deprecated" in warning for warning in warnings)
-
-
-def test_legacy_processor_override_removes_default_projects(tmp_path):
-    path = tmp_path / "legacy.toml"
-    path.write_text(
-        '[consumer]\nprocessor = "cmip6"\ntopic = "shared-topic"\n',
-        encoding="utf-8",
-    )
-    legacy_config = Config()
-
-    legacy_config.load_user_config(str(path))
-
-    consumer = legacy_config.get("consumer")
-    assert consumer["processor"] == "cmip6"
-    assert "projects" not in consumer
+    assert any("processor is not supported" in error for error in errors)

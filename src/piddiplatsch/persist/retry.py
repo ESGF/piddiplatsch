@@ -46,7 +46,7 @@ class RetryRunner:
         from piddiplatsch.persist.retry import RetryRunner
 
         runner = RetryRunner(
-            "cmip6",
+            projects=["cmip6"],
             failure_dir=Path("outputs/failures"),
             delete_after=False,
             dry_run=True,
@@ -59,17 +59,13 @@ class RetryRunner:
 
     def __init__(
         self,
-        processor=None,
         *,
-        projects: list[str] | tuple[str, ...] | str | None = None,
+        projects: list[str] | tuple[str, ...] | str,
         failure_dir: Path,
         delete_after: bool = False,
         dry_run: bool = False,
         logger: logging.Logger | None = None,
     ) -> None:
-        if processor is not None and projects is not None:
-            raise ValueError("Specify either processor or projects, not both")
-        self.processor = processor
         self.projects = projects
         self.failure_dir = failure_dir
         self.delete_after = delete_after
@@ -91,8 +87,9 @@ class RetryRunner:
             self.logger.warning("No messages to retry.")
             return result
 
-        selection = self.processor if self.processor is not None else self.projects
-        self.logger.info(f"Retrying {len(messages)} messages from {jsonl_path} using '{selection}'...")
+        self.logger.info(
+            f"Retrying {len(messages)} messages from {jsonl_path} using '{self.projects}'..."
+        )
 
         # Track failure files before retry
         failure_files_before = {path: path.stat().st_size for path in self.failure_dir.rglob("*.jsonl")}
@@ -100,7 +97,6 @@ class RetryRunner:
         # Process messages through pipeline
         feed_result = feed_messages_direct(
             messages,
-            processor=self.processor,
             projects=self.projects,
             dry_run=self.dry_run,
             failure_dir=self.failure_dir,

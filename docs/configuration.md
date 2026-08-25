@@ -16,7 +16,6 @@ piddi --config custom.toml config show
 | Section | Key | Purpose |
 | --- | --- | --- |
 | `consumer` | `projects` | Plugin names to run, as a list or the string `all`. |
-| `consumer` | `processor` | Deprecated single-plugin setting used only when `projects` is absent. |
 | `consumer` | `topic` | Kafka topic to consume. |
 | `consumer` | `output_dir` | Root for failure, skipped, dump, and dry-run Handle JSONL files. |
 | `consumer` | `max_errors` | Stop after this many processing errors; `-1` disables the limit. |

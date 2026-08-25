@@ -22,7 +22,7 @@ def test_run_batch_progress_callback(monkeypatch, tmp_path: Path, caplog):
     failures_dir.mkdir(parents=True, exist_ok=True)
 
     runner = RetryRunner(
-        "cmip6",
+        projects=["cmip6"],
         failure_dir=failures_dir,
         delete_after=False,
         dry_run=True,
@@ -89,7 +89,7 @@ def test_run_file_reports_appended_daily_failure(monkeypatch, tmp_path: Path):
         return FeedResult(total=1, failed=1)
 
     monkeypatch.setattr(consumer, "feed_messages_direct", fail_and_append)
-    runner = RetryRunner("cmip6", failure_dir=failure_dir)
+    runner = RetryRunner(projects=["cmip6"], failure_dir=failure_dir)
 
     result = runner.run_file(source)
 

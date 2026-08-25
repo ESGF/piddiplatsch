@@ -71,7 +71,7 @@ piddi config validate
 piddi --config tests/config.toml config validate
 ```
 
-Validations include presence and format of `consumer.projects`, `consumer.topic`, `kafka.bootstrap.servers` (comma-separated `host:port`), and backend requirements for `handle` and `lookup`. The legacy `consumer.processor` setting is accepted with a deprecation warning.
+Validations include presence and format of `consumer.projects`, `consumer.topic`, `kafka.bootstrap.servers` (comma-separated `host:port`), and backend requirements for `handle` and `lookup`.
 
 ### Makefile: Config Validation Target
 

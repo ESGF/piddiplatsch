@@ -9,7 +9,6 @@ from confluent_kafka import Consumer as ConfluentConsumer
 from confluent_kafka import KafkaException
 
 from piddiplatsch.config import config
-from piddiplatsch.core.registry import get_processor
 from piddiplatsch.core.routing import ProjectRouter
 from piddiplatsch.exceptions import MaxErrorsExceededError, StopOnTransientSkipError
 from piddiplatsch.monitoring.stats import CounterKey, stats
@@ -22,16 +21,12 @@ logger = logging.getLogger(__name__)
 
 
 def configured_projects() -> list[str] | str:
-    """Return the configured plugin selection with legacy processor fallback."""
+    """Return the configured project plugin selection."""
     consumer_cfg = config.get("consumer", {})
     projects = consumer_cfg.get("projects")
-    if projects is not None:
-        return projects
-    processor = consumer_cfg.get("processor")
-    if processor:
-        logger.warning("[consumer].processor is deprecated; use [consumer].projects instead")
-        return [processor]
-    raise ValueError("No projects configured; set [consumer].projects")
+    if projects is None:
+        raise ValueError("No projects configured; set [consumer].projects")
+    return projects
 
 
 def build_processing_target(
@@ -40,12 +35,14 @@ def build_processing_target(
     projects: list[str] | tuple[str, ...] | str | None = None,
     dry_run: bool = False,
 ):
-    """Build either the project router or a legacy explicitly supplied processor."""
+    """Build a project router or use an explicitly supplied processing object."""
     if processor is not None and projects is not None:
         raise ValueError("Specify either processor or projects, not both")
     if processor is not None:
         if isinstance(processor, str):
-            return get_processor(processor, dry_run=dry_run)
+            raise TypeError(
+                "String processor selection is not supported; use projects or a processing object"
+            )
         return processor
     selection = configured_projects() if projects is None else projects
     return ProjectRouter(selection, dry_run=dry_run)
@@ -305,14 +302,17 @@ def feed_messages_direct(
     )
 
 
-def feed_test_files(testfile_paths, processor="cmip6"):
+def feed_test_files(
+    testfile_paths,
+    projects: list[str] | tuple[str, ...] | str = ("cmip6",),
+):
     messages = []
     for path in testfile_paths:
         if isinstance(path, str):
             path = Path(path)
         with path.open("r", encoding="utf-8") as f:
             messages.append((path.name, json.load(f)))
-    feed_messages_direct(messages, processor=processor)
+    feed_messages_direct(messages, projects=projects)
 
 
 # ----------------------------

@@ -8,6 +8,7 @@ import pytest
 
 from piddiplatsch.config import config
 from piddiplatsch.consumer import ConsumerPipeline, DirectConsumer
+from piddiplatsch.core.routing import ProjectRouter
 
 pytestmark = pytest.mark.integration
 
@@ -51,7 +52,7 @@ def test_consumer_pipeline_writes_handles_jsonl(tmp_path: Path):
 
     pipeline = ConsumerPipeline(
         consumer=DirectConsumer([msg]),
-        processor="cmip6",
+        processor=ProjectRouter(["cmip6"], dry_run=True),
         dry_run=True,
         verbose=False,
     )
