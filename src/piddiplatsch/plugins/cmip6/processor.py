@@ -71,7 +71,7 @@ class CMIP6Processor(BaseProcessor):
             raise
 
         result.elapsed = time.perf_counter() - start_total
-        result.success = True
+        result.success = not result.skipped
 
         return result
 

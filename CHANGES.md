@@ -4,6 +4,22 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+### Changed
+- Resolve persistence output directories after user configuration is loaded.
+- Isolate all test output from retained local runtime data.
+- Validate distributions and the mock Handle Docker image in CI.
+- Align the Conda environment, package dependencies, and development tooling with Python 3.11+.
+
+### Fixed
+- Preserve malformed retry inputs instead of silently dropping invalid JSONL records.
+- Keep nested retry counts and treat skipped records as retryable rather than successful.
+- Honor configured statistics settings when starting a consumer.
+- Enable HTTPS certificate verification for Handle clients by default.
+- Repair the mock Handle Docker build and record representations.
+
+### Documentation
+- Add configuration and operations references.
+
 ## [2.2.1] - 2026-08-25
 ### Changed
 - Transferred the canonical repository from `cehbrecht/piddiplatsch` to `ESGF/piddiplatsch` and updated package metadata, repository links, and contributor instructions.

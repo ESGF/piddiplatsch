@@ -9,13 +9,6 @@ from piddiplatsch.config import config
 pytestmark = pytest.mark.integration
 
 
-@pytest.mark.skip(reason="not used")
-def test_send_invalid_path(runner):
-    result = runner.invoke(cli, ["send", "nonexistent.json"])
-    assert result.exit_code == 2
-    assert "Usage: cli send [OPTIONS] FILENAME" in result.output
-
-
 def test_retry_with_dry_run(runner, tmp_path):
     """Test that retry command works with --dry-run flag."""
     config._set("consumer", "output_dir", str(tmp_path))

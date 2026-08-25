@@ -2,14 +2,11 @@ import logging
 from typing import Any
 
 import pyhandle
-import urllib3
 from pyhandle.clientcredentials import PIDClientCredentials
 from pyhandle.handleexceptions import HandleAlreadyExistsException
 
 from piddiplatsch.config import config
 from piddiplatsch.handles.base import HandleBackend
-
-urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 
 class HandleClient(HandleBackend):
@@ -21,7 +18,7 @@ class HandleClient(HandleBackend):
         prefix: str,
         username: str,
         password: str,
-        verify_https: bool = False,
+        verify_https: bool = True,
     ):
         handle_cfg = {
             "client": "rest",
@@ -43,6 +40,7 @@ class HandleClient(HandleBackend):
             prefix=config.get("handle", "prefix"),
             username=config.get("handle", "username"),
             password=config.get("handle", "password"),
+            verify_https=config.get("handle", "verify_https", True),
         )
 
     def _store(self, handle: str, handle_data: dict[str, Any]) -> None:

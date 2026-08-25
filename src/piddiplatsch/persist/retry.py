@@ -2,6 +2,7 @@ import logging
 from collections.abc import Callable
 from pathlib import Path
 
+from piddiplatsch.exceptions import JsonlReadError
 from piddiplatsch.helpers import find_jsonl, read_jsonl
 from piddiplatsch.result import RetryResult
 
@@ -77,7 +78,11 @@ class RetryRunner:
         """Retry failed items from a JSONL file by reprocessing them through the pipeline."""
         from piddiplatsch.consumer import feed_messages_direct
 
-        messages = load_failed_messages(jsonl_path)
+        try:
+            messages = load_failed_messages(jsonl_path)
+        except JsonlReadError as exc:
+            self.logger.error(str(exc))
+            return RetryResult(total=1, failed=1, errors=[str(exc)])
 
         result = RetryResult(total=len(messages))
         if not messages:
@@ -89,20 +94,32 @@ class RetryRunner:
         )
 
         # Track failure files before retry
-        failure_files_before = set(self.failure_dir.rglob("*.jsonl"))
+        failure_files_before = {
+            path: path.stat().st_size for path in self.failure_dir.rglob("*.jsonl")
+        }
 
         # Process messages through pipeline
         feed_result = feed_messages_direct(
-            messages, processor=self.processor, dry_run=self.dry_run
+            messages,
+            processor=self.processor,
+            dry_run=self.dry_run,
+            failure_dir=self.failure_dir,
+            force=True,
         )
 
         # Find new failure files created during retry
         failure_files_after = set(self.failure_dir.rglob("*.jsonl"))
-        result.failure_files = failure_files_after - failure_files_before
+        result.failure_files = {
+            path
+            for path in failure_files_after
+            if path not in failure_files_before
+            or path.stat().st_size != failure_files_before[path]
+        }
 
         # Use stats from feed_result
         result.succeeded = feed_result.succeeded
-        result.failed = feed_result.failed
+        result.skipped = feed_result.skipped
+        result.failed = feed_result.failed + feed_result.skipped
 
         if self.delete_after and result.failed == 0:
             try:
@@ -141,7 +158,9 @@ class RetryRunner:
             overall.total += result.total
             overall.succeeded += result.succeeded
             overall.failed += result.failed
+            overall.skipped += result.skipped
             overall.failure_files.update(result.failure_files)
+            overall.errors.extend(result.errors)
 
             if progress_callback:
                 progress_callback(file, idx, total_files, result)

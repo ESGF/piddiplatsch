@@ -8,10 +8,6 @@ from piddiplatsch.config import config
 from piddiplatsch.consumer import start_consumer
 from piddiplatsch.persist.retry import RetryRunner
 
-# Expose failure directory for retry operations (patchable in tests)
-FAILURE_DIR = Path(config.get("consumer", {}).get("output_dir", "outputs")) / "failures"
-FAILURE_DIR.mkdir(parents=True, exist_ok=True)
-
 CONTEXT_SETTINGS = dict(help_option_names=["-h", "--help"])
 
 
@@ -110,6 +106,9 @@ def retry(ctx, path: tuple[Path, ...], delete_after: bool, dry_run: bool):
     """
     processor = config.get("consumer", "processor")
     verbose = ctx.obj.get("verbose", False)
+    failure_dir = (
+        Path(config.get("consumer", {}).get("output_dir", "outputs")) / "failures"
+    )
 
     # Define progress callback for verbose mode
     def show_progress(file, idx, total, result):
@@ -125,7 +124,7 @@ def retry(ctx, path: tuple[Path, ...], delete_after: bool, dry_run: bool):
 
     runner = RetryRunner(
         processor,
-        failure_dir=FAILURE_DIR,
+        failure_dir=failure_dir,
         delete_after=delete_after,
         dry_run=dry_run,
     )
@@ -145,10 +144,14 @@ def retry(ctx, path: tuple[Path, ...], delete_after: bool, dry_run: bool):
         click.echo(
             f"  ⚠️  {result.failed} items failed again ({result.success_rate:.1f}% success rate)"
         )
+        if result.skipped:
+            click.echo(f"  {result.skipped} item(s) were skipped and remain retryable")
+        for error in result.errors:
+            click.echo(f"  - {error}")
         if result.failure_files:
             click.echo("  New failures saved to:")
             for failure_file in sorted(result.failure_files):
-                rel_path = failure_file.relative_to(FAILURE_DIR)
+                rel_path = failure_file.relative_to(failure_dir)
                 click.echo(f"    - {rel_path}")
     else:
         click.echo("  ✓ All items processed successfully!")

@@ -182,13 +182,14 @@ class TestRetryCommand:
             total=5, succeeded=3, failed=2, failure_files={new_failure}
         )
 
-        # Mock FAILURE_DIR to point to our tmp directory
-        with patch("piddiplatsch.cli.FAILURE_DIR", tmp_path / "failures"):
-            result = runner.invoke(cli, ["retry", str(test_file)])
-            assert result.exit_code == 0
-            assert "3/5 succeeded" in result.output
-            assert "New failures saved to:" in result.output
-            assert "r1/failed_items_2026-01-16.jsonl" in result.output
+        from piddiplatsch.config import config
+
+        config._set("consumer", "output_dir", str(tmp_path))
+        result = runner.invoke(cli, ["retry", str(test_file)])
+        assert result.exit_code == 0
+        assert "3/5 succeeded" in result.output
+        assert "New failures saved to:" in result.output
+        assert "r1/failed_items_2026-01-16.jsonl" in result.output
 
     @patch("piddiplatsch.cli.RetryRunner")
     def test_retry_passes_delete_after(self, mock_runner_cls, runner, tmp_path):

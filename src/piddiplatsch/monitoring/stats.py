@@ -260,13 +260,23 @@ class Stats:
         self.reporters = [ConsoleReporter()]
         self._closed = False
 
-    def configure_for_run(self, enable_db: bool = False, db_path: str | None = None):
+    def configure_for_run(
+        self,
+        enable_db: bool = False,
+        db_path: str | None = None,
+        log_interval_seconds: int | None = None,
+        log_interval_messages: int | None = None,
+    ):
         """Reset counters and reporters for a fresh run, optionally enabling DB.
 
         This keeps reporter setup encapsulated and avoids leaking lifecycle
         details into callers like the consumer.
         """
         self.reset()
+        if log_interval_seconds is not None:
+            self.log_interval_seconds = log_interval_seconds
+        if log_interval_messages is not None:
+            self.log_interval_messages = log_interval_messages
         if enable_db and db_path:
             try:
                 self.reporters.append(SQLiteReporter(db_path=db_path))

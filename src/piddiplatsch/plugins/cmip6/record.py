@@ -1,4 +1,5 @@
 import logging
+from datetime import datetime
 from functools import cached_property
 from pathlib import PurePosixPath
 from typing import Any
@@ -190,7 +191,7 @@ class CMIP6DatasetRecord(BaseCMIP6Record):
         return raw.strip().lower() in ("true", "1", "yes")
 
     @cached_property
-    def retracted_on(self) -> bool:
+    def retracted_on(self) -> datetime | None:
         if self.retracted:
             return parse_datetime(self.default_publication_time)
         return None

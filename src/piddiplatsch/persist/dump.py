@@ -9,11 +9,13 @@ from piddiplatsch.result import PrepareResult
 class DumpRecorder(RecorderBase):
     LOG_KIND = "dump"
     LOG_LEVEL = logging.DEBUG
-    DUMP_DIR = Path(config.get("consumer", {}).get("output_dir", "outputs")) / "dump"
-    DUMP_DIR.mkdir(parents=True, exist_ok=True)
+    DUMP_DIR: Path | None = None
 
-    def __init__(self) -> None:
-        super().__init__(self.DUMP_DIR, "dump_messages")
+    def __init__(self, root_dir: Path | None = None) -> None:
+        configured_dir = (
+            Path(config.get("consumer", {}).get("output_dir", "outputs")) / "dump"
+        )
+        super().__init__(root_dir or self.DUMP_DIR or configured_dir, "dump_messages")
 
     def prepare(
         self,

@@ -61,6 +61,9 @@ server_url = "http://localhost:8000"
 prefix = "21.TEST"
 username = "300:21.TEST/testuser"
 password = "testpass"
+# Keep certificate verification enabled in production. Disable only for a
+# deliberately trusted local test service using a self-signed certificate.
+verify_https = true
 
 [stac]
 # Remote STAC API base URL; omit to use local/dummy client.
@@ -87,12 +90,6 @@ max_parts = -1
 
 # Asset keys excluded from HAS_PARTS generation (non-data assets, previews, etc.).
 excluded_asset_keys = ["reference_file", "globus", "thumbnail", "quicklook"]
-
-# Preferred asset keys to resolve host and published_on (optional).
-# preferred_asset_keys = ["reference_file", "data0000", "data0001"]
-
-# Enable previous-version lookup (optional; default: true).
-# enable_previous_version_lookup = true
 
 [lookup]
 # Lookup backend: "stac" (requires stac.base_url) or "es" (requires elasticsearch.base_url).

@@ -3,10 +3,9 @@ channels:
   - conda-forge
 dependencies:
   - pip
-  - python>=3.8
+  - python>=3.11
   - flask
   - python-confluent-kafka>=2.9
-  - jsonschema
   - pydantic>=2.11
   - multiformats
   - rich

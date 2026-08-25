@@ -1,11 +1,11 @@
-from pathlib import Path
-
 import pytest
 
 from piddiplatsch.config import config
 from piddiplatsch.consumer import start_consumer
 from piddiplatsch.core.processing import BaseProcessor
 from piddiplatsch.result import ProcessingResult
+
+pytestmark = pytest.mark.integration
 
 
 class BoomProcessor(BaseProcessor):
@@ -26,18 +26,7 @@ class OKProcessor(BaseProcessor):
         return ProcessingResult(key=key, success=True, num_handles=0)
 
 
-def _clean_failures():
-    out = Path("outputs/failures")
-    out.mkdir(parents=True, exist_ok=True)
-    for p in out.glob("**/*.jsonl"):
-        try:
-            p.unlink()
-        except Exception:
-            pass
-
-
 def test_stop_on_first_error(tmp_path):
-    _clean_failures()
     # Ensure conservative setting for this test
     consumer_cfg = dict(config.get("consumer", {}))
     consumer_cfg["max_errors"] = 1
@@ -52,12 +41,11 @@ def test_stop_on_first_error(tmp_path):
     assert exc.value.code == 1
 
     # Failure JSONL should be created
-    failure_files = sorted(Path("outputs/failures").glob("**/*.jsonl"))
+    failure_files = sorted((tmp_path / "outputs" / "failures").glob("**/*.jsonl"))
     assert len(failure_files) >= 1
 
 
 def test_proceed_after_fix(tmp_path):
-    _clean_failures()
     # After fixing, consumer should process both messages successfully
     start_consumer(
         processor=OKProcessor(dry_run=True),
