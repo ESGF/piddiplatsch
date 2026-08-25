@@ -3,6 +3,7 @@ from pathlib import Path
 
 import click
 import toml
+from tqdm import tqdm
 
 from piddiplatsch.config import config
 from piddiplatsch.consumer import configured_projects, start_consumer
@@ -137,36 +138,46 @@ def publish(
     """
     verbose = ctx.obj.get("verbose", False)
     last_record_position = offset
-
-    if verbose:
-        if limit is None:
-            click.echo(
-                f"Publishing records after offset {offset}, starting at {offset + 1}."
-            )
-        else:
-            click.echo(
-                f"Publishing batch of up to {limit} records: "
-                f"positions {offset + 1}-{offset + limit}."
-            )
+    progress_bar = None
+    progress_succeeded = 0
+    progress_failed = 0
 
     def show_progress(index, total, handle, error):
-        nonlocal last_record_position
+        nonlocal last_record_position, progress_bar, progress_succeeded, progress_failed
         last_record_position = offset + index
-        if verbose:
-            status = "published" if error is None else f"failed: {error}"
-            click.echo(
-                f"[record {last_record_position} | batch {index}/{total}] "
-                f"{handle}: {status}"
+        if not verbose:
+            return
+        if progress_bar is None:
+            progress_bar = tqdm(
+                total=total,
+                desc=f"publish records {offset + 1}-{offset + total}",
+                unit="handle",
+                dynamic_ncols=True,
             )
+        if error is None:
+            progress_succeeded += 1
+        else:
+            progress_failed += 1
+        progress_bar.set_postfix(
+            record=last_record_position,
+            ok=progress_succeeded,
+            failed=progress_failed,
+        )
+        progress_bar.update(1)
 
-    result = HandlePublisher().run(
-        path,
-        limit=limit,
-        offset=offset,
-        retries=retries,
-        retry_delay=retry_delay,
-        progress_callback=show_progress,
-    )
+    try:
+        result = HandlePublisher().run(
+            path,
+            limit=limit,
+            offset=offset,
+            retries=retries,
+            retry_delay=retry_delay,
+            progress_callback=show_progress,
+        )
+    finally:
+        if progress_bar is not None:
+            progress_bar.close()
+
     if result.total == 0:
         click.echo("No handle records found.")
         return
@@ -182,6 +193,7 @@ def publish(
         click.echo(f"Failed: {result.failed}")
         for error in result.errors:
             click.echo(f"  - {error}")
+    if result.failed:
         raise click.exceptions.Exit(1)
 
 

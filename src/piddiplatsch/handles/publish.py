@@ -59,6 +59,13 @@ class HandlePublisher:
 
         files = find_jsonl(paths)
         result = PublishResult()
+        self.logger.info(
+            "Preparing Handle publication: files=%d offset=%d limit=%s retries=%d",
+            len(files),
+            offset,
+            limit if limit is not None else "none",
+            retries,
+        )
 
         records: list[tuple[Path, int, dict[str, Any]]] = []
         offset_remaining = offset
@@ -85,6 +92,7 @@ class HandlePublisher:
                 result.failed += 1
                 result.total += 1
                 result.errors.append(str(exc))
+                self.logger.error("Could not read Handle JSONL file %s: %s", path, exc)
 
         total_records = len(records)
 
@@ -106,18 +114,40 @@ class HandlePublisher:
                     on_retry=count_retry,
                 )
                 result.succeeded += 1
+                self.logger.info(
+                    "Published handle %s (record=%d batch=%d/%d)",
+                    handle,
+                    offset + index,
+                    index,
+                    total_records,
+                )
             except Exception as exc:
                 error = exc
                 result.failed += 1
                 location = f"{path}:{line_number}"
                 result.errors.append(f"{location}: {exc}")
-                self.logger.error("Could not publish %s: %s", location, exc)
+                self.logger.error(
+                    "Could not publish %s (record=%d batch=%d/%d): %s",
+                    location,
+                    offset + index,
+                    index,
+                    total_records,
+                    exc,
+                )
 
             if progress_callback is not None:
                 progress_callback(
                     index, total_records, str(handle or "<invalid>"), error
                 )
 
+        self.logger.info(
+            "Handle publication complete: published=%d total=%d failed=%d retries=%d offset=%d",
+            result.succeeded,
+            result.total,
+            result.failed,
+            result.retry_attempts,
+            offset,
+        )
         return result
 
     def _store_with_retries(

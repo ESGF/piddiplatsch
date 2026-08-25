@@ -1,4 +1,5 @@
 import json
+import logging
 
 import requests
 
@@ -80,6 +81,20 @@ def test_publishes_prepared_records_without_changing_source(tmp_path):
         ),
     ]
     assert source.read_bytes() == original
+
+
+def test_logs_each_publication_and_summary(tmp_path, caplog):
+    source = tmp_path / "handles.jsonl"
+    write_jsonl(
+        source,
+        [handle_record(str(index)) for index in range(10)] + [handle_record("abc")],
+    )
+
+    with caplog.at_level(logging.INFO, logger="piddiplatsch.handles.publish"):
+        HandlePublisher(FakeBackend()).run([source], offset=10, limit=1)
+
+    assert "Published handle 21.TEST/abc (record=11 batch=1/1)" in caplog.text
+    assert "Handle publication complete: published=1 total=1" in caplog.text
 
 
 def test_continues_after_invalid_record_and_backend_failure(tmp_path):

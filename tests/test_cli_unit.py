@@ -323,8 +323,9 @@ class TestPublishCommand:
         assert "Published 2/3 handles" in result.output
         assert "server unavailable" in result.output
 
+    @patch("piddiplatsch.cli.tqdm")
     @patch("piddiplatsch.cli.HandlePublisher")
-    def test_publish_verbose_progress(self, publisher_cls, runner, tmp_path):
+    def test_publish_verbose_progress(self, publisher_cls, tqdm_cls, runner, tmp_path):
         source = tmp_path / "handles.jsonl"
         source.touch()
 
@@ -339,9 +340,36 @@ class TestPublishCommand:
         )
 
         assert result.exit_code == 0
-        assert "starting at 1001" in result.output
-        assert "[record 1001 | batch 1/1] 21.TEST/abc: published" in result.output
         assert "Processed record range: 1001-1001" in result.output
+        tqdm_cls.assert_called_once_with(
+            total=1,
+            desc="publish records 1001-1001",
+            unit="handle",
+            dynamic_ncols=True,
+        )
+        progress_bar = tqdm_cls.return_value
+        progress_bar.update.assert_called_once_with(1)
+        progress_bar.close.assert_called_once()
+
+    @patch("piddiplatsch.cli.tqdm")
+    @patch("piddiplatsch.cli.HandlePublisher")
+    def test_publish_without_verbose_skips_progress_bar(
+        self, publisher_cls, tqdm_cls, runner, tmp_path
+    ):
+        source = tmp_path / "handles.jsonl"
+        source.touch()
+
+        def run(paths, limit, offset, retries, retry_delay, progress_callback):
+            progress_callback(1, 1, "21.TEST/abc", None)
+            return PublishResult(total=1, succeeded=1)
+
+        publisher_cls.return_value.run.side_effect = run
+
+        result = runner.invoke(cli, ["publish", str(source)])
+
+        assert result.exit_code == 0
+        assert "Published 1/1 handles" in result.output
+        tqdm_cls.assert_not_called()
 
     @patch("piddiplatsch.cli.HandlePublisher")
     def test_publish_passes_limit(self, publisher_cls, runner, tmp_path):
