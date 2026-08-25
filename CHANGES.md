@@ -6,6 +6,7 @@ All notable changes to this project are documented here.
 
 ### Added
 - Added a small native Handle REST backend for single-record publication and retrieval; the pyhandle backend remains available as a legacy option.
+- Added `piddi publish` for idempotent, deferred publication of prepared Handle JSONL files without modifying the source files.
 
 ### Changed
 - JSONL is now the safe default Handle backend, and strict schema validation defaults to enabled.

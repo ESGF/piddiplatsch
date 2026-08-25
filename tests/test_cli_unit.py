@@ -6,6 +6,7 @@ import pytest
 from click.testing import CliRunner
 
 from piddiplatsch.cli import cli
+from piddiplatsch.result import PublishResult
 
 
 @pytest.fixture
@@ -23,6 +24,7 @@ class TestCLIBasics:
         assert result.exit_code == 0
         assert "CLI to interact with Kafka and Handle Service" in result.output
         assert "consume" in result.output
+        assert "publish" in result.output
         assert "retry" in result.output
 
     def test_cli_help_short(self, runner):
@@ -271,6 +273,63 @@ class TestRetryCommand:
         # Check that paths were passed as tuple to run_batch
         call_args = instance.run_batch.call_args.args
         assert len(call_args[0]) == 2
+
+
+class TestPublishCommand:
+    def test_publish_help(self, runner):
+        result = runner.invoke(cli, ["publish", "--help"])
+
+        assert result.exit_code == 0
+        assert "Publish prepared handles" in result.output
+
+    @patch("piddiplatsch.cli.HandlePublisher")
+    def test_publish_reports_success(self, publisher_cls, runner, tmp_path):
+        source = tmp_path / "handles.jsonl"
+        source.touch()
+        publisher_cls.return_value.run.return_value = PublishResult(
+            total=3, succeeded=3
+        )
+
+        result = runner.invoke(cli, ["publish", str(source)])
+
+        assert result.exit_code == 0
+        assert "Published 3/3 handles" in result.output
+        publisher_cls.return_value.run.assert_called_once()
+
+    @patch("piddiplatsch.cli.HandlePublisher")
+    def test_publish_exits_nonzero_after_failures(
+        self, publisher_cls, runner, tmp_path
+    ):
+        source = tmp_path / "handles.jsonl"
+        source.touch()
+        publisher_cls.return_value.run.return_value = PublishResult(
+            total=3,
+            succeeded=2,
+            failed=1,
+            errors=["handles.jsonl:3: server unavailable"],
+        )
+
+        result = runner.invoke(cli, ["publish", str(source)])
+
+        assert result.exit_code == 1
+        assert "Published 2/3 handles" in result.output
+        assert "server unavailable" in result.output
+
+    @patch("piddiplatsch.cli.HandlePublisher")
+    def test_publish_verbose_progress(self, publisher_cls, runner, tmp_path):
+        source = tmp_path / "handles.jsonl"
+        source.touch()
+
+        def run(paths, progress_callback):
+            progress_callback(1, 1, "21.TEST/abc", None)
+            return PublishResult(total=1, succeeded=1)
+
+        publisher_cls.return_value.run.side_effect = run
+
+        result = runner.invoke(cli, ["--verbose", "publish", str(source)])
+
+        assert result.exit_code == 0
+        assert "[1/1] 21.TEST/abc: published" in result.output
 
 
 class TestCLIOptions:

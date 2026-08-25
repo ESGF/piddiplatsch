@@ -35,6 +35,12 @@ piddi --config custom.toml config show
 | `stats` | `interval_seconds`, `summary_interval` | Statistics reporting intervals. |
 | `stats` | `enable_db`, `db_path` | Optional SQLite statistics reporter. |
 
+`piddi publish` always uses the REST Handle client, independently of the
+configured `handle.backend`. This allows one configuration to keep the Kafka
+consumer on the safe `jsonl` backend while a separate process publishes closed
+daily files using the configured `server_url`, `prefix`, `username`, `password`,
+TLS verification, and timeout settings.
+
 All additional keys under `[kafka]` are passed to `confluent-kafka`. Dotted
 librdkafka keys must be quoted in TOML, for example
 `"bootstrap.servers" = "broker:9092"`.

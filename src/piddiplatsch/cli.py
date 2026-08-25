@@ -6,6 +6,7 @@ import toml
 
 from piddiplatsch.config import config
 from piddiplatsch.consumer import configured_projects, start_consumer
+from piddiplatsch.handles.publish import HandlePublisher
 from piddiplatsch.persist.retry import RetryRunner
 
 CONTEXT_SETTINGS = dict(help_option_names=["-h", "--help"])
@@ -82,6 +83,46 @@ def consume(ctx, dump, dry_run, force, projects, all_projects):
         dry_run=dry_run,
         force=force,
     )
+
+
+# publish command
+
+
+@cli.command("publish")
+@click.argument(
+    "path",
+    type=click.Path(exists=True, path_type=Path),
+    nargs=-1,
+    required=True,
+)
+@click.pass_context
+def publish(ctx, path: tuple[Path, ...]):
+    """Publish prepared handles from immutable JSONL FILE_OR_DIRECTORY inputs.
+
+    The source files are never changed. Re-running a file is safe because the
+    Handle REST client publishes with overwrite enabled.
+    """
+    verbose = ctx.obj.get("verbose", False)
+
+    def show_progress(index, total, handle, error):
+        if verbose:
+            status = "published" if error is None else f"failed: {error}"
+            click.echo(f"[{index}/{total}] {handle}: {status}")
+
+    result = HandlePublisher().run(
+        path,
+        progress_callback=show_progress if verbose else None,
+    )
+    if result.total == 0:
+        click.echo("No handle records found.")
+        return
+
+    click.echo(f"Published {result.succeeded}/{result.total} handles.")
+    if result.failed:
+        click.echo(f"Failed: {result.failed}")
+        for error in result.errors:
+            click.echo(f"  - {error}")
+        raise click.exceptions.Exit(1)
 
 
 # retry command
