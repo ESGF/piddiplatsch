@@ -3,12 +3,62 @@
 ## Architecture cleanup and multi-project routing
 
 The ESGF publication workflow now has one Kafka topic carrying STAC publication
-events for several projects (initially CMIP6, CMIP7, and CORDEX-CMIP7). Piddi
-must consume that shared stream and run only the project plugins selected for a
-particular deployment.
+events for several projects (currently observed: CMIP6, CORDEX-CMIP6, CMIP7,
+and CMIP6Plus; expected later: CORDEX-CMIP7 and others). Piddi must consume that
+shared stream and run only the project plugins selected for a particular
+deployment.
 
-Do the architecture cleanup before adding the CMIP7 and CORDEX-CMIP7 plugins.
-Keep it incremental and preserve the current CMIP6 behaviour with tests.
+### Observed real-queue snapshot (2026-08-25)
+
+The local production-like dump can be inspected safely as streaming JSONL with
+`rg`, `head`/`sed`, and per-line `jq`; it does not need to be loaded into memory
+or copied in full. At the time of inspection:
+
+- `outputs/dump/dump_messages_2026-08-25.jsonl`: 4.6 GB, 436,654 events.
+- `outputs/handles/handles_2026-08-25.jsonl`: 2.8 GB, 3,983,218 generated
+  Handle records.
+- Event methods: 436,650 POST and 4 PATCH.
+- Collections/projects on the shared topic:
+  - 423,584 CMIP6;
+  - 13,045 CORDEX-CMIP6;
+  - 23 CMIP7;
+  - 2 CMIP6Plus.
+
+This means the immediate plugin inventory from the captured queue is CMIP6,
+CORDEX-CMIP6, CMIP7, and CMIP6Plus. CORDEX-CMIP7 remains an expected future
+project and should not be confused with the observed CORDEX-CMIP6 records.
+
+Observed field shapes:
+
+| Collection | Dataset PID | File PID |
+| --- | --- | --- |
+| CMIP6 | `cmip6:pid` | `cmip6:tracking_id` |
+| CORDEX-CMIP6 | `cordex-cmip6:pid` | `cordex-cmip6:tracking_id` |
+| CMIP7 | `cmip7:pid` | `cmip7:tracking_id` |
+| CMIP6Plus | `cmip6plus:pid` | `cmip6plus:tracking_id` |
+
+- `data.payload.collection_id` and STAC `item.collection` carry the routing
+  identity. At least some CMIP6 items omit `item.properties.project`, so that
+  property cannot be the sole routing key.
+- PATCH events in this capture are CMIP7 events with `collection_id` and
+  `item_id`, confirming they can be routed before retrieving the full STAC item.
+- Every observed POST has a namespaced dataset PID. Asset PID counts also use
+  the corresponding project namespace; fixtures should retain representative
+  asset counts rather than assuming one file per dataset.
+- A sampled CMIP6 asset had source PID
+  `hdl:21.14100/1b37978f-caf6-4e4a-9893-3266a93077a2`, while its generated JSONL
+  Handle used deterministic suffix `bedf32ab-ef69-3184-b02a-c1dc6cbe3cf5`.
+  This confirms that the current mapper ignores the namespaced file PID.
+- The generated Handle JSONL contains `handle`, `URL`, `data`, and `timestamp`,
+  but no project/plugin or source-event identity. The production outbox schema
+  must add that provenance before multi-project publishing and retries.
+- Extract small, sanitized fixtures for each observed collection, all four PATCH
+  events, representative multi-asset datasets, and their generated Handle
+  records. Record the extraction command and source-file checksum so samples can
+  be refreshed without committing the multi-gigabyte dumps.
+
+Do the architecture cleanup before adding further project plugins. Keep it
+incremental and preserve the current CMIP6 behaviour with tests.
 
 ### Target design
 
@@ -19,8 +69,9 @@ Keep it incremental and preserve the current CMIP6 behaviour with tests.
   one project, several projects, or all registered projects.
 - Add repeatable CLI selection (for example `--project cmip6 --project cmip7`)
   plus `--all-projects`; CLI selection overrides configuration.
-- Use stable, normalized plugin names (`cmip6`, `cmip7`, `cordex-cmip7`) while
-  accepting the exact project identifiers used by publication records.
+- Use stable, normalized plugin names (`cmip6`, `cordex-cmip6`, `cmip7`,
+  `cmip6plus`, and later `cordex-cmip7`) while accepting the exact project
+  identifiers used by publication records.
 - Route a record to exactly zero or one selected plugin:
   - an unmatched or disabled project is intentionally ignored and counted, not
     treated as a processing error or written to the retry queue;
@@ -73,7 +124,9 @@ Keep it incremental and preserve the current CMIP6 behaviour with tests.
   ```text
   outputs/
     cmip6/{handles,failures,skipped}/
+    cordex-cmip6/{handles,failures,skipped}/
     cmip7/{handles,failures,skipped}/
+    cmip6plus/{handles,failures,skipped}/
     cordex-cmip7/{handles,failures,skipped}/
     _stream/{dump,unrouted}/
   ```
@@ -101,7 +154,8 @@ and `asset.tracking_id` (file). Current CMIP6 STAC examples instead use
 with a colon, not `cmip6_pid` or `cmip6_tracking_id`.
 
 - Treat PID field names as project-plugin metadata because the namespace and
-  possibly the PID semantics differ between CMIP6, CMIP7, and CORDEX-CMIP7.
+  possibly the PID semantics differ between CMIP6, CORDEX-CMIP6, CMIP7,
+  CMIP6Plus, and future projects such as CORDEX-CMIP7.
 - Define canonical fields and an explicit, ordered compatibility list per
   project. For CMIP6, support the current namespaced fields and the known legacy
   `pid`/`tracking_id` fields during migration.
@@ -398,8 +452,11 @@ extension before designing around one.
 - Test restart/offset behaviour with one multi-project process and with separate
   project-specific consumer groups.
 - Migrate CMIP6 onto the router first and run it against a captured sample of the
-  real shared publication stream before implementing CMIP7 and CORDEX-CMIP7.
-- Add CMIP7 next, use it to refine shared abstractions, then add CORDEX-CMIP7.
+  real shared publication stream before implementing the other observed
+  projects.
+- Use the second project implementation to refine shared abstractions, then add
+  the remaining observed projects according to operational priority. Add
+  CORDEX-CMIP7 when representative records and its schema are available.
 
 ### Open questions to resolve from real queue samples
 
@@ -411,9 +468,10 @@ extension before designing around one.
   persisted for diagnostics?
 - Is the raw stream dump global, per selected project after routing, or both?
 - Which plugin settings and Handle schema fields actually differ between CMIP6,
-  CMIP7, and CORDEX-CMIP7?
+  CORDEX-CMIP6, CMIP7, CMIP6Plus, and CORDEX-CMIP7?
 - What are the canonical dataset-PID and file-PID fields for CMIP7 and
-  CORDEX-CMIP7, and are their Handle prefixes fixed per project?
+  CORDEX-CMIP7, and are Handle prefixes fixed per project? Confirm that the
+  observed CORDEX-CMIP6 and CMIP6Plus field names and prefixes are authoritative.
 - Are source PIDs mandatory for datasets and files, or is fallback generation
   valid for either aggregation level?
 - Are publication events full current-state upserts, or can applying a newer
