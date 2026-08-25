@@ -1,0 +1,33 @@
+{
+  "metadata": {"time": "2026-08-13T03:02:53.795427"},
+  "data": {
+    "type": "STAC",
+    "payload": {
+      "collection_id": "CMIP6Plus",
+      "method": "POST",
+      "item": {
+        "type": "Feature",
+        "stac_version": "1.1.0",
+        "id": "CMIP6Plus.TBIMIP.CSIRO-ARCCSS.ACCESS-CM2.tbi-pace-I-clim-mod.r1i1p1f1.AE6hrPt.zg500.gn.v20251201",
+        "collection": "CMIP6Plus",
+        "properties": {
+          "project": "CMIP6Plus",
+          "created": "2026-08-13T03:02:51.368065Z",
+          "retracted": false,
+          "cmip6plus:pid": "hdl:21.14100/bc85369b-44a5-3e57-8d91-251b63c8b9d3"
+        },
+        "assets": {
+          "zg500_AE6hrPt_ACCESS-CM2_tbi-pace-I-clim-mod_r1i1p1f1_gn_100001010600-101001010000.nc": {
+            "href": "https://esgf.nci.org.au/thredds/fileServer/zg500_AE6hrPt_ACCESS-CM2_tbi-pace-I-clim-mod_r1i1p1f1_gn_100001010600-101001010000.nc",
+            "roles": ["data"],
+            "file:size": 806802928,
+            "file:checksum": "1220231110fbed237f91b6dd46c1111008970c8c124b72709b9cc7c52216073039db",
+            "alternate:name": "esgf.nci.org.au",
+            "created": "2025-12-07T22:18:25Z",
+            "cmip6plus:tracking_id": "hdl:21.14100/4485e7f1-06fb-46a5-99b3-2fb951eeb80d"
+          }
+        }
+      }
+    }
+  }
+}

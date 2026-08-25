@@ -85,6 +85,10 @@ incremental and preserve the current CMIP6 behaviour with tests.
 - CMIP6Plus is registered as `cmip6plus`, resolves `cmip6plus:pid` /
   `cmip6plus:tracking_id`, and uses the shared mapper. Its fixture represents
   the duplicated 20-file dataset observed in the real queue.
+- A no-service integration test feeds compact real-queue-derived POST records
+  for all four projects through the direct/recovery-style pipeline and JSONL
+  backend. It verifies exact source PID preservation, output validation, and
+  dataset/file Handle relationships.
 
 Remaining items below include project-scoped output/provenance, stronger PID
 edge-case coverage and operational rollout checks. All projects observed in the

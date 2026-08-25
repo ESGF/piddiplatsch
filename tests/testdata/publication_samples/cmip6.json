@@ -1,0 +1,32 @@
+{
+  "metadata": {"time": "2026-07-19T08:14:12.057860"},
+  "data": {
+    "type": "STAC",
+    "payload": {
+      "collection_id": "CMIP6",
+      "method": "POST",
+      "item": {
+        "type": "Feature",
+        "stac_version": "1.1.0",
+        "id": "CMIP6.DCPP.MOHC.HadGEM3-GC31-MM.dcppA-hindcast.s1960-r10i1p1f2.day.huss.gn.v20200417",
+        "collection": "CMIP6",
+        "properties": {
+          "created": "2026-07-19T09:14:11Z",
+          "retracted": false,
+          "cmip6:pid": "hdl:21.14100/c8a64f32-53f9-393b-9fe3-0331dcb7759c"
+        },
+        "assets": {
+          "huss_day_HadGEM3-GC31-MM_dcppA-hindcast_s1960-r10i1p1f2_gn_19601101-19601230.nc": {
+            "href": "https://dap.ceda.ac.uk/badc/cmip6/huss_day_HadGEM3-GC31-MM_dcppA-hindcast_s1960-r10i1p1f2_gn_19601101-19601230.nc",
+            "roles": ["data"],
+            "file:size": 24262076,
+            "file:checksum": "1220d2905b3233e29257f7d4e4b3d18aeb7261c6249c85c943d73b4d028981096e78",
+            "alternate:name": "ceda.ac.uk",
+            "created": "2020-05-27T14:53:17Z",
+            "cmip6:tracking_id": "hdl:21.14100/1b37978f-caf6-4e4a-9893-3266a93077a2"
+          }
+        }
+      }
+    }
+  }
+}
