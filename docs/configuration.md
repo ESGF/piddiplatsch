@@ -1,0 +1,42 @@
+# Configuration
+
+Piddiplatsch loads `src/piddiplatsch/config/default.toml` first and recursively
+merges the file passed with `--config` over those defaults. Keep credentials in
+a local ignored file such as `custom.toml`.
+
+Validate and inspect the effective configuration before a run:
+
+```bash
+piddi --config custom.toml config validate
+piddi --config custom.toml config show
+```
+
+## Application settings
+
+| Section | Key | Purpose |
+| --- | --- | --- |
+| `consumer` | `processor` | Registered processor name; currently `cmip6`. |
+| `consumer` | `topic` | Kafka topic to consume. |
+| `consumer` | `output_dir` | Root for failure, skipped, dump, and dry-run Handle JSONL files. |
+| `consumer` | `max_errors` | Stop after this many processing errors; `-1` disables the limit. |
+| `consumer.transient` | `stop_on_skip` | Stop after a transient external failure unless `--force` is used. |
+| `consumer.transient` | `retries` | Number of retries for transient STAC patch retrieval. |
+| `consumer.transient` | `backoff_initial`, `backoff_max` | Exponential retry delay bounds in seconds. |
+| `consumer.transient` | `preflight_stac` | Probe the configured STAC service before consuming. |
+| `handle` | `backend` | `pyhandle` for publication or `jsonl` for local output. |
+| `handle` | `server_url`, `prefix`, `username`, `password` | Handle service connection and credentials. |
+| `handle` | `verify_https` | Verify Handle service TLS certificates; defaults to `true`. |
+| `stac` | `base_url`, `timeout`, `collection` | STAC lookup and patch retrieval settings. |
+| `lookup` | `enabled`, `backend` | Enable version lookup using `stac` or `es`. |
+| `elasticsearch` | `base_url`, `index` | Elasticsearch lookup settings when `lookup.backend = "es"`. |
+| `schema` | `strict_mode` | Reject incomplete or unsupported CMIP6 records when enabled. |
+| `plugins.cmip6` | `landing_page_url`, `max_parts`, `excluded_asset_keys` | CMIP6 Handle-record behavior. |
+| `stats` | `interval_seconds`, `summary_interval` | Statistics reporting intervals. |
+| `stats` | `enable_db`, `db_path` | Optional SQLite statistics reporter. |
+
+All additional keys under `[kafka]` are passed to `confluent-kafka`. Dotted
+librdkafka keys must be quoted in TOML, for example
+`"bootstrap.servers" = "broker:9092"`.
+
+Use `etc/observe.toml` for safe exploration and `etc/esgf-example.toml` as a
+starting point for authenticated ESGF Kafka settings.

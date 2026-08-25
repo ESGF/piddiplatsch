@@ -25,7 +25,7 @@ It is intended for:
 - Sites that need to register or update PIDs via Handle.Net service
 - Users comfortable running Kafka consumers in production environments
 
-The project is fully open-source and documented. ESGF sites and other organizations with similar requirements are welcome to adopt and contributete.
+The project is fully open-source and documented. ESGF sites and other organizations with similar requirements are welcome to adopt and contribute.
 
 ---
 
@@ -152,6 +152,9 @@ cmip6   | msg:458 (22.69/s)| hdl:1.8k (88.79/s)| E:0| W:1.3k| D:70| replica:64| 
 
 Detailed CLI options and extended examples live in [CONTRIBUTING.md](CONTRIBUTING.md).
 
+Operational guidance for output retention, retries, logging, and shutdown is in
+[docs/operations.md](docs/operations.md).
+
 ---
 
 ## 🛠️ Configuration
@@ -170,6 +173,8 @@ piddi --config custom.toml
 ```
 
 Kafka, Handle Service, consumer behaviour, and processor selection are all controlled via this file.
+See [docs/configuration.md](docs/configuration.md) for the supported application
+settings and override behavior.
 
 ### ESGF Example Config
 
@@ -278,4 +283,3 @@ Full development and testing guidance is in [CONTRIBUTING.md](CONTRIBUTING.md).
 
 Interested in contributing?  
 See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup, testing, style, and workflow.
-

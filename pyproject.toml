@@ -14,11 +14,9 @@ requires-python = ">=3.11"
 license = {file = "LICENSE"}
 dependencies = [
     "click",
-    "flask",
     "confluent-kafka >=2.9.0",
     "pyhandle >=1.4.1",
-    "colorlog",
-  "rich >=13.0.0",
+    "rich >=13.0.0",
     "toml",
     "requests",
     "pydantic >=2.11",
@@ -28,6 +26,7 @@ dependencies = [
     "millify",
     "jsonpatch >=1.33",
     "elasticsearch <9.0.0,>=8.0.0",
+    "pystac >=1.8.0",
     "pystac-client >=0.9.0",
     "multiformats"
 ]
@@ -41,9 +40,11 @@ Changelog = "https://github.com/ESGF/piddiplatsch/blob/main/CHANGES.md"
 [project.optional-dependencies]
 dev = [
   "pip >=24.2.0",
-  "flit >=3.9.0,<4.0",
+  "build >=1.2.0",
   "ipython>=8.13.0",
+  "flask",
   "pytest >=8.0.0",
+  "pytest-cov >=6.0.0",
   "hypothesis >=6.140.2",
   "ruff >=0.14.0,<0.15.0",
   "twine >=4.0.0",
@@ -59,44 +60,6 @@ piddi = "piddiplatsch.cli:cli"
 
 [tool.flit.module]
 name = "piddiplatsch"
-
-[tool.flit.sdist]
-include = [
-  ".zenodo.json",
-  "AUTHORS.md",
-  "CHANGES.md",
-  "CONTRIBUTING.md",
-  "LICENSE",
-  "Makefile",
-  "README.md",
-  "environment.yml",
-  "environment-dev.yml",
-  "environment-docs.yml",
-  "docs/_static/_images/*.gif",
-  "docs/_static/_images/*.jpg",
-  "docs/_static/_images/*.png",
-  "docs/_static/_images/*.rst",
-  "docs/Makefile",
-  "docs/conf.py",
-  "docs/make.bat",
-  "src/piddiplatsch",
-  "tests/*.py",
-  "tox.ini"
-]
-exclude = [
-  "*.py[co]",
-  "__pycache__",
-  ".codacy.yml",
-  ".dockerignore",
-  ".editorconfig",
-  ".gitignore",
-  ".pre-commit-config.yaml",
-  ".readthedocs.yml",
-  ".yamllint.yaml",
-  "Dockerfile",
-  "docker-compose.yml",
-  "docs/_*"
-]
 
 [tool.ruff]
 src = ["src"]
@@ -168,11 +131,18 @@ markers = [
 ]
 # Note: Tests without markers are considered unit tests (fast, no external dependencies)
 
+[tool.coverage.run]
+branch = true
+source = ["piddiplatsch"]
+
+[tool.coverage.report]
+fail_under = 70
+show_missing = true
+skip_covered = true
+
 [tool.black]
 target-version = [
-  "py310",
-  "py311",
-  "py312"
+  "py311"
 ]
 
 [tool.isort]

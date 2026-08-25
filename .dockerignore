@@ -44,7 +44,7 @@ pid.log
 # Documentation
 docs/
 *.md
-README.md
+!README.md
 CHANGES.md
 
 # Misc

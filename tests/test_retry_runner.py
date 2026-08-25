@@ -2,7 +2,7 @@ import logging
 from pathlib import Path
 
 from piddiplatsch.persist.retry import RetryRunner
-from piddiplatsch.result import RetryResult
+from piddiplatsch.result import FeedResult, RetryResult
 
 
 def test_run_batch_progress_callback(monkeypatch, tmp_path: Path, caplog):
@@ -68,3 +68,30 @@ def test_run_batch_progress_callback(monkeypatch, tmp_path: Path, caplog):
     assert overall.succeeded == 2
     assert overall.failed == 1
     assert new_failure in overall.failure_files
+
+
+def test_run_file_reports_appended_daily_failure(monkeypatch, tmp_path: Path):
+    from piddiplatsch import consumer
+    from piddiplatsch.persist import retry as retry_mod
+
+    failure_dir = tmp_path / "failures"
+    existing_failure = failure_dir / "r1" / "failed_items_2026-08-25.jsonl"
+    existing_failure.parent.mkdir(parents=True)
+    existing_failure.write_text("{}\n", encoding="utf-8")
+    source = tmp_path / "source.jsonl"
+    source.write_text("{}\n", encoding="utf-8")
+
+    monkeypatch.setattr(retry_mod, "load_failed_messages", lambda _path: [("key", {})])
+
+    def fail_and_append(*args, **kwargs):
+        with existing_failure.open("a", encoding="utf-8") as stream:
+            stream.write("{}\n")
+        return FeedResult(total=1, failed=1)
+
+    monkeypatch.setattr(consumer, "feed_messages_direct", fail_and_append)
+    runner = RetryRunner("cmip6", failure_dir=failure_dir)
+
+    result = runner.run_file(source)
+
+    assert result.failed == 1
+    assert result.failure_files == {existing_failure}

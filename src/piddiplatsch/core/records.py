@@ -30,8 +30,10 @@ class BaseRecord(ABC):
         return self.model.model_dump_json()
 
     def __repr__(self) -> str:
-        pid = getattr(self, "pid", lambda: "UNKNOWN")
-        return f"<{self.__class__.__name__} id={self.item.get('id', 'UNKNOWN')} pid={pid()}>"
+        pid = getattr(self, "pid", "UNKNOWN")
+        return (
+            f"<{self.__class__.__name__} id={self.item.get('id', 'UNKNOWN')} pid={pid}>"
+        )
 
     def __str__(self):
         return self.__repr__()

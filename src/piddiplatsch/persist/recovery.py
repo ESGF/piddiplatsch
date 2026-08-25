@@ -10,13 +10,13 @@ from piddiplatsch.result import PrepareResult
 class FailureRecorder(RecorderBase):
     LOG_KIND = "failure"
     LOG_LEVEL = logging.WARNING
-    FAILURE_DIR = (
-        Path(config.get("consumer", {}).get("output_dir", "outputs")) / "failures"
-    )
-    FAILURE_DIR.mkdir(parents=True, exist_ok=True)
+    FAILURE_DIR: Path | None = None
 
-    def __init__(self) -> None:
-        super().__init__(self.FAILURE_DIR, "failed_items")
+    def __init__(self, root_dir: Path | None = None) -> None:
+        configured_dir = (
+            Path(config.get("consumer", {}).get("output_dir", "outputs")) / "failures"
+        )
+        super().__init__(root_dir or self.FAILURE_DIR or configured_dir, "failed_items")
 
     def prepare(
         self,

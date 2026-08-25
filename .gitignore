@@ -179,7 +179,10 @@ clusterID/
 # piddiplatsch
 custom.toml
 custom_*.toml
+# Runtime inspection data is intentionally retained locally and never committed.
 outputs/
+pid.log
+stats.db
 *.db
 
 # VS Code

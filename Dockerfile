@@ -4,7 +4,7 @@ FROM python:3.11-slim
 WORKDIR /app
 
 # Copy only what's needed for installation
-COPY pyproject.toml LICENSE ./
+COPY pyproject.toml README.md LICENSE ./
 COPY src/ ./src/
 
 # Install the package

@@ -25,6 +25,7 @@ class FeedResult:
     total: int = 0
     succeeded: int = 0
     failed: int = 0
+    skipped: int = 0
 
 
 @dataclass
@@ -34,7 +35,9 @@ class RetryResult:
     total: int = 0
     succeeded: int = 0
     failed: int = 0
+    skipped: int = 0
     failure_files: set[Path] = field(default_factory=set)
+    errors: list[str] = field(default_factory=list)
 
     @property
     def success_rate(self) -> float:

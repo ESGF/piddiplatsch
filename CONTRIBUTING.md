@@ -119,6 +119,9 @@ Piddiplatsch uses a three-tier testing strategy: **unit**, **integration**, and 
 # Run all unit + integration tests
 make test
 
+# Run tests once with a coverage report
+make coverage
+
 # Run only unit tests
 make test-unit
 
@@ -206,6 +209,20 @@ make format       # Auto-format with black and isort
 make check-format # Check formatting only
 make fix          # Fix linting errors automatically
 ```
+
+Before opening a pull request, run the complete non-Docker quality gate:
+
+```bash
+make lint
+make test
+make coverage
+make dist
+python -m twine check dist/*
+```
+
+Tests must write only to pytest-provided temporary directories. Do not read,
+truncate, or delete the repository's ignored `outputs/`, `pid.log`, or
+`stats.db`; developers may retain those files for operational inspection.
 
 ---
 
@@ -352,4 +369,3 @@ Include:
 ---
 
 Thank you for contributing to Piddiplatsch! 🎉
-

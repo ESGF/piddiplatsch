@@ -3,6 +3,8 @@ from collections.abc import Iterable
 from datetime import UTC, datetime
 from pathlib import Path
 
+from piddiplatsch.exceptions import JsonlReadError
+
 
 def utc_now() -> datetime:
     """Return current UTC time as a timezone-aware datetime."""
@@ -40,20 +42,26 @@ class DailyJsonlWriter:
 
 
 def read_jsonl(file_path: Path) -> list[dict]:
-    """Read a JSONL file and return list of dicts. Returns empty list if missing."""
+    """Read a JSONL file without silently dropping malformed records."""
     if not file_path.exists():
         return []
     records: list[dict] = []
     with file_path.open("r", encoding="utf-8") as f:
-        for line in f:
+        for line_number, line in enumerate(f, start=1):
             line = line.strip()
             if not line:
                 continue
             try:
-                records.append(json.loads(line))
-            except Exception:
-                # Skip malformed lines but keep going
-                continue
+                record = json.loads(line)
+            except json.JSONDecodeError as exc:
+                raise JsonlReadError(
+                    f"Malformed JSON in {file_path} at line {line_number}: {exc.msg}"
+                ) from exc
+            if not isinstance(record, dict):
+                raise JsonlReadError(
+                    f"Expected a JSON object in {file_path} at line {line_number}"
+                )
+            records.append(record)
     return records
 
 

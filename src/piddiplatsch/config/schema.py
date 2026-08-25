@@ -63,6 +63,7 @@ class HandleConfig(BaseModel):
     prefix: str | None = None
     username: str | None = None
     password: str | None = None
+    verify_https: bool = True
 
     @model_validator(mode="after")
     def _check_pyhandle_requirements(self) -> HandleConfig:

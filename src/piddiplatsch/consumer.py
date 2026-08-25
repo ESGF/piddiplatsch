@@ -115,6 +115,7 @@ class ConsumerPipeline:
         max_errors=-1,
         dry_run: bool = False,
         force: bool = False,
+        failure_dir: Path | None = None,
     ):
         """
         consumer: instance of BaseConsumer (KafkaConsumer or DirectConsumer)
@@ -129,6 +130,7 @@ class ConsumerPipeline:
         self.dump_messages = dump_messages
         self.max_errors = int(max_errors)
         self.force = force
+        self.failure_dir = failure_dir
         consumer_cfg = config.get("consumer", {})
         transient_cfg = consumer_cfg.get("transient", {})
         # Prefer new key `stop_on_skip`, fallback to legacy `stop_on_transient_skip`
@@ -141,8 +143,6 @@ class ConsumerPipeline:
                 ),
             )
         )
-        self._consecutive_transient_skips = 0
-
         self.stats = stats
         self.progress = None
         try:
@@ -158,7 +158,10 @@ class ConsumerPipeline:
             result = self._safe_process_message(key, value)
 
             # Track metrics
-            if result.success:
+            if result.skipped:
+                # A skipped message was consumed, but it did not complete successfully.
+                self.stats.tick()
+            elif result.success:
                 self.stats.tick()
                 self.stats.handle(
                     n=result.num_handles,
@@ -175,15 +178,11 @@ class ConsumerPipeline:
                     logger.exception(f"Failed to persist skipped message {key}")
 
                 if result.transient_skip:
-                    self._consecutive_transient_skips += 1
                     self.stats.external_fail(message=f"message={key}")
                     if self.stop_on_transient_skip and not self.force:
                         raise StopOnTransientSkipError(
                             f"Transient external failure encountered (key={key}); stopping as per policy"
                         )
-                else:
-                    self._consecutive_transient_skips = 0
-
             if result.patched:
                 self.stats.patch(message=f"message={key}")
 
@@ -206,9 +205,12 @@ class ConsumerPipeline:
             return self.processor.process(key, value)
         except Exception as e:
             logger.exception(f"Error processing message {key}")
-            retries = value.get("retries", 0)
+            infos = value.get("__infos__", {}) or {}
+            retries = infos.get("retries", value.get("retries", 0))
             reason = str(e)
-            FailureRecorder().record(key, value, retries=retries, reason=reason)
+            FailureRecorder(root_dir=self.failure_dir).record(
+                key, value, retries=retries, reason=reason
+            )
             return ProcessingResult(key=key, success=False, error=reason)
 
     def stop(self, cause: StopCause = StopCause.MANUAL):
@@ -228,21 +230,38 @@ class ConsumerPipeline:
 # ----------------------------
 
 
-def feed_messages_direct(messages, processor="cmip6", dry_run=False) -> FeedResult:
+def feed_messages_direct(
+    messages,
+    processor="cmip6",
+    dry_run=False,
+    failure_dir: Path | None = None,
+    force: bool = False,
+) -> FeedResult:
     consumer = DirectConsumer(messages)
-    pipeline = ConsumerPipeline(consumer, processor=processor, dry_run=dry_run)
+    pipeline = ConsumerPipeline(
+        consumer,
+        processor=processor,
+        dry_run=dry_run,
+        failure_dir=failure_dir,
+        force=force,
+    )
 
     # Track stats before run
     messages_before = pipeline.stats.messages
     errors_before = pipeline.stats.errors
+    skipped_before = pipeline.stats.skipped_messages
 
     pipeline.run()
 
     # Calculate delta from pipeline stats
-    succeeded = pipeline.stats.messages - messages_before
+    processed = pipeline.stats.messages - messages_before
     failed = pipeline.stats.errors - errors_before
+    skipped = pipeline.stats.skipped_messages - skipped_before
+    succeeded = processed - skipped
 
-    return FeedResult(total=len(messages), succeeded=succeeded, failed=failed)
+    return FeedResult(
+        total=len(messages), succeeded=succeeded, failed=failed, skipped=skipped
+    )
 
 
 def feed_test_files(testfile_paths, processor="cmip6"):
@@ -267,14 +286,22 @@ def start_consumer(
     *,
     dump_messages=False,
     verbose=False,
-    enable_db=False,
+    enable_db: bool | None = None,
     db_path: str | None = None,
     direct_messages=None,
     dry_run: bool = False,
     force: bool = False,
 ):
-    # Initialize stats cleanly for this run (encapsulated)
-    stats.configure_for_run(enable_db=enable_db, db_path=db_path)
+    # Initialize stats from the fully loaded configuration for this run.
+    stats_config = config.get("stats", {})
+    stats.configure_for_run(
+        enable_db=(
+            stats_config.get("enable_db", False) if enable_db is None else enable_db
+        ),
+        db_path=db_path or stats_config.get("db_path"),
+        log_interval_seconds=stats_config.get("interval_seconds"),
+        log_interval_messages=stats_config.get("summary_interval"),
+    )
 
     if direct_messages is not None:
         consumer = DirectConsumer(direct_messages)

@@ -4,6 +4,18 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+### Changed
+- Tests now use temporary folders and leave local output files untouched.
+- Cleaned up dependencies, development tools, CI, and packaging.
+
+### Fixed
+- Made retries safer and fixed retry counts and skipped records.
+- Fixed configured output folders, statistics, HTTPS defaults, and Docker builds.
+- Fixed a few small code issues.
+
+### Documentation
+- Added short configuration and operations guides.
+
 ## [2.2.1] - 2026-08-25
 ### Changed
 - Transferred the canonical repository from `cehbrecht/piddiplatsch` to `ESGF/piddiplatsch` and updated package metadata, repository links, and contributor instructions.
