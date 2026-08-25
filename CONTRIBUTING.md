@@ -338,11 +338,16 @@ excluded_asset_keys = ["reference_file", "globus", "thumbnail", "quicklook"]
 
 ### Adding a Plugin
 
-1. Implement a processor under:
+1. Add a package containing thin `model.py`, `record.py`, `processor.py`, and
+   `plugin.py` modules:
 ```
-src/piddiplatsch/plugins/<name>/processor.py
+src/piddiplatsch/plugins/<python_name>/
 ```
-2. Add a declarative plugin specification under the plugin package:
+Reuse `DatasetHandleModel`, `FileHandleModel`, `ProjectDatasetRecord`,
+`ProjectFileRecord`, and `StacProjectProcessor`; keep only PID field names and
+real project differences in the plugin.
+
+2. Declare the plugin specification:
 ```python
 from piddiplatsch.core.plugin import PluginSpec
 
@@ -354,6 +359,7 @@ plugin = PluginSpec(
 ```
 3. Import and register that specification explicitly in the static registry.
 4. Provide `[plugins.<name>]` config as needed.
+5. Add a real-record-derived fixture and plugin/integration tests.
 
 ---
 

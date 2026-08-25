@@ -36,9 +36,24 @@ plugins.
 
 One consumer can read the shared ESGF publication topic and route records to one,
 several, or all selected project plugins. Unrelated records are filtered without
-being treated as failures. Both plugins share the publication-envelope,
+being treated as failures. The plugins share the publication-envelope,
 Handle-output schema, and mapping workflow; their small plugin modules declare
 project identity, PID field names, and genuine project-specific behaviour.
+
+```mermaid
+flowchart LR
+    K[Shared Kafka topic] --> R{Project router}
+    K -. optional ordered dump .-> D[outputs/dump]
+    R --> C6[cmip6]
+    R --> C7[cmip7]
+    R --> CX[cordex-cmip6]
+    R --> CP[cmip6plus]
+    R -->|unselected| F[Filtered: log and stats]
+    C6 --> O6[outputs/cmip6/handles]
+    C7 --> O7[outputs/cmip7/handles]
+    CX --> OX[outputs/cordex-cmip6/handles]
+    CP --> OP[outputs/cmip6plus/handles]
+```
 
 ---
 
@@ -127,7 +142,6 @@ Common first runs:
 - Override configured projects for one run:
   ```bash
   piddi consume --project cmip6
-  # once additional plugins are available:
   piddi consume --project cmip6 --project cmip7
   piddi consume --all-projects
   ```
@@ -279,6 +293,9 @@ Currently implemented project plugins are:
 - `cmip6plus`
 - `cmip7`
 - `cordex-cmip6`
+
+The raw dump stays global to preserve Kafka order. JSONL Handle output is
+project-scoped, and `pid.log` records selected and filtered projects.
 
 Configuration and implementation guidance are documented in [CONTRIBUTING.md](CONTRIBUTING.md).
 The message flow and consumer-group constraints are documented in

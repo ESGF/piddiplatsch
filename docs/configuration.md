@@ -30,7 +30,7 @@ piddi --config custom.toml config show
 | `lookup` | `enabled`, `backend` | Enable version lookup using `stac` or `es`. |
 | `elasticsearch` | `base_url`, `index` | Elasticsearch lookup settings when `lookup.backend = "es"`. |
 | `schema` | `strict_mode` | Reject incomplete or unsupported CMIP6 records when enabled. |
-| `plugins.cmip6` | `landing_page_url`, `max_parts`, `excluded_asset_keys` | CMIP6 Handle-record behavior. |
+| `plugins.<name>` | `landing_page_url`, `max_parts`, `excluded_asset_keys` | Project-specific Handle-record behavior. |
 | `stats` | `interval_seconds`, `summary_interval` | Statistics reporting intervals. |
 | `stats` | `enable_db`, `db_path` | Optional SQLite statistics reporter. |
 
