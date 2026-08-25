@@ -164,7 +164,9 @@ class TestRetryCommand:
 
         from piddiplatsch.result import RetryResult
 
-        mock_run_batch.return_value = RetryResult(total=5, succeeded=5, failed=0, failure_files=set())
+        mock_run_batch.return_value = RetryResult(
+            total=5, succeeded=5, failed=0, failure_files=set()
+        )
 
         result = runner.invoke(cli, ["retry", str(test_file)])
         assert result.exit_code == 0
@@ -179,7 +181,9 @@ class TestRetryCommand:
 
         from piddiplatsch.result import RetryResult
 
-        mock_run_batch.return_value = RetryResult(total=10, succeeded=7, failed=3, failure_files=set())
+        mock_run_batch.return_value = RetryResult(
+            total=10, succeeded=7, failed=3, failure_files=set()
+        )
 
         result = runner.invoke(cli, ["retry", str(test_file)])
         assert result.exit_code == 0
@@ -201,7 +205,9 @@ class TestRetryCommand:
 
         from piddiplatsch.result import RetryResult
 
-        mock_run_batch.return_value = RetryResult(total=5, succeeded=3, failed=2, failure_files={new_failure})
+        mock_run_batch.return_value = RetryResult(
+            total=5, succeeded=3, failed=2, failure_files={new_failure}
+        )
 
         from piddiplatsch.config import config
 

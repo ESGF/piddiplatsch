@@ -22,7 +22,9 @@ class PluginSpec:
 
     def __post_init__(self) -> None:
         name = normalize_project_id(self.name)
-        project_ids = tuple(dict.fromkeys(normalize_project_id(value) for value in self.project_ids))
+        project_ids = tuple(
+            dict.fromkeys(normalize_project_id(value) for value in self.project_ids)
+        )
         if not name:
             raise ValueError("Plugin name must not be empty")
         if not project_ids or any(not value for value in project_ids):

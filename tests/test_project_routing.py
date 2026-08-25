@@ -88,7 +88,13 @@ def test_router_filters_unselected_projects(isolated_registry, caplog):
     assert result.filtered
     assert result.project == "cordex-cmip6"
     assert calls == []
-    assert sum("Filtering publication project cordex-cmip6" in message for message in caplog.messages) == 1
+    assert (
+        sum(
+            "Filtering publication project cordex-cmip6" in message
+            for message in caplog.messages
+        )
+        == 1
+    )
 
 
 def test_router_dispatches_to_one_of_several_plugins(isolated_registry):

@@ -6,13 +6,13 @@ from .models import (
 from .plugin import PluginSpec, normalize_project_id
 from .processing import BaseProcessor
 from .records import BaseRecord
-from .routing import ProjectRouter, extract_project_id
 from .registry import (
     get_plugin,
     get_plugins,
     list_plugins,
     register_plugin,
 )
+from .routing import ProjectRouter, extract_project_id
 
 __all__ = [
     "ALLOWED_CHECKSUM_METHODs",

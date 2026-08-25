@@ -42,7 +42,9 @@ class BaseHandleModel(BaseModel):
                 raise ValueError(
                     f"Invalid PID string: {value} is not a valid UUID."
                 ) from exc
-        raise TypeError(f"PID must be a UUID or UUID string, got {type(value).__name__}")
+        raise TypeError(
+            f"PID must be a UUID or UUID string, got {type(value).__name__}"
+        )
 
     def get_pid(self) -> str | None:
         return self._PID

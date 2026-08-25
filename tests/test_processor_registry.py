@@ -2,8 +2,8 @@
 
 import pytest
 
-from piddiplatsch.core.processing import BaseProcessor
 from piddiplatsch.core.plugin import PluginSpec
+from piddiplatsch.core.processing import BaseProcessor
 from piddiplatsch.core.registry import (
     get_plugin,
     list_plugins,
@@ -162,4 +162,6 @@ def test_processor_dry_run_flag():
     processor = make_processor("cmip6", dry_run=True)
 
     # Should be using JSONL backend
-    assert isinstance(getattr(processor.handle_backend, "backend", None), JsonlHandleBackend)
+    assert isinstance(
+        getattr(processor.handle_backend, "backend", None), JsonlHandleBackend
+    )

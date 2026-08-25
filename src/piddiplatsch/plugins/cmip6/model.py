@@ -4,7 +4,6 @@ from piddiplatsch.core.handle_models import (
     FileHandleModel,
 )
 
-
 BaseCMIP6Model = BaseHandleModel
 
 

@@ -88,7 +88,11 @@ class Config:
 
         logging.basicConfig(
             level=log_level,
-            format=("%(message)s" if console else "%(asctime)s - %(levelname)s - %(message)s"),
+            format=(
+                "%(message)s"
+                if console
+                else "%(asctime)s - %(levelname)s - %(message)s"
+            ),
             datefmt="[%X]",
             handlers=handlers,
         )

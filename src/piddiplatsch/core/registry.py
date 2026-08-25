@@ -23,8 +23,12 @@ def register_plugin(plugin: PluginSpec, *, replace: bool = False) -> None:
         if project_id in registered.project_ids
     }
     if conflicts:
-        details = ", ".join(f"{project_id} ({name})" for project_id, name in sorted(conflicts.items()))
-        raise ValueError(f"Plugin '{plugin.name}' has project identifiers already registered: {details}")
+        details = ", ".join(
+            f"{project_id} ({name})" for project_id, name in sorted(conflicts.items())
+        )
+        raise ValueError(
+            f"Plugin '{plugin.name}' has project identifiers already registered: {details}"
+        )
 
     _PLUGINS[plugin.name] = plugin
 
@@ -35,7 +39,9 @@ def get_plugin(name: str) -> PluginSpec:
         return _PLUGINS[normalized]
     except KeyError as exc:
         available = ", ".join(list_plugins()) or "none"
-        raise ValueError(f"Plugin '{name}' not found. Available plugins: {available}") from exc
+        raise ValueError(
+            f"Plugin '{name}' not found. Available plugins: {available}"
+        ) from exc
 
 
 def get_plugins(names: Iterable[str] | str) -> list[PluginSpec]:
@@ -67,7 +73,9 @@ def list_plugins() -> list[str]:
 # Built-ins are imported explicitly. Import failures must stop startup rather
 # than leaving a mysteriously incomplete registry.
 from piddiplatsch.plugins.cmip6.plugin import plugin as cmip6_plugin  # noqa: E402
-from piddiplatsch.plugins.cmip6plus.plugin import plugin as cmip6plus_plugin  # noqa: E402
+from piddiplatsch.plugins.cmip6plus.plugin import (  # noqa: E402
+    plugin as cmip6plus_plugin,
+)
 from piddiplatsch.plugins.cmip7.plugin import plugin as cmip7_plugin  # noqa: E402
 from piddiplatsch.plugins.cordex_cmip6.plugin import (  # noqa: E402
     plugin as cordex_cmip6_plugin,

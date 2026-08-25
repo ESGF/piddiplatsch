@@ -76,8 +76,14 @@ class ProjectRouter:
         self.plugins = get_plugins(projects)
         kwargs = dict(processor_kwargs or {})
         kwargs.setdefault("dry_run", dry_run)
-        self.processors = {plugin.name: plugin.make_processor(**kwargs) for plugin in self.plugins}
-        self._plugins_by_project = {project_id: plugin for plugin in self.plugins for project_id in plugin.project_ids}
+        self.processors = {
+            plugin.name: plugin.make_processor(**kwargs) for plugin in self.plugins
+        }
+        self._plugins_by_project = {
+            project_id: plugin
+            for plugin in self.plugins
+            for project_id in plugin.project_ids
+        }
         self._logged_filtered_projects: set[str] = set()
         logger.info("Selected project plugins: %s", ", ".join(self.project_names))
 
@@ -100,7 +106,11 @@ class ProjectRouter:
         normalized = normalize_project_id(project_id or "")
         plugin = self._plugins_by_project.get(normalized)
         if plugin is None:
-            reason = "publication event has no project identifier" if not project_id else f"project '{project_id}' is not selected"
+            reason = (
+                "publication event has no project identifier"
+                if not project_id
+                else f"project '{project_id}' is not selected"
+            )
             filter_identity = normalized or "<missing>"
             if filter_identity not in self._logged_filtered_projects:
                 logger.info(

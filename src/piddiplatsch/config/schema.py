@@ -69,7 +69,8 @@ class KafkaConfig(BaseModel):
         invalid = [t for t in v.split(",") if not _valid_hostport(t)]
         if invalid:
             raise ValueError(
-                "[kafka].bootstrap.servers must be a comma-separated list of host:port; invalid: " + ", ".join(s.strip() for s in invalid)
+                "[kafka].bootstrap.servers must be a comma-separated list of host:port; invalid: "
+                + ", ".join(s.strip() for s in invalid)
             )
         return v
 
@@ -150,7 +151,9 @@ class AppConfig(BaseModel):
                     raise ValueError("Missing required setting: [stac].base_url")
             elif self.lookup.backend == "es":
                 if not (self.elasticsearch and self.elasticsearch.base_url):
-                    raise ValueError("Missing required setting: [elasticsearch].base_url")
+                    raise ValueError(
+                        "Missing required setting: [elasticsearch].base_url"
+                    )
         return self
 
 
@@ -172,17 +175,28 @@ def validate_config(data: dict) -> tuple[list[str], list[str]]:
         return errors, warnings
 
     # warnings
-    if cfg.handle and (cfg.handle.username == "300:21.TEST/testuser" and cfg.handle.password == "testpass"):
+    if cfg.handle and (
+        cfg.handle.username == "300:21.TEST/testuser"
+        and cfg.handle.password == "testpass"
+    ):
         warnings.append("[handle] demo credentials detected; do not use in production")
     if cfg.lookup and cfg.lookup.enabled and cfg.lookup.backend == "es":
         if cfg.elasticsearch and not (cfg.elasticsearch.index):
-            warnings.append("[elasticsearch].index is not set; some features may be unavailable")
+            warnings.append(
+                "[elasticsearch].index is not set; some features may be unavailable"
+            )
 
     # schema strict_mode type handled by Pydantic; add no-op
 
     # plugins cmip6 hint
-    lp = cfg.plugins.cmip6.landing_page_url if (cfg.plugins and cfg.plugins.cmip6) else None
+    lp = (
+        cfg.plugins.cmip6.landing_page_url
+        if (cfg.plugins and cfg.plugins.cmip6)
+        else None
+    )
     if lp in (None, ""):
-        warnings.append("[plugins.cmip6].landing_page_url not set; landing pages may be missing")
+        warnings.append(
+            "[plugins.cmip6].landing_page_url not set; landing pages may be missing"
+        )
 
     return errors, warnings

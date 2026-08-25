@@ -120,10 +120,14 @@ class ProjectDatasetRecord(BaseProjectRecord):
     def pid(self) -> str:
         value = _source_pid(self.properties, self.dataset_pid_fields)
         if value:
-            logging.info("Using existing dataset pid: pid=%s, ds_id=%s", value, self.item_id)
+            logging.info(
+                "Using existing dataset pid: pid=%s, ds_id=%s", value, self.item_id
+            )
             return value
         value = item_pid(self.item_id)
-        logging.warning("Creating new dataset pid: pid=%s, ds_id=%s", value, self.item_id)
+        logging.warning(
+            "Creating new dataset pid: pid=%s, ds_id=%s", value, self.item_id
+        )
         return value
 
     @cached_property
@@ -170,7 +174,11 @@ class ProjectDatasetRecord(BaseProjectRecord):
     def published_on(self) -> datetime | None:
         for key in self.ordered_asset_keys:
             asset = self.get_asset(key)
-            value = asset.get("published_on") or asset.get("created") or asset.get("updated")
+            value = (
+                asset.get("published_on")
+                or asset.get("created")
+                or asset.get("updated")
+            )
             if value:
                 return parse_datetime(value)
         value = self.properties.get("created") or self.properties.get("updated")
@@ -190,7 +198,9 @@ class ProjectDatasetRecord(BaseProjectRecord):
                 continue
             for host, values in alternates.items():
                 values = values if isinstance(values, dict) else {}
-                published_on = parse_datetime(values.get("published_on")) or self.published_on
+                published_on = (
+                    parse_datetime(values.get("published_on")) or self.published_on
+                )
                 if host not in known_hosts:
                     known_hosts.add(host)
                     nodes.append(HostingNode(host=host, published_on=published_on))
@@ -246,7 +256,9 @@ class ProjectFileRecord(BaseProjectRecord):
 
     @cached_property
     def alternates(self) -> dict[str, Any]:
-        return _mapping(self.asset.get("alternate"), f"assets.{self.asset_key}.alternate")
+        return _mapping(
+            self.asset.get("alternate"), f"assets.{self.asset_key}.alternate"
+        )
 
     def get_value(self, key: str) -> Any:
         value = self.asset.get(key, "")
@@ -258,21 +270,34 @@ class ProjectFileRecord(BaseProjectRecord):
 
     @cached_property
     def tracking_id(self) -> str | None:
-        return next((self.asset.get(key) for key in self.tracking_id_fields if self.asset.get(key)), None)
+        return next(
+            (
+                self.asset.get(key)
+                for key in self.tracking_id_fields
+                if self.asset.get(key)
+            ),
+            None,
+        )
 
     @cached_property
     def pid(self) -> str:
         value = _source_pid(self.asset, self.tracking_id_fields)
         if value:
-            logging.info("Using existing file pid: pid=%s, asset=%s", value, self.asset_key)
+            logging.info(
+                "Using existing file pid: pid=%s, asset=%s", value, self.asset_key
+            )
             return value
         value = asset_pid(self.item_id, self.asset_key)
-        logging.warning("Creating new file pid: pid=%s, asset=%s", value, self.asset_key)
+        logging.warning(
+            "Creating new file pid: pid=%s, asset=%s", value, self.asset_key
+        )
         return value
 
     @cached_property
     def parent(self) -> str:
-        value = _source_pid(self.properties, self.dataset_pid_fields) or item_pid(self.item_id)
+        value = _source_pid(self.properties, self.dataset_pid_fields) or item_pid(
+            self.item_id
+        )
         return build_handle(value, as_uri=True)
 
     @cached_property
@@ -286,7 +311,11 @@ class ProjectFileRecord(BaseProjectRecord):
     @cached_property
     def replica_download_urls(self) -> list[str]:
         return sorted(
-            {alternate["href"] for alternate in self.alternates.values() if isinstance(alternate, dict) and alternate.get("href")}
+            {
+                alternate["href"]
+                for alternate in self.alternates.values()
+                if isinstance(alternate, dict) and alternate.get("href")
+            }
         )
 
     @cached_property

@@ -63,9 +63,7 @@ class CMIP6DatasetRecord(ProjectDatasetRecord, BaseCMIP6Record):
 def extract_asset_records(
     item: dict[str, Any], exclude_keys: list[str] | None = None
 ) -> list[CMIP6FileRecord]:
-    return list(
-        extract_project_asset_records(item, CMIP6FileRecord, exclude_keys)
-    )
+    return list(extract_project_asset_records(item, CMIP6FileRecord, exclude_keys))
 
 
 __all__ = ["CMIP6DatasetRecord", "CMIP6FileRecord", "extract_asset_records"]

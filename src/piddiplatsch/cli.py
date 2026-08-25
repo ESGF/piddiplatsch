@@ -119,14 +119,19 @@ def retry(ctx, path: tuple[Path, ...], delete_after: bool, dry_run: bool):
     """
     projects = configured_projects()
     verbose = ctx.obj.get("verbose", False)
-    failure_dir = Path(config.get("consumer", {}).get("output_dir", "outputs")) / "failures"
+    failure_dir = (
+        Path(config.get("consumer", {}).get("output_dir", "outputs")) / "failures"
+    )
 
     # Define progress callback for verbose mode
     def show_progress(file, idx, total, result):
         if verbose:
             click.echo(f"[{idx}/{total}] {file.name}: ", nl=False)
             if result.total > 0:
-                click.echo(f"{result.succeeded}/{result.total} succeeded" + (f", {result.failed} failed" if result.failed > 0 else ""))
+                click.echo(
+                    f"{result.succeeded}/{result.total} succeeded"
+                    + (f", {result.failed} failed" if result.failed > 0 else "")
+                )
             else:
                 click.echo("(empty)")
 
@@ -149,7 +154,9 @@ def retry(ctx, path: tuple[Path, ...], delete_after: bool, dry_run: bool):
     # Show overall summary
     click.echo(f"\nTotal: {result.succeeded}/{result.total} succeeded")
     if result.failed > 0:
-        click.echo(f"  ⚠️  {result.failed} items failed again ({result.success_rate:.1f}% success rate)")
+        click.echo(
+            f"  ⚠️  {result.failed} items failed again ({result.success_rate:.1f}% success rate)"
+        )
         if result.skipped:
             click.echo(f"  {result.skipped} item(s) were skipped and remain retryable")
         if result.filtered:

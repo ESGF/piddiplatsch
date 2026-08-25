@@ -18,7 +18,9 @@ def load_failed_messages(jsonl_path: Path) -> list[tuple[str, dict]]:
     for record in records:
         key = str(record.get("key") or record.get("id") or "unknown")
         if "__infos__" in record:
-            record["__infos__"]["retries"] = int(record["__infos__"].get("retries", 0)) + 1
+            record["__infos__"]["retries"] = (
+                int(record["__infos__"].get("retries", 0)) + 1
+            )
         else:
             record["retries"] = int(record.get("retries", 0)) + 1
         messages.append((key, record))
@@ -92,7 +94,9 @@ class RetryRunner:
         )
 
         # Track failure files before retry
-        failure_files_before = {path: path.stat().st_size for path in self.failure_dir.rglob("*.jsonl")}
+        failure_files_before = {
+            path: path.stat().st_size for path in self.failure_dir.rglob("*.jsonl")
+        }
 
         # Process messages through pipeline
         feed_result = feed_messages_direct(
@@ -106,7 +110,10 @@ class RetryRunner:
         # Find new failure files created during retry
         failure_files_after = set(self.failure_dir.rglob("*.jsonl"))
         result.failure_files = {
-            path for path in failure_files_after if path not in failure_files_before or path.stat().st_size != failure_files_before[path]
+            path
+            for path in failure_files_after
+            if path not in failure_files_before
+            or path.stat().st_size != failure_files_before[path]
         }
 
         # Use stats from feed_result
@@ -124,7 +131,9 @@ class RetryRunner:
             except Exception as e:
                 self.logger.warning(f"Could not delete {jsonl_path}: {e}")
         elif self.delete_after and result.failed > 0:
-            self.logger.info(f"Skipping deletion of {jsonl_path} because {result.failed} items failed again")
+            self.logger.info(
+                f"Skipping deletion of {jsonl_path} because {result.failed} items failed again"
+            )
 
         return result
 
@@ -161,6 +170,8 @@ class RetryRunner:
                 progress_callback(file, idx, total_files, result)
 
             if verbose:
-                self.logger.info(f"[{idx}/{total_files}] {file.name}: total={result.total}, succeeded={result.succeeded}, failed={result.failed}")
+                self.logger.info(
+                    f"[{idx}/{total_files}] {file.name}: total={result.total}, succeeded={result.succeeded}, failed={result.failed}"
+                )
 
         return overall

@@ -22,7 +22,10 @@ class StacProjectProcessor(BaseProcessor):
     dataset_record: ClassVar[type[ProjectDatasetRecord]]
     file_record: ClassVar[type[ProjectFileRecord]]
     default_excluded_asset_keys: ClassVar[list[str]] = [
-        "reference_file", "globus", "thumbnail", "quicklook"
+        "reference_file",
+        "globus",
+        "thumbnail",
+        "quicklook",
     ]
 
     def __init__(self, excluded_asset_keys=None, **kwargs):
@@ -41,7 +44,9 @@ class StacProjectProcessor(BaseProcessor):
         consumer_cfg = config.get("consumer", {})
         transient_cfg = consumer_cfg.get("transient", {})
         preflight = bool(
-            transient_cfg.get("preflight_stac", consumer_cfg.get("preflight_stac", True))
+            transient_cfg.get(
+                "preflight_stac", consumer_cfg.get("preflight_stac", True)
+            )
         )
         timeout = float(stac_cfg.get("timeout", 10.0))
         if not preflight or not base_url:

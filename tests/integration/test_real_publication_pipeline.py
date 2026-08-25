@@ -12,18 +12,10 @@ from piddiplatsch.helpers import read_jsonl
 pytestmark = pytest.mark.integration
 
 EXPECTED_RELATIONSHIPS = {
-    "c8a64f32-53f9-393b-9fe3-0331dcb7759c": (
-        "1b37978f-caf6-4e4a-9893-3266a93077a2"
-    ),
-    "1f062cde-b12d-335d-a30b-988188098842": (
-        "7c4a583c-0bfe-4517-98fa-325084b02684"
-    ),
-    "b3eaa573-aee5-3f33-b36f-8970df2eba9a": (
-        "415fb9b8-f11a-47ae-ab62-a5c5e17c77bf"
-    ),
-    "bc85369b-44a5-3e57-8d91-251b63c8b9d3": (
-        "4485e7f1-06fb-46a5-99b3-2fb951eeb80d"
-    ),
+    "c8a64f32-53f9-393b-9fe3-0331dcb7759c": ("1b37978f-caf6-4e4a-9893-3266a93077a2"),
+    "1f062cde-b12d-335d-a30b-988188098842": ("7c4a583c-0bfe-4517-98fa-325084b02684"),
+    "b3eaa573-aee5-3f33-b36f-8970df2eba9a": ("415fb9b8-f11a-47ae-ab62-a5c5e17c77bf"),
+    "bc85369b-44a5-3e57-8d91-251b63c8b9d3": ("4485e7f1-06fb-46a5-99b3-2fb951eeb80d"),
 }
 
 
