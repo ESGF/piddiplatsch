@@ -1,104 +1,145 @@
+"""Small, in-memory stand-in for the Handle REST API used by tests."""
+
+from __future__ import annotations
+
+import base64
+import binascii
 import logging
+from copy import deepcopy
+from hmac import compare_digest
+from threading import RLock
+from typing import Any
+from urllib.parse import unquote
 
 from flask import Flask, jsonify, request
 
-app = Flask(__name__)
+logger = logging.getLogger(__name__)
 
-# Configure logging
-logging.basicConfig(level=logging.DEBUG)
-logger = app.logger
-
-# In-memory handle store
-handles = {}
-
-# Constants
 HANDLE_PREFIX = "21.TEST"
 DUMMY_USERNAME_HANDLE = f"{HANDLE_PREFIX}/testuser"
 DUMMY_USERNAME = f"300:{DUMMY_USERNAME_HANDLE}"
 DUMMY_PASSWORD = "testpass"
 
-# Admin handle record
-ADMIN_HANDLE_RECORD = {
-    "handle": DUMMY_USERNAME_HANDLE,
-    "values": [
-        {
-            "index": 100,
-            "type": "HS_ADMIN",
-            "data": {
-                "format": "admin",
-                "value": {
-                    "index": "200",
-                    "handle": f"0.NA/{HANDLE_PREFIX}",
-                    "permissions": "011111110011",
+
+def _admin_handle_record() -> dict[str, Any]:
+    """Return a fresh admin record so resets cannot reuse mutated state."""
+    return {
+        "handle": DUMMY_USERNAME_HANDLE,
+        "values": [
+            {
+                "index": 100,
+                "type": "HS_ADMIN",
+                "data": {
+                    "format": "admin",
+                    "value": {
+                        "index": "200",
+                        "handle": f"0.NA/{HANDLE_PREFIX}",
+                        "permissions": "011111110011",
+                    },
                 },
-            },
-        }
-    ],
-}
-
-# Preload admin user handle
-handles[DUMMY_USERNAME_HANDLE] = ADMIN_HANDLE_RECORD
+            }
+        ],
+    }
 
 
-# Expose reset function for test cleanup
-def _reset_handles():
-    global handles
-    handles = {}
+class HandleStore:
+    """Thread-safe store that does not expose its mutable records."""
 
-    # Restore admin record
-    handles[DUMMY_USERNAME_HANDLE] = ADMIN_HANDLE_RECORD
+    def __init__(self) -> None:
+        self._lock = RLock()
+        self.reset()
 
+    def reset(self) -> None:
+        with self._lock:
+            self._handles = {DUMMY_USERNAME_HANDLE: _admin_handle_record()}
 
-@app.route("/api/handles/<prefix>/<suffix>", methods=["GET"])
-def get_handle(prefix, suffix):
-    handle = f"{prefix}/{suffix}"
-    logger.debug(f"GET request for handle: {handle}")
+    def get(self, handle: str) -> dict[str, Any] | None:
+        with self._lock:
+            record = self._handles.get(handle)
+            return deepcopy(record) if record is not None else None
 
-    record = handles.get(handle)
-    if record:
-        logger.debug(f"Handle found: {handle}")
-        return jsonify({**record, "handle": handle, "responseCode": 1}), 200
-    else:
-        logger.debug(f"Handle not found: {handle}")
-        return (
-            jsonify({"message": f"Handle {handle} not found", "responseCode": 100}),
-            200,
-        )
+    def put(self, handle: str, record: dict[str, Any], *, overwrite: bool) -> bool:
+        with self._lock:
+            if handle in self._handles and not overwrite:
+                return False
+            self._handles[handle] = deepcopy(record)
+            return True
 
 
-@app.route("/api/handles/<prefix>/<suffix>", methods=["PUT"])
-def put_handle(prefix, suffix):
-    handle = f"{prefix}/{suffix}"
-    overwrite = request.args.get("overwrite", "false").lower() == "true"
+def _is_authorized(authorization: str | None) -> bool:
+    if not authorization:
+        return False
 
-    logger.debug(f"PUT request for handle: {handle}, overwrite={overwrite}")
-
-    if handle in handles and not overwrite:
-        logger.debug(f"Handle already exists: {handle}")
-        return jsonify({"message": f"Handle {handle} already exists"}), 409
+    scheme, separator, token = authorization.partition(" ")
+    if separator != " " or scheme.lower() != "basic":
+        return False
 
     try:
-        data = request.get_json(force=True)
-        if not isinstance(data, dict) or "values" not in data:
-            raise ValueError("Invalid handle record format")
-    except Exception as e:
-        logger.error(f"Invalid request body: {e}")
-        return jsonify({"message": f"Invalid request body: {e}"}), 400
+        credentials = base64.b64decode(token, validate=True).decode()
+    except (binascii.Error, UnicodeDecodeError):
+        return False
 
-    data["handle"] = handle  # Ensure handle is set correctly
-    handles[handle] = data
-
-    logger.debug(f"Handle registered: {handle} with data: {data}")
+    username, separator, password = credentials.rpartition(":")
     return (
-        jsonify(
-            {
-                "responseCode": 1,
-                "handle": handle,
-                "message": f"Handle {handle} registered",
-            }
-        ),
-        200,
+        bool(separator)
+        and compare_digest(unquote(username), DUMMY_USERNAME)
+        and compare_digest(password, DUMMY_PASSWORD)
     )
+
+
+def create_app() -> Flask:
+    """Create a mock server with its own isolated in-memory store."""
+    mock_app = Flask(__name__)
+    store = HandleStore()
+    mock_app.extensions["handle_store"] = store
+
+    @mock_app.route("/api/handles/<path:handle>", methods=["GET", "PUT"])
+    def handle_record(handle: str) -> Any:
+        if "/" not in handle:
+            return jsonify(message="A handle must contain a prefix and suffix"), 400
+
+        if request.method == "GET":
+            logger.debug("Getting handle %s", handle)
+            record = store.get(handle)
+            if record is None:
+                return jsonify(message=f"Handle {handle} not found", responseCode=100)
+            return jsonify({**record, "handle": handle, "responseCode": 1})
+
+        if not _is_authorized(request.headers.get("Authorization")):
+            return (
+                jsonify(message="Authentication failed", responseCode=402),
+                401,
+                {"WWW-Authenticate": 'Basic realm="Handle API"'},
+            )
+
+        data = request.get_json(silent=True)
+        if not isinstance(data, dict) or not isinstance(data.get("values"), list):
+            return jsonify(message="Request body must contain a values list"), 400
+
+        record = {**data, "handle": handle}
+        overwrite = request.args.get("overwrite", "false").lower() == "true"
+        if not store.put(handle, record, overwrite=overwrite):
+            return (
+                jsonify(message=f"Handle {handle} already exists", responseCode=101),
+                409,
+            )
+
+        logger.debug("Stored handle %s", handle)
+        return jsonify(
+            responseCode=1,
+            handle=handle,
+            message=f"Handle {handle} registered",
+        )
+
+    return mock_app
+
+
+app = create_app()
+
+
+def _reset_handles(flask_app: Flask = app) -> None:
+    """Reset an app's store; retained for compatibility with existing tests."""
+    flask_app.extensions["handle_store"].reset()
 
 
 if __name__ == "__main__":
