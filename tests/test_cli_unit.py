@@ -334,10 +334,14 @@ class TestPublishCommand:
 
         publisher_cls.return_value.run.side_effect = run
 
-        result = runner.invoke(cli, ["--verbose", "publish", str(source)])
+        result = runner.invoke(
+            cli, ["--verbose", "publish", "--offset", "1000", str(source)]
+        )
 
         assert result.exit_code == 0
-        assert "[1/1] 21.TEST/abc: published" in result.output
+        assert "starting at 1001" in result.output
+        assert "[record 1001 | batch 1/1] 21.TEST/abc: published" in result.output
+        assert "Processed record range: 1001-1001" in result.output
 
     @patch("piddiplatsch.cli.HandlePublisher")
     def test_publish_passes_limit(self, publisher_cls, runner, tmp_path):

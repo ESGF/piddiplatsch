@@ -145,7 +145,8 @@ piddi --config custom.toml --verbose publish \
 Retries cover transient connection errors, timeouts, rate limiting, and server
 errors. The delay starts at one second and doubles for each retry; customize it
 with `--retry-delay`. Permanent client errors such as invalid credentials are
-not retried.
+not retried. Verbose progress shows both the absolute record position and its
+position within the selected batch.
 
 You can also pass one file, several files, or a directory. `publish` never
 changes or deletes its inputs. Publication uses Handle overwrite semantics, so

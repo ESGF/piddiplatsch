@@ -136,11 +136,28 @@ def publish(
     Handle REST client publishes with overwrite enabled.
     """
     verbose = ctx.obj.get("verbose", False)
+    last_record_position = offset
+
+    if verbose:
+        if limit is None:
+            click.echo(
+                f"Publishing records after offset {offset}, starting at {offset + 1}."
+            )
+        else:
+            click.echo(
+                f"Publishing batch of up to {limit} records: "
+                f"positions {offset + 1}-{offset + limit}."
+            )
 
     def show_progress(index, total, handle, error):
+        nonlocal last_record_position
+        last_record_position = offset + index
         if verbose:
             status = "published" if error is None else f"failed: {error}"
-            click.echo(f"[{index}/{total}] {handle}: {status}")
+            click.echo(
+                f"[record {last_record_position} | batch {index}/{total}] "
+                f"{handle}: {status}"
+            )
 
     result = HandlePublisher().run(
         path,
@@ -148,13 +165,15 @@ def publish(
         offset=offset,
         retries=retries,
         retry_delay=retry_delay,
-        progress_callback=show_progress if verbose else None,
+        progress_callback=show_progress,
     )
     if result.total == 0:
         click.echo("No handle records found.")
         return
 
     click.echo(f"Published {result.succeeded}/{result.total} handles.")
+    if last_record_position > offset:
+        click.echo(f"Processed record range: {offset + 1}-{last_record_position}.")
     if limit is not None and result.total == limit:
         click.echo(f"Stopped after reaching the limit of {limit} records.")
     if result.retry_attempts:
