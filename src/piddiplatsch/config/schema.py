@@ -126,6 +126,7 @@ class PluginsConfig(BaseModel):
     model_config = ConfigDict(extra="allow")
     cmip6: ProjectPluginConfig | None = None
     cmip7: ProjectPluginConfig | None = None
+    cordex_cmip6: ProjectPluginConfig | None = Field(None, alias="cordex-cmip6")
 
 
 class AppConfig(BaseModel):

@@ -8,7 +8,7 @@
 # - stac: STAC client and collection
 # - elasticsearch: ES endpoint and index (if using ES lookups)
 # - schema: validation strictness
-# - plugins.cmip6 / plugins.cmip7: project-specific mapping options
+# - plugins.*: project-specific mapping options
 # - lookup: choose STAC or ES backend
 # - stats: logging/SQLite reporter settings
 #
@@ -96,6 +96,11 @@ excluded_asset_keys = ["reference_file", "globus", "thumbnail", "quicklook"]
 [plugins.cmip7]
 # CMIP7 currently shares the Handle output schema and STAC mapping workflow
 # with CMIP6, while declaring its own source PID field names.
+landing_page_url = "https://handle-esgf.dkrz.de/lp"
+max_parts = -1
+excluded_asset_keys = ["reference_file", "globus", "thumbnail", "quicklook"]
+
+[plugins.cordex-cmip6]
 landing_page_url = "https://handle-esgf.dkrz.de/lp"
 max_parts = -1
 excluded_asset_keys = ["reference_file", "globus", "thumbnail", "quicklook"]

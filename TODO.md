@@ -78,10 +78,14 @@ incremental and preserve the current CMIP6 behaviour with tests.
 - CMIP6 resolves namespaced PID fields with explicit legacy fallbacks; CMIP7
   resolves `cmip7:pid` and `cmip7:tracking_id`. Dataset/file relationships use
   those resolved PIDs and conflicting populated aliases fail visibly.
+- CORDEX-CMIP6 is registered as `cordex-cmip6`, resolves
+  `cordex-cmip6:pid` / `cordex-cmip6:tracking_id`, and uses the shared mapper.
+  Its real queue fixture covers filename-keyed assets and exclusion of the
+  non-file `globus` asset.
 
 Remaining items below include project-scoped output/provenance, stronger PID
 edge-case coverage and operational rollout checks, plus plugins for the other
-observed projects.
+observed projects (next: CMIP6Plus).
 
 ### Target design
 
