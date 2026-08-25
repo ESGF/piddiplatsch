@@ -26,6 +26,7 @@ class StacProjectProcessor(BaseProcessor):
     ]
 
     def __init__(self, excluded_asset_keys=None, **kwargs):
+        kwargs["project"] = self.plugin_name
         super().__init__(**kwargs)
         self.excluded_asset_keys = excluded_asset_keys or config.get_plugin(
             self.plugin_name,

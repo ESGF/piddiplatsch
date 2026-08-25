@@ -64,6 +64,20 @@ run.
 
 Only selected plugins are constructed and preflighted.
 
+## Output and dump scope
+
+Generated JSONL Handle records are plugin-scoped at
+`outputs/<plugin>/handles/handles_<date>.jsonl`; every outbox line also carries
+the canonical plugin name in `project`. This prevents records from concurrent
+project mappings being mixed and gives downstream publishers an explicit
+routing hint.
+
+The optional raw dump remains a single pre-routing stream under `outputs/dump`.
+Because it is written in consumption order, it preserves the Kafka sequence for
+replay and audit. `pid.log` records selected plugins and the first occurrence of
+each filtered project at INFO, aggregate filtered counts in statistics, and
+individual filter decisions at DEBUG.
+
 ## Kafka consumer groups
 
 Kafka distributes each partition among members of one consumer group before

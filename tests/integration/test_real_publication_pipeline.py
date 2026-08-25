@@ -50,10 +50,18 @@ def test_real_publications_route_and_write_valid_handle_jsonl(
     assert result.failed == 0
     assert result.filtered == 0
 
-    output_files = list((tmp_path / "handles").glob("handles_*.jsonl"))
-    assert len(output_files) == 1
-    records = read_jsonl(output_files[0])
+    output_files = list(tmp_path.glob("*/handles/handles_*.jsonl"))
+    assert {path.parent.parent.name for path in output_files} == {
+        "cmip6",
+        "cmip6plus",
+        "cmip7",
+        "cordex-cmip6",
+    }
+    records = [record for path in output_files for record in read_jsonl(path)]
     assert len(records) == 8
+    for path in output_files:
+        project = path.parent.parent.name
+        assert all(record["project"] == project for record in read_jsonl(path))
 
     by_handle = {record["handle"]: record for record in records}
     expected_handles = {

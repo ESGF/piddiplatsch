@@ -76,16 +76,19 @@ def test_extract_project_id_rejects_conflicting_fields():
         extract_project_id(message)
 
 
-def test_router_filters_unselected_projects(isolated_registry):
+def test_router_filters_unselected_projects(isolated_registry, caplog):
     calls = []
     router = ProjectRouter(["cmip6"], dry_run=True)
 
-    result = router.process("cordex-key", publication("CORDEX-CMIP6"))
+    with caplog.at_level("INFO"):
+        result = router.process("cordex-key", publication("CORDEX-CMIP6"))
+        router.process("cordex-key-2", publication("CORDEX-CMIP6"))
 
     assert result.success
     assert result.filtered
     assert result.project == "cordex-cmip6"
     assert calls == []
+    assert sum("Filtering publication project cordex-cmip6" in message for message in caplog.messages) == 1
 
 
 def test_router_dispatches_to_one_of_several_plugins(isolated_registry):

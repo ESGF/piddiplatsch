@@ -19,8 +19,17 @@ class HandleAPIProtocol(Protocol):
 class HandleAPI(HandleAPIProtocol):
     """User-facing API wrapping a backend."""
 
-    def __init__(self, backend: HandleBackend | None = None, *, dry_run: bool = False):
-        self.backend: HandleBackend = backend or get_handle_backend(dry_run=dry_run)
+    def __init__(
+        self,
+        backend: HandleBackend | None = None,
+        *,
+        dry_run: bool = False,
+        project: str | None = None,
+    ):
+        self.backend: HandleBackend = backend or get_handle_backend(
+            dry_run=dry_run,
+            project=project,
+        )
 
     def add(self, pid: str, record: dict[str, Any]) -> None:
         self.backend.add(pid, record)
@@ -30,7 +39,10 @@ class HandleAPI(HandleAPIProtocol):
 
 
 # --- Factory Function ---
-def get_handle_backend(dry_run: bool = False) -> HandleBackend:
+def get_handle_backend(
+    dry_run: bool = False,
+    project: str | None = None,
+) -> HandleBackend:
     """
     Return a HandleBackend based on configuration.
 
@@ -40,7 +52,7 @@ def get_handle_backend(dry_run: bool = False) -> HandleBackend:
     """
     if dry_run:
         logging.warning("Dry-run enabled: using JSONL handle backend")
-        return JsonlHandleBackend()
+        return JsonlHandleBackend(project=project)
 
     backend_type: Literal["pyhandle", "jsonl"] = config.get(
         "handle", "backend", fallback="pyhandle"
@@ -51,6 +63,6 @@ def get_handle_backend(dry_run: bool = False) -> HandleBackend:
         return HandleClient.from_config()
 
     if backend_type == "jsonl":
-        return JsonlHandleBackend()
+        return JsonlHandleBackend(project=project)
 
     raise ValueError(f"Unknown handle backend type: {backend_type}")

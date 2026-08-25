@@ -17,7 +17,7 @@ piddi --config custom.toml config show
 | --- | --- | --- |
 | `consumer` | `projects` | Plugin names to run, as a list or the string `all`. |
 | `consumer` | `topic` | Kafka topic to consume. |
-| `consumer` | `output_dir` | Root for failure, skipped, dump, and dry-run Handle JSONL files. |
+| `consumer` | `output_dir` | Root for global dump/recovery files and `<plugin>/handles/` JSONL output. |
 | `consumer` | `max_errors` | Stop after this many processing errors; `-1` disables the limit. |
 | `consumer.transient` | `stop_on_skip` | Stop after a transient external failure unless `--force` is used. |
 | `consumer.transient` | `retries` | Number of retries for transient STAC patch retrieval. |

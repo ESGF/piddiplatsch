@@ -154,6 +154,13 @@ representative publication record.
 
 ### Outputs, recovery, and observability
 
+Implemented for Handle JSONL: generated records are written beneath
+`outputs/<plugin>/handles/` and include the canonical plugin name. The optional
+raw dump remains global and pre-routing to preserve consumed Kafka order.
+`pid.log` records selected plugins, first-seen filtered project identities, and
+aggregate filtering statistics without logging every filtered event at INFO.
+Project-scoped failures/skips and richer retry provenance remain open.
+
 - Make processed outputs project-scoped. Preferred layout:
 
   ```text

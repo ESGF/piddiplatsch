@@ -96,7 +96,7 @@ def test_retry_loads_and_processes_failed_messages(tmp_path: Path):
     assert failure_file.exists()
 
     # Verify handles were created in dry-run mode
-    handles_dir = tmp_path / "handles"
+    handles_dir = tmp_path / "cmip6" / "handles"
     assert handles_dir.exists()
 
     files = list(handles_dir.glob("handles_*.jsonl"))

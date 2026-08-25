@@ -91,7 +91,7 @@ piddi --config observe.toml consume --dry-run --dump --force
 
 What this does:
 - no external Handle Service calls
-- records written locally as JSONL
+- records written to `outputs/<plugin>/handles/` as JSONL
 - continues through transient skips (`--force`)
 - dumps incoming messages to `outputs/dump/` when `--dump` is used
 

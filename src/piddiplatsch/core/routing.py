@@ -78,6 +78,8 @@ class ProjectRouter:
         kwargs.setdefault("dry_run", dry_run)
         self.processors = {plugin.name: plugin.make_processor(**kwargs) for plugin in self.plugins}
         self._plugins_by_project = {project_id: plugin for plugin in self.plugins for project_id in plugin.project_ids}
+        self._logged_filtered_projects: set[str] = set()
+        logger.info("Selected project plugins: %s", ", ".join(self.project_names))
 
     @property
     def project_names(self) -> tuple[str, ...]:
@@ -99,6 +101,15 @@ class ProjectRouter:
         plugin = self._plugins_by_project.get(normalized)
         if plugin is None:
             reason = "publication event has no project identifier" if not project_id else f"project '{project_id}' is not selected"
+            filter_identity = normalized or "<missing>"
+            if filter_identity not in self._logged_filtered_projects:
+                logger.info(
+                    "Filtering publication project %s: %s; subsequent messages "
+                    "for this project are logged at debug level",
+                    filter_identity,
+                    reason,
+                )
+                self._logged_filtered_projects.add(filter_identity)
             logger.debug("Filtered message key=%s: %s", key, reason)
             return ProcessingResult(
                 key=key,

@@ -59,7 +59,7 @@ def test_consumer_pipeline_writes_handles_jsonl(tmp_path: Path):
 
     pipeline.run()
 
-    handles_dir = tmp_path / "handles"
+    handles_dir = tmp_path / "cmip6" / "handles"
     assert handles_dir.exists() and handles_dir.is_dir()
 
     files = list(handles_dir.glob("handles_*.jsonl"))
