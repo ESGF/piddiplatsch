@@ -119,6 +119,10 @@ services:
       dockerfile: Dockerfile
     hostname: handle1
     container_name: handle1
+    environment:
+      # Approximate a 20 Handles/second serial service while still allowing
+      # concurrent requests to overlap, as they would with a database pool.
+      PIDDI_MOCK_HANDLE_PUT_DELAY_SECONDS: "${PIDDI_MOCK_HANDLE_PUT_DELAY_SECONDS:-0.05}"
     ports:
       - "8000:8000"
     networks:

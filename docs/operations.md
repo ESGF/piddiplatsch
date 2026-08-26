@@ -38,6 +38,18 @@ Set `PIDDI_LIVE_HANDLE_VERIFY_HTTPS=false` only for a trusted test service with
 a self-signed certificate. The live suite checks create, overwrite/update,
 read-back, bounded parallel publication, and same-PID update ordering.
 
+The Docker mock adds a 50 ms delay to each valid PUT, approximating a serial
+rate of 20 Handle registrations per second. Override it when starting Docker if
+you need a different latency:
+
+```bash
+PIDDI_MOCK_HANDLE_PUT_DELAY_SECONDS=0.1 docker compose up -d
+```
+
+The delay occurs outside the mock store lock, so concurrent publisher workers
+can overlap requests as they would with a real service connection/database
+pool. GET requests and requests rejected before storage are not delayed.
+
 These files, `pid.log`, and `stats.db` are ignored by Git and preserved by the
 project's cleanup targets. There is no automatic retention policy. Dump and
 dry-run files can grow quickly, so monitor disk usage and archive or remove old

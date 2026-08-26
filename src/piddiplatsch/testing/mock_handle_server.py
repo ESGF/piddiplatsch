@@ -5,6 +5,9 @@ from __future__ import annotations
 import base64
 import binascii
 import logging
+import os
+import time
+from collections.abc import Callable
 from copy import deepcopy
 from hmac import compare_digest
 from threading import RLock
@@ -19,6 +22,7 @@ HANDLE_PREFIX = "21.TEST"
 DUMMY_USERNAME_HANDLE = f"{HANDLE_PREFIX}/testuser"
 DUMMY_USERNAME = f"300:{DUMMY_USERNAME_HANDLE}"
 DUMMY_PASSWORD = "testpass"
+PUT_DELAY_ENV = "PIDDI_MOCK_HANDLE_PUT_DELAY_SECONDS"
 
 
 def _admin_handle_record() -> dict[str, Any]:
@@ -87,11 +91,37 @@ def _is_authorized(authorization: str | None) -> bool:
     )
 
 
-def create_app() -> Flask:
+def _configured_put_delay() -> float:
+    raw_delay = os.environ.get(PUT_DELAY_ENV, "0")
+    try:
+        delay = float(raw_delay)
+    except ValueError as exc:
+        raise ValueError(
+            f"{PUT_DELAY_ENV} must be a number, got {raw_delay!r}"
+        ) from exc
+    if delay < 0:
+        raise ValueError(f"{PUT_DELAY_ENV} cannot be negative")
+    return delay
+
+
+def create_app(
+    *,
+    put_delay_seconds: float | None = None,
+    sleep: Callable[[float], None] = time.sleep,
+) -> Flask:
     """Create a mock server with its own isolated in-memory store."""
+    put_delay = (
+        _configured_put_delay()
+        if put_delay_seconds is None
+        else float(put_delay_seconds)
+    )
+    if put_delay < 0:
+        raise ValueError("put_delay_seconds cannot be negative")
+
     mock_app = Flask(__name__)
     store = HandleStore()
     mock_app.extensions["handle_store"] = store
+    mock_app.extensions["handle_put_delay_seconds"] = put_delay
 
     @mock_app.route("/api/handles/<path:handle>", methods=["GET", "PUT"])
     def handle_record(handle: str) -> Any:
@@ -118,6 +148,8 @@ def create_app() -> Flask:
 
         record = {**data, "handle": handle}
         overwrite = request.args.get("overwrite", "false").lower() == "true"
+        if put_delay:
+            sleep(put_delay)
         if not store.put(handle, record, overwrite=overwrite):
             return (
                 jsonify(message=f"Handle {handle} already exists", responseCode=101),

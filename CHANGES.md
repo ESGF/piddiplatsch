@@ -8,6 +8,7 @@ All notable changes to this project are documented here.
 - Added a small native Handle REST backend for single-record publication and retrieval; the pyhandle backend remains available as a legacy option.
 - Added `piddi publish` for idempotent, deferred publication of prepared Handle JSONL files without modifying the source files.
 - Added bounded concurrent Handle publication with per-PID update ordering and opt-in contract tests for real Handle services.
+- Added configurable Handle PUT latency to the Docker mock service, defaulting to 50 ms.
 
 ### Changed
 - JSONL is now the safe default Handle backend, and strict schema validation defaults to enabled.
