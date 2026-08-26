@@ -342,10 +342,10 @@ class TestPublishCommand:
         )
 
         assert result.exit_code == 0
-        assert "Processed record range: 1001-1001" in result.output
+        assert "Processed handles: 1001-1001" in result.output
         tqdm_cls.assert_called_once_with(
             total=1,
-            desc="publish records 1001-1001",
+            desc="publish handles 1001-1001",
             unit="handle",
             dynamic_ncols=True,
         )
@@ -385,7 +385,7 @@ class TestPublishCommand:
 
         assert result.exit_code == 0
         assert publisher_cls.return_value.run.call_args.kwargs["limit"] == 1000
-        assert "Stopped after reaching the limit of 1000 records" in result.output
+        assert "Stopped after reaching the limit of 1000 handles" in result.output
 
     @patch("piddiplatsch.cli.HandlePublisher")
     def test_publish_passes_offset(self, publisher_cls, runner, tmp_path):

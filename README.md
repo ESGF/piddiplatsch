@@ -114,7 +114,7 @@ See the configuration at [etc/observe.toml](etc/observe.toml).
 
 ### Deferred Handle publication
 
-The Kafka consumer can write prepared Handle records to daily JSONL files while
+The Kafka consumer can write prepared Handles to daily JSONL files while
 a separate command publishes a closed file later. Keep `[handle].backend` set to
 `jsonl` (or run `consume --dry-run`) and configure the REST server and
 credentials in the same local configuration file.
@@ -127,7 +127,7 @@ piddi --config custom.toml --verbose publish \
 ```
 
 For a limited trial against the current file, cap the total number of attempted
-records:
+Handles:
 
 ```bash
 piddi --config custom.toml --verbose publish --limit 1000 \
@@ -147,7 +147,7 @@ errors. The delay starts at one second and doubles for each retry; customize it
 with `--retry-delay`. Permanent client errors such as invalid credentials are
 not retried. Use `--workers N` for bounded concurrent PUT requests. Updates for
 the same Handle remain in input order while different Handles are published in
-parallel. Verbose progress shows both the absolute record position and its
+parallel. Verbose progress shows both the absolute Handle position and its
 position within the selected batch. Publication outcomes are written to the
 standard log file (`pid.log` by default). Pass the existing global `--verbose`
 option to enable the terminal progress bar; without it, only the final summary
@@ -156,8 +156,8 @@ is printed.
 You can also pass one file, several files, or a directory. `publish` never
 changes or deletes its inputs. Publication uses Handle overwrite semantics, so
 an immutable file can safely be run again after an interruption. The command
-continues after individual record failures, prints a summary, and exits non-zero
-if any record could not be published.
+continues after individual Handle failures, prints a summary, and exits non-zero
+if any Handle could not be published.
 
 ---
 

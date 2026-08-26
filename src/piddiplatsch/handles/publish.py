@@ -37,7 +37,7 @@ class _PublicationOutcome:
 
 
 class HandlePublisher:
-    """Publish prepared Handle records from immutable JSONL files."""
+    """Publish prepared Handles from immutable JSONL files."""
 
     def __init__(
         self,
@@ -127,7 +127,7 @@ class HandlePublisher:
             if outcome.error is None:
                 result.succeeded += 1
                 self.logger.info(
-                    "Published handle %s (record=%d batch=%d/%d)",
+                    "Published handle %s (position=%d batch=%d/%d)",
                     outcome.handle,
                     offset + index,
                     index,
@@ -138,7 +138,7 @@ class HandlePublisher:
                 location = f"{outcome.path}:{outcome.line_number}"
                 result.errors.append(f"{location}: {outcome.error}")
                 self.logger.error(
-                    "Could not publish %s (record=%d batch=%d/%d): %s",
+                    "Could not publish %s (position=%d batch=%d/%d): %s",
                     location,
                     offset + index,
                     index,
@@ -326,7 +326,7 @@ class HandlePublisher:
     def _prepare_record(self, record: dict[str, Any]) -> tuple[str, dict[str, Any]]:
         handle = record.get("handle")
         if not isinstance(handle, str) or "/" not in handle:
-            raise ValueError("record has no valid handle")
+            raise ValueError("Handle entry has no valid identifier")
 
         prefix, pid = handle.split("/", 1)
         if prefix != self.backend.prefix:
@@ -339,8 +339,8 @@ class HandlePublisher:
         url = record.get("URL")
         data = record.get("data")
         if not isinstance(url, str) or not url:
-            raise ValueError("record has no valid URL")
+            raise ValueError("Handle entry has no valid URL")
         if not isinstance(data, dict):
-            raise ValueError("record data must be an object")
+            raise ValueError("Handle data must be an object")
 
         return pid, {**data, "URL": url}

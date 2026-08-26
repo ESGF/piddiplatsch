@@ -99,14 +99,14 @@ def consume(ctx, dump, dry_run, force, projects, all_projects):
 @click.option(
     "--limit",
     type=click.IntRange(min=1),
-    help="Stop after attempting this many Handle records in total.",
+    help="Stop after attempting this many handles in total.",
 )
 @click.option(
     "--offset",
     type=click.IntRange(min=0),
     default=0,
     show_default=True,
-    help="Skip this many Handle records before publishing.",
+    help="Skip this many handles before publishing.",
 )
 @click.option(
     "--retries",
@@ -127,7 +127,7 @@ def consume(ctx, dump, dry_run, force, projects, all_projects):
     type=click.IntRange(min=1),
     default=1,
     show_default=True,
-    help="Publish different Handles concurrently; updates to one Handle stay ordered.",
+    help="Publish different handles concurrently; updates to one handle stay ordered.",
 )
 @click.pass_context
 def publish(
@@ -145,20 +145,20 @@ def publish(
     Handle REST client publishes with overwrite enabled.
     """
     verbose = ctx.obj.get("verbose", False)
-    last_record_position = offset
+    last_handle_position = offset
     progress_bar = None
     progress_succeeded = 0
     progress_failed = 0
 
     def show_progress(index, total, handle, error):
-        nonlocal last_record_position, progress_bar, progress_succeeded, progress_failed
-        last_record_position = max(last_record_position, offset + index)
+        nonlocal last_handle_position, progress_bar, progress_succeeded, progress_failed
+        last_handle_position = max(last_handle_position, offset + index)
         if not verbose:
             return
         if progress_bar is None:
             progress_bar = tqdm(
                 total=total,
-                desc=f"publish records {offset + 1}-{offset + total}",
+                desc=f"publish handles {offset + 1}-{offset + total}",
                 unit="handle",
                 dynamic_ncols=True,
             )
@@ -167,7 +167,7 @@ def publish(
         else:
             progress_failed += 1
         progress_bar.set_postfix(
-            record=last_record_position,
+            position=last_handle_position,
             ok=progress_succeeded,
             failed=progress_failed,
         )
@@ -188,14 +188,14 @@ def publish(
             progress_bar.close()
 
     if result.total == 0:
-        click.echo("No handle records found.")
+        click.echo("No handles found.")
         return
 
     click.echo(f"Published {result.succeeded}/{result.total} handles.")
-    if last_record_position > offset:
-        click.echo(f"Processed record range: {offset + 1}-{last_record_position}.")
+    if last_handle_position > offset:
+        click.echo(f"Processed handles: {offset + 1}-{last_handle_position}.")
     if limit is not None and result.total == limit:
-        click.echo(f"Stopped after reaching the limit of {limit} records.")
+        click.echo(f"Stopped after reaching the limit of {limit} handles.")
     if result.retry_attempts:
         click.echo(f"Retry attempts: {result.retry_attempts}")
     if result.failed:

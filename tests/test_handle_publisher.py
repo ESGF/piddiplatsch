@@ -116,7 +116,7 @@ def test_logs_each_publication_and_summary(tmp_path, caplog):
     with caplog.at_level(logging.INFO, logger="piddiplatsch.handles.publish"):
         HandlePublisher(FakeBackend()).run([source], offset=10, limit=1)
 
-    assert "Published handle 21.TEST/abc (record=11 batch=1/1)" in caplog.text
+    assert "Published handle 21.TEST/abc (position=11 batch=1/1)" in caplog.text
     assert "Handle publication complete: published=1 total=1" in caplog.text
 
 
