@@ -122,6 +122,13 @@ def consume(ctx, dump, dry_run, force, projects, all_projects):
     show_default=True,
     help="Initial retry delay in seconds; subsequent delays double.",
 )
+@click.option(
+    "--workers",
+    type=click.IntRange(min=1),
+    default=1,
+    show_default=True,
+    help="Publish different Handles concurrently; updates to one Handle stay ordered.",
+)
 @click.pass_context
 def publish(
     ctx,
@@ -130,6 +137,7 @@ def publish(
     offset: int,
     retries: int,
     retry_delay: float,
+    workers: int,
 ):
     """Publish prepared handles from immutable JSONL FILE_OR_DIRECTORY inputs.
 
@@ -144,7 +152,7 @@ def publish(
 
     def show_progress(index, total, handle, error):
         nonlocal last_record_position, progress_bar, progress_succeeded, progress_failed
-        last_record_position = offset + index
+        last_record_position = max(last_record_position, offset + index)
         if not verbose:
             return
         if progress_bar is None:
@@ -172,6 +180,7 @@ def publish(
             offset=offset,
             retries=retries,
             retry_delay=retry_delay,
+            workers=workers,
             progress_callback=show_progress,
         )
     finally:

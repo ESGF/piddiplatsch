@@ -145,7 +145,9 @@ piddi --config custom.toml --verbose publish \
 Retries cover transient connection errors, timeouts, rate limiting, and server
 errors. The delay starts at one second and doubles for each retry; customize it
 with `--retry-delay`. Permanent client errors such as invalid credentials are
-not retried. Verbose progress shows both the absolute record position and its
+not retried. Use `--workers N` for bounded concurrent PUT requests. Updates for
+the same Handle remain in input order while different Handles are published in
+parallel. Verbose progress shows both the absolute record position and its
 position within the selected batch. Publication outcomes are written to the
 standard log file (`pid.log` by default). Pass the existing global `--verbose`
 option to enable the terminal progress bar; without it, only the final summary

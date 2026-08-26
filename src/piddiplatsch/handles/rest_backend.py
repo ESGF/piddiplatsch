@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import base64
+import threading
 from typing import Any
 from urllib.parse import quote
 
@@ -32,7 +33,8 @@ class RestHandleClient(HandleBackend):
         self.password = password
         self.verify_https = verify_https
         self.timeout = timeout
-        self.session = session or requests.Session()
+        self._injected_session = session
+        self._thread_local = threading.local()
 
     @classmethod
     def from_config(cls) -> RestHandleClient:
@@ -46,7 +48,7 @@ class RestHandleClient(HandleBackend):
         )
 
     def _store(self, handle: str, handle_data: dict[str, Any]) -> None:
-        response = self.session.put(
+        response = self._session().put(
             self._url(handle),
             params={"overwrite": "true"},
             json={"values": self._values(handle_data)},
@@ -61,7 +63,7 @@ class RestHandleClient(HandleBackend):
         self._require_success(response)
 
     def _retrieve(self, handle: str) -> dict[str, Any] | None:
-        response = self.session.get(
+        response = self._session().get(
             self._url(handle),
             params={"auth": "true"},
             headers={"Accept": "application/json"},
@@ -89,6 +91,15 @@ class RestHandleClient(HandleBackend):
                 value = value["value"]
             result[entry_type] = value
         return result or None
+
+    def _session(self) -> requests.Session:
+        if self._injected_session is not None:
+            return self._injected_session
+        session = getattr(self._thread_local, "session", None)
+        if session is None:
+            session = requests.Session()
+            self._thread_local.session = session
+        return session
 
     def _url(self, handle: str) -> str:
         return f"{self.server_url}{self.api_path}{quote(handle, safe='/')}"

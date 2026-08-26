@@ -35,6 +35,10 @@ piddi --config custom.toml config show
 | `stats` | `interval_seconds`, `summary_interval` | Statistics reporting intervals. |
 | `stats` | `enable_db`, `db_path` | Optional SQLite statistics reporter. |
 
+Direct `rest` and `pyhandle` publication always appends the prepared record to
+the project-scoped Handle JSONL file before contacting the service. This audit
+output is not optional; `[consumer].output_dir` controls its root directory.
+
 `piddi publish` always uses the REST Handle client, independently of the
 configured `handle.backend`. This allows one configuration to keep the Kafka
 consumer on the safe `jsonl` backend while a separate process publishes closed

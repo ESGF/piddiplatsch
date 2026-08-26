@@ -3,7 +3,10 @@ from __future__ import annotations
 import logging
 import time
 from collections.abc import Callable, Iterable
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from dataclasses import dataclass
 from pathlib import Path
+from queue import Queue
 from typing import Any, Protocol
 
 import requests
@@ -21,6 +24,16 @@ class PreparedHandleBackend(Protocol):
 
 
 ProgressCallback = Callable[[int, int, str, Exception | None], None]
+
+
+@dataclass(frozen=True)
+class _PublicationOutcome:
+    index: int
+    path: Path
+    line_number: int
+    handle: str
+    error: Exception | None
+    retry_attempts: int
 
 
 class HandlePublisher:
@@ -46,6 +59,7 @@ class HandlePublisher:
         offset: int = 0,
         retries: int = 0,
         retry_delay: float = 1.0,
+        workers: int = 1,
         progress_callback: ProgressCallback | None = None,
     ) -> PublishResult:
         if limit is not None and limit < 1:
@@ -56,15 +70,18 @@ class HandlePublisher:
             raise ValueError("retries cannot be negative")
         if retry_delay < 0:
             raise ValueError("retry delay cannot be negative")
+        if workers < 1:
+            raise ValueError("workers must be at least 1")
 
         files = find_jsonl(paths)
         result = PublishResult()
         self.logger.info(
-            "Preparing Handle publication: files=%d offset=%d limit=%s retries=%d",
+            "Preparing Handle publication: files=%d offset=%d limit=%s retries=%d workers=%d",
             len(files),
             offset,
             limit if limit is not None else "none",
             retries,
+            workers,
         )
 
         records: list[tuple[Path, int, dict[str, Any]]] = []
@@ -96,48 +113,37 @@ class HandlePublisher:
 
         total_records = len(records)
 
-        def count_retry() -> None:
-            result.retry_attempts += 1
-
-        for index, (path, line_number, record) in enumerate(records, start=1):
+        outcomes = self._publish_records(
+            records,
+            retries=retries,
+            retry_delay=retry_delay,
+            workers=workers,
+            progress_callback=progress_callback,
+        )
+        for outcome in sorted(outcomes, key=lambda item: item.index):
+            index = outcome.index
             result.total += 1
-            handle = record.get("handle")
-            error: Exception | None = None
-            try:
-                pid, handle_data = self._prepare_record(record)
-                self._store_with_retries(
-                    str(handle),
-                    pid,
-                    handle_data,
-                    retries=retries,
-                    retry_delay=retry_delay,
-                    on_retry=count_retry,
-                )
+            result.retry_attempts += outcome.retry_attempts
+            if outcome.error is None:
                 result.succeeded += 1
                 self.logger.info(
                     "Published handle %s (record=%d batch=%d/%d)",
-                    handle,
+                    outcome.handle,
                     offset + index,
                     index,
                     total_records,
                 )
-            except Exception as exc:
-                error = exc
+            else:
                 result.failed += 1
-                location = f"{path}:{line_number}"
-                result.errors.append(f"{location}: {exc}")
+                location = f"{outcome.path}:{outcome.line_number}"
+                result.errors.append(f"{location}: {outcome.error}")
                 self.logger.error(
                     "Could not publish %s (record=%d batch=%d/%d): %s",
                     location,
                     offset + index,
                     index,
                     total_records,
-                    exc,
-                )
-
-            if progress_callback is not None:
-                progress_callback(
-                    index, total_records, str(handle or "<invalid>"), error
+                    outcome.error,
                 )
 
         self.logger.info(
@@ -149,6 +155,129 @@ class HandlePublisher:
             offset,
         )
         return result
+
+    def _publish_records(
+        self,
+        records: list[tuple[Path, int, dict[str, Any]]],
+        *,
+        retries: int,
+        retry_delay: float,
+        workers: int,
+        progress_callback: ProgressCallback | None,
+    ) -> list[_PublicationOutcome]:
+        indexed_records = [
+            (index, path, line_number, record)
+            for index, (path, line_number, record) in enumerate(records, start=1)
+        ]
+        if workers == 1 or len(indexed_records) < 2:
+
+            def report(outcome: _PublicationOutcome) -> None:
+                if progress_callback is not None:
+                    progress_callback(
+                        outcome.index,
+                        len(indexed_records),
+                        outcome.handle,
+                        outcome.error,
+                    )
+
+            return self._publish_chain(
+                indexed_records,
+                retries=retries,
+                retry_delay=retry_delay,
+                on_outcome=report,
+            )
+
+        # Updates for one Handle form a chain and stay in source order. Separate
+        # Handles can be sent concurrently without allowing an older state to
+        # race past a newer state for the same PID.
+        chains: dict[str, list[tuple[int, Path, int, dict[str, Any]]]] = {}
+        for item in indexed_records:
+            index, _, _, record = item
+            handle = record.get("handle")
+            chain_key = handle if isinstance(handle, str) else f"<invalid:{index}>"
+            chains.setdefault(chain_key, []).append(item)
+
+        outcomes: list[_PublicationOutcome] = []
+        outcome_queue: Queue[_PublicationOutcome | None] = Queue()
+
+        def publish_chain(chain):
+            try:
+                self._publish_chain(
+                    chain,
+                    retries=retries,
+                    retry_delay=retry_delay,
+                    on_outcome=outcome_queue.put,
+                )
+            finally:
+                outcome_queue.put(None)
+
+        with ThreadPoolExecutor(
+            max_workers=min(workers, len(chains)),
+            thread_name_prefix="handle-publisher",
+        ) as executor:
+            futures = [
+                executor.submit(publish_chain, chain) for chain in chains.values()
+            ]
+            completed_chains = 0
+            while completed_chains < len(futures):
+                outcome = outcome_queue.get()
+                if outcome is None:
+                    completed_chains += 1
+                    continue
+                outcomes.append(outcome)
+                if progress_callback is not None:
+                    progress_callback(
+                        outcome.index,
+                        len(indexed_records),
+                        outcome.handle,
+                        outcome.error,
+                    )
+            for future in as_completed(futures):
+                future.result()
+        return outcomes
+
+    def _publish_chain(
+        self,
+        records: list[tuple[int, Path, int, dict[str, Any]]],
+        *,
+        retries: int,
+        retry_delay: float,
+        on_outcome: Callable[[_PublicationOutcome], None] | None = None,
+    ) -> list[_PublicationOutcome]:
+        outcomes = []
+        for index, path, line_number, record in records:
+            handle = record.get("handle")
+            retry_attempts = 0
+
+            def count_retry() -> None:
+                nonlocal retry_attempts
+                retry_attempts += 1
+
+            error: Exception | None = None
+            try:
+                pid, handle_data = self._prepare_record(record)
+                self._store_with_retries(
+                    str(handle),
+                    pid,
+                    handle_data,
+                    retries=retries,
+                    retry_delay=retry_delay,
+                    on_retry=count_retry,
+                )
+            except Exception as exc:
+                error = exc
+            outcome = _PublicationOutcome(
+                index=index,
+                path=path,
+                line_number=line_number,
+                handle=str(handle or "<invalid>"),
+                error=error,
+                retry_attempts=retry_attempts,
+            )
+            outcomes.append(outcome)
+            if on_outcome is not None:
+                on_outcome(outcome)
+        return outcomes
 
     def _store_with_retries(
         self,
