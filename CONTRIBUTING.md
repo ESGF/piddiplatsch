@@ -34,16 +34,22 @@ make develop
 
 ## 🔧 CLI Usage & Options
 
-Requires Kafka and Handle services (or use the local Docker stack for smoke tests).
+Kafka is required for queue commands. Handle services are required only for
+explicit publication (or use the local Docker stack for smoke tests).
 
-- Start consumer: `piddi consume`
+- Harvest queue messages only: `piddi harvest`
+- Map saved raw JSONL: `piddi map <path...>`
+- Harvest and map: `piddi consume`
+- Harvest, map, and publish: `piddi consume --publish`
 - Common flags:
   - `--config <path>`: point to your TOML config
   - `--verbose`: more logging
   - `--debug --log my.log`: enable debug and log to file
-  - `--dump`: write incoming messages to `outputs/dump/`
-  - `--dry-run`: write handle records to JSONL without contacting Handle Service
   - `--force`: continue on transient external failures (e.g., STAC outages)
+
+`harvest` and `consume` always write raw queue messages to `outputs/dump/`
+before plugin routing. Plain `consume` writes Handle JSONL without contacting a
+Handle Service.
 
 ### Observe Mode Example
 
@@ -51,12 +57,12 @@ For exploratory runs without real Handle writes:
 
 ```bash
 cp etc/observe.toml .
-piddi --config observe.toml consume --dry-run --dump --force
+piddi --config observe.toml consume --force
 ```
 
 This configuration:
 - Sets `consumer.max_errors=1000` and `stop_on_skip=false` to keep processing
-- Uses `handle.backend=jsonl` for local record output
+- Uses the default deferred `consume` mode for JSONL-only Handle output
 - Disables strict schema checks (`schema.strict_mode=false`)
 
 ### Config Validation
@@ -300,7 +306,7 @@ import pytest
 
 pytestmark = pytest.mark.integration
 
-def test_pipeline_with_jsonl_backend():
+def test_pipeline_with_dry_run_output():
     # Test component interactions
     pass
 ```

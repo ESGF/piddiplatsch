@@ -6,7 +6,8 @@ import pytest
 from click.testing import CliRunner
 
 from piddiplatsch.cli import cli
-from piddiplatsch.result import PublishResult
+from piddiplatsch.consumer import HarvestProcessor
+from piddiplatsch.result import FeedResult, PublishResult
 
 
 @pytest.fixture
@@ -24,6 +25,8 @@ class TestCLIBasics:
         assert result.exit_code == 0
         assert "CLI to interact with Kafka and Handle Service" in result.output
         assert "consume" in result.output
+        assert "harvest" in result.output
+        assert "map" in result.output
         assert "publish" in result.output
         assert "retry" in result.output
 
@@ -54,9 +57,8 @@ class TestConsumeCommand:
         """Test consume command help."""
         result = runner.invoke(cli, ["consume", "--help"])
         assert result.exit_code == 0
-        assert "Start the Kafka consumer" in result.output
-        assert "--dump" in result.output
-        assert "--dry-run" in result.output
+        assert "Harvest and map Kafka messages" in result.output
+        assert "--publish" in result.output
         assert "--project" in result.output
         assert "--all-projects" in result.output
 
@@ -64,25 +66,18 @@ class TestConsumeCommand:
     def test_consume_basic(self, mock_start_consumer, runner):
         """Test consume command calls start_consumer."""
         runner.invoke(cli, ["consume"])
-        # Will fail without Kafka, but should call start_consumer
-        assert mock_start_consumer.called
-
-    @patch("piddiplatsch.cli.start_consumer")
-    def test_consume_with_dump(self, mock_start_consumer, runner):
-        """Test consume command with --dump flag."""
-        runner.invoke(cli, ["consume", "--dump"])
-        assert mock_start_consumer.called
-        # Check that dump_messages=True was passed
-        call_kwargs = mock_start_consumer.call_args.kwargs
-        assert call_kwargs.get("dump_messages") is True
-
-    @patch("piddiplatsch.cli.start_consumer")
-    def test_consume_with_dry_run(self, mock_start_consumer, runner):
-        """Test consume command with --dry-run flag."""
-        runner.invoke(cli, ["consume", "--dry-run"])
         assert mock_start_consumer.called
         call_kwargs = mock_start_consumer.call_args.kwargs
-        assert call_kwargs.get("dry_run") is True
+        assert call_kwargs["dump_messages"] is True
+        assert call_kwargs["dry_run"] is True
+
+    @patch("piddiplatsch.cli.start_consumer")
+    def test_consume_with_publish(self, mock_start_consumer, runner):
+        runner.invoke(cli, ["consume", "--publish"])
+        assert mock_start_consumer.called
+        call_kwargs = mock_start_consumer.call_args.kwargs
+        assert call_kwargs["dump_messages"] is True
+        assert call_kwargs["dry_run"] is False
 
     @patch("piddiplatsch.cli.start_consumer")
     def test_consume_with_verbose(self, mock_start_consumer, runner):
@@ -116,6 +111,90 @@ class TestConsumeCommand:
         assert result.exit_code == 2
         assert "cannot be combined" in result.output
         mock_start_consumer.assert_not_called()
+
+
+class TestHarvestCommand:
+    def test_harvest_help(self, runner):
+        result = runner.invoke(cli, ["harvest", "--help"])
+        assert result.exit_code == 0
+        assert "raw JSONL" in result.output
+
+    @patch("piddiplatsch.cli.start_consumer")
+    def test_harvest_dumps_without_mapping(self, mock_start_consumer, runner):
+        result = runner.invoke(cli, ["harvest"])
+        assert result.exit_code == 0
+        kwargs = mock_start_consumer.call_args.kwargs
+        assert isinstance(kwargs["processor"], HarvestProcessor)
+        assert kwargs["dump_messages"] is True
+        assert kwargs["force"] is True
+
+
+class TestMapCommand:
+    def test_map_help(self, runner):
+        result = runner.invoke(cli, ["map", "--help"])
+        assert result.exit_code == 0
+        assert "Handle JSONL" in result.output
+        assert "--limit" in result.output
+        assert "--offset" in result.output
+        assert "--project" in result.output
+
+    @patch("piddiplatsch.cli.map_dump_files")
+    def test_map_calls_mapper(self, mock_map_dump_files, runner, tmp_path):
+        source = tmp_path / "dump.jsonl"
+        source.write_text("{}\n")
+        mock_map_dump_files.return_value = FeedResult(total=3, succeeded=1, filtered=2)
+
+        result = runner.invoke(
+            cli,
+            [
+                "map",
+                str(source),
+                "--project",
+                "cmip6",
+                "--limit",
+                "3",
+                "--offset",
+                "2",
+                "--force",
+            ],
+        )
+
+        assert result.exit_code == 0
+        assert "Mapped 1/3" in result.output
+        assert "Filtered by project selection: 2" in result.output
+        kwargs = mock_map_dump_files.call_args.kwargs
+        assert kwargs == {
+            "projects": ("cmip6",),
+            "limit": 3,
+            "offset": 2,
+            "force": True,
+            "verbose": False,
+        }
+
+    @patch("piddiplatsch.cli.map_dump_files")
+    def test_map_passes_global_verbose(self, mock_map_dump_files, runner, tmp_path):
+        source = tmp_path / "dump.jsonl"
+        source.write_text("{}\n")
+        mock_map_dump_files.return_value = FeedResult(total=1, succeeded=1)
+
+        result = runner.invoke(cli, ["--verbose", "map", str(source)])
+
+        assert result.exit_code == 0
+        assert mock_map_dump_files.call_args.kwargs["verbose"] is True
+
+    @patch("piddiplatsch.cli.map_dump_files")
+    def test_map_rejects_named_and_all_projects(
+        self, mock_map_dump_files, runner, tmp_path
+    ):
+        source = tmp_path / "dump.jsonl"
+        source.write_text("{}\n")
+        result = runner.invoke(
+            cli,
+            ["map", str(source), "--project", "cmip6", "--all-projects"],
+        )
+        assert result.exit_code == 2
+        assert "cannot be combined" in result.output
+        mock_map_dump_files.assert_not_called()
 
 
 class TestRetryCommand:

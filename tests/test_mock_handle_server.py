@@ -43,20 +43,26 @@ def test_put_handle_without_overwrite(client, auth_headers):
     first_response = client.put(url, json=TEST_RECORD, headers=auth_headers)
     second_response = client.put(url, json=TEST_RECORD, headers=auth_headers)
 
-    assert first_response.status_code == 200
+    assert first_response.status_code == 201
     assert second_response.status_code == 409
     assert second_response.get_json()["responseCode"] == 101
 
 
 def test_put_handle_with_overwrite(client, auth_headers):
-    response = client.put(
+    first_response = client.put(
+        f"/api/handles/{TEST_HANDLE}?overwrite=true",
+        json=TEST_RECORD,
+        headers=auth_headers,
+    )
+    second_response = client.put(
         f"/api/handles/{TEST_HANDLE}?overwrite=true",
         json=TEST_RECORD,
         headers=auth_headers,
     )
 
-    assert response.status_code == 200
-    assert response.get_json()["responseCode"] == 1
+    assert first_response.status_code == 201
+    assert second_response.status_code == 200
+    assert second_response.get_json()["responseCode"] == 1
 
 
 def test_get_existing_handle(client, auth_headers):
@@ -79,7 +85,7 @@ def test_handle_suffix_may_contain_slashes(client, auth_headers):
     )
     get_response = client.get(f"/api/handles/{handle}")
 
-    assert put_response.status_code == 200
+    assert put_response.status_code == 201
     assert get_response.get_json()["handle"] == handle
 
 

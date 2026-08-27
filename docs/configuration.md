@@ -23,7 +23,7 @@ piddi --config custom.toml config show
 | `consumer.transient` | `retries` | Number of retries for transient STAC patch retrieval. |
 | `consumer.transient` | `backoff_initial`, `backoff_max` | Exponential retry delay bounds in seconds. |
 | `consumer.transient` | `preflight_stac` | Probe the configured STAC service before consuming. |
-| `handle` | `backend` | `jsonl` (default) for local output, `rest` for publication, or legacy `pyhandle`. |
+| `handle` | `backend` | `rest` for publication or legacy `pyhandle`; both always write JSONL first. |
 | `handle` | `server_url`, `prefix`, `username`, `password` | Handle service connection and credentials. |
 | `handle` | `verify_https` | Verify Handle service TLS certificates; defaults to `true`. |
 | `handle` | `timeout` | Per-request Handle REST timeout in seconds; defaults to `10`. |
@@ -40,10 +40,21 @@ the project-scoped Handle JSONL file before contacting the service. This audit
 output is not optional; `[consumer].output_dir` controls its root directory.
 
 `piddi publish` always uses the REST Handle client, independently of the
-configured `handle.backend`. This allows one configuration to keep the Kafka
-consumer on the safe `jsonl` backend while a separate process publishes closed
-daily files using the configured `server_url`, `prefix`, `username`, `password`,
-TLS verification, and timeout settings.
+configured `handle.backend`. The Kafka consumer always records prepared Handles
+to project-scoped JSONL before publishing through either `rest` or `pyhandle`.
+Plain `consume` writes JSONL without contacting a Handle service; add
+`--publish` only when immediate publication is intended. The deferred command
+publishes closed daily files using the configured
+`server_url`, `prefix`, `username`, `password`, TLS verification, and timeout
+settings.
+
+Every successful publication writes an INFO entry to the configured `--log`
+file (`pid.log` by default). The entry identifies whether the server created or
+updated the Handle and includes its directly resolvable REST URL, project,
+dataset ID, file name, and source position. For file assets, the publisher joins
+`IS_PART_OF` to a dataset record in the selected batch so the asset log entry
+also includes `DATASET_ID`. Context that is unavailable in older JSONL input is
+written as `-`.
 
 All additional keys under `[kafka]` are passed to `confluent-kafka`. Dotted
 librdkafka keys must be quoted in TOML, for example

@@ -20,11 +20,11 @@ class RecordingHandleBackend:
         self.recorder = recorder or JsonlHandleBackend(project=project)
         self.prefix = getattr(backend, "prefix", None)
 
-    def add(self, pid: str, record: dict[str, Any]) -> None:
+    def add(self, pid: str, record: dict[str, Any]) -> Any:
         # Record first: a direct publication must never bypass the durable audit
         # trail, including when the Handle service subsequently rejects the PUT.
         self.recorder.add(pid, record)
-        self.backend.add(pid, record)
+        return self.backend.add(pid, record)
 
     def get(self, pid: str) -> dict[str, Any] | None:
         return self.backend.get(pid)

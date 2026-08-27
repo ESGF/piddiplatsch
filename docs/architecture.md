@@ -6,11 +6,12 @@ decoded event to zero or one selected project plugin.
 ```text
 Kafka message
   -> JSON decode
-  -> optional raw dump
+  -> mandatory raw dump
   -> extract project identity
   -> selected project plugin
   -> project record mapping
-  -> Handle backend
+  -> project-scoped Handle JSONL
+  -> optional Handle backend
   -> result persistence and statistics
 ```
 
@@ -59,8 +60,9 @@ independently generated identifiers.
 ## Selection
 
 `consumer.projects` selects a list of plugin names or `all`. Repeated
-`piddi consume --project NAME` options and `--all-projects` override config for a
-run.
+`--project NAME` options and `--all-projects` on `consume` or `map` override
+config for a run. `harvest` intentionally has no project selection: it retains
+every raw queue message so a different mapping selection can be applied later.
 
 Only selected plugins are constructed and preflighted.
 
@@ -72,7 +74,8 @@ the canonical plugin name in `project`. This prevents records from concurrent
 project mappings being mixed and gives downstream publishers an explicit
 routing hint.
 
-The optional raw dump remains a single pre-routing stream under `outputs/dump`.
+The raw dump remains a single pre-routing stream under `outputs/dump` and is
+mandatory for queue-consuming commands.
 Because it is written in consumption order, it preserves the Kafka sequence for
 replay and audit. `pid.log` records selected plugins and the first occurrence of
 each filtered project at INFO, aggregate filtered counts in statistics, and

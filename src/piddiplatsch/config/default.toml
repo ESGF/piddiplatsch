@@ -52,14 +52,15 @@ preflight_stac = true
 # Note: dotted librdkafka keys are quoted to keep them as literal TOML keys.
 
 [handle]
-# Handle backend: use "jsonl" for safe local output, "rest" to publish,
-# or "pyhandle" for the legacy client.
+# Handle publication backend: use "rest" or "pyhandle" for the legacy client.
+# Both backends always write the immutable JSONL audit record first. Plain
+# `consume` defers publication; use `consume --publish` for immediate delivery.
 # Avoid committing real credentials; set username/password via overrides.
 # Example override (custom.toml):
 # [handle]
 # username = "300:21.TEST/your-user"
 # password = "***"
-backend = "jsonl"
+backend = "rest"
 server_url = "http://localhost:8000"
 prefix = "21.TEST"
 username = "300:21.TEST/testuser"

@@ -300,11 +300,10 @@ consumption wait on Handle-service throughput by default.
 
 #### Ingestion/outbox responsibilities
 
-- Treat generated Handle JSONL as a production outbox, not as `--dry-run`
-  output. Rename configuration, CLI help, classes, logs, and documentation so
-  production spooling and diagnostic dry-run behaviour are not conflated.
-- Define explicit ingestion modes, for example `spool` (default) and `direct`.
-  Direct mode should use the same resolved Handle records as spool mode.
+- Build on the staged CLI now in place: `harvest` writes raw JSONL, `map`
+  creates Handle JSONL, `publish` delivers it, plain `consume` combines the
+  first two stages, and `consume --publish` runs all three. Keep the same
+  resolved Handle records in deferred and direct modes.
 - Acknowledge a routed Kafka record only after all of its Handle operations are
   durably written to the outbox (or successfully completed in direct mode).
 - Define a versioned, target-neutral JSONL envelope containing at least:
@@ -505,9 +504,8 @@ extension before designing around one.
 
 - Preserve opt-in direct publication for small runs, debugging, and sites that
   do not want a separate publisher deployment.
-- Define how the current `handle.backend = "jsonl"`, `--dry-run`, and JSONL file
-  format migrate to the production spool without accidentally publishing old
-  diagnostic files.
+- Define how the current JSONL audit format migrates to a versioned production
+  outbox without accidentally publishing old diagnostic files.
 - Provide an inspection/validation command that checks outbox schema and
   integrity without publishing.
 - Test crash points around append, seal, claim, checkpoint, successful request,

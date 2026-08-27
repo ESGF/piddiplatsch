@@ -62,12 +62,15 @@ class HandleStore:
             record = self._handles.get(handle)
             return deepcopy(record) if record is not None else None
 
-    def put(self, handle: str, record: dict[str, Any], *, overwrite: bool) -> bool:
+    def put(
+        self, handle: str, record: dict[str, Any], *, overwrite: bool
+    ) -> tuple[bool, bool]:
         with self._lock:
-            if handle in self._handles and not overwrite:
-                return False
+            created = handle not in self._handles
+            if not created and not overwrite:
+                return False, False
             self._handles[handle] = deepcopy(record)
-            return True
+            return True, created
 
 
 def _is_authorized(authorization: str | None) -> bool:
@@ -150,17 +153,21 @@ def create_app(
         overwrite = request.args.get("overwrite", "false").lower() == "true"
         if put_delay:
             sleep(put_delay)
-        if not store.put(handle, record, overwrite=overwrite):
+        stored, created = store.put(handle, record, overwrite=overwrite)
+        if not stored:
             return (
                 jsonify(message=f"Handle {handle} already exists", responseCode=101),
                 409,
             )
 
         logger.debug("Stored handle %s", handle)
-        return jsonify(
-            responseCode=1,
-            handle=handle,
-            message=f"Handle {handle} registered",
+        return (
+            jsonify(
+                responseCode=1,
+                handle=handle,
+                message=f"Handle {handle} registered",
+            ),
+            201 if created else 200,
         )
 
     return mock_app

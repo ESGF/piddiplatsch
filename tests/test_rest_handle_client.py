@@ -5,7 +5,6 @@ import requests
 
 from piddiplatsch.config import config
 from piddiplatsch.handles.api import get_handle_backend
-from piddiplatsch.handles.jsonl_backend import JsonlHandleBackend
 from piddiplatsch.handles.pyhandle_backend import HandleClient
 from piddiplatsch.handles.recording_backend import RecordingHandleBackend
 from piddiplatsch.handles.rest_backend import RestHandleClient
@@ -56,7 +55,7 @@ def make_client(response):
 def test_rest_client_puts_single_handle_with_overwrite():
     client, session = make_client(FakeResponse({"responseCode": 1}))
 
-    client.add(
+    result = client.add(
         "abc",
         {
             "URL": "https://example.test/abc",
@@ -88,6 +87,16 @@ def test_rest_client_puts_single_handle_with_overwrite():
     ]
     token = base64.b64encode(b"300%3A21.TEST/testuser:secret").decode()
     assert request["headers"]["Authorization"] == f"Basic {token}"
+    assert result.action == "updated"
+    assert result.url == "https://handles.example.test/api/handles/21.TEST/abc"
+
+
+def test_rest_client_reports_created_handle():
+    client, _ = make_client(FakeResponse({"responseCode": 1}, status_code=201))
+
+    result = client.add("abc", {"URL": "https://example.test/abc"})
+
+    assert result.action == "created"
 
 
 def test_rest_client_decodes_handle_values():
@@ -149,10 +158,16 @@ def test_handle_backend_factory_selects_rest(monkeypatch):
     assert backend.backend is sentinel
 
 
-def test_handle_backend_factory_defaults_to_jsonl():
+def test_handle_backend_factory_defaults_to_rest(monkeypatch):
+    sentinel = object()
     config._set("handle", None, {"prefix": "21.TEST"})
+    monkeypatch.setattr(
+        "piddiplatsch.handles.api.RestHandleClient.from_config", lambda: sentinel
+    )
 
-    assert isinstance(get_handle_backend(), JsonlHandleBackend)
+    backend = get_handle_backend()
+    assert isinstance(backend, RecordingHandleBackend)
+    assert backend.backend is sentinel
 
 
 def test_handle_backend_factory_keeps_pyhandle(monkeypatch):
