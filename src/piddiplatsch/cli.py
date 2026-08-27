@@ -140,7 +140,9 @@ def harvest(ctx):
     is_flag=True,
     help="Continue on transient external failures (e.g., STAC down).",
 )
+@click.pass_context
 def map_messages(
+    ctx,
     path: tuple[Path, ...],
     projects: tuple[str, ...],
     all_projects: bool,
@@ -159,6 +161,7 @@ def map_messages(
             limit=limit,
             offset=offset,
             force=force,
+            verbose=ctx.obj["verbose"],
         )
     except (JsonlReadError, OSError, ValueError) as exc:
         raise click.ClickException(str(exc)) from exc

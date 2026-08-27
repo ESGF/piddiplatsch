@@ -168,7 +168,19 @@ class TestMapCommand:
             "limit": 3,
             "offset": 2,
             "force": True,
+            "verbose": False,
         }
+
+    @patch("piddiplatsch.cli.map_dump_files")
+    def test_map_passes_global_verbose(self, mock_map_dump_files, runner, tmp_path):
+        source = tmp_path / "dump.jsonl"
+        source.write_text("{}\n")
+        mock_map_dump_files.return_value = FeedResult(total=1, succeeded=1)
+
+        result = runner.invoke(cli, ["--verbose", "map", str(source)])
+
+        assert result.exit_code == 0
+        assert mock_map_dump_files.call_args.kwargs["verbose"] is True
 
     @patch("piddiplatsch.cli.map_dump_files")
     def test_map_rejects_named_and_all_projects(

@@ -215,10 +215,12 @@ Common first runs:
 
 ### Status Bar (Verbose Mode)
 
-Use `-v` or `--verbose` to display a live progress bar:
+Use the global `-v` or `--verbose` option to display live progress for
+`harvest`, `map`, `consume`, or `publish`:
 
 ```bash
 piddi -c custom.toml -v consume
+piddi -c custom.toml -v map outputs/dump/dump_messages_2026-08-27.jsonl
 ```
 
 Status line format:

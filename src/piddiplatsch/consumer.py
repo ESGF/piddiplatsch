@@ -283,6 +283,7 @@ def feed_messages_direct(
     dry_run=False,
     failure_dir: Path | None = None,
     force: bool = False,
+    verbose: bool = False,
 ) -> FeedResult:
     consumer = DirectConsumer(messages)
     target = build_processing_target(
@@ -296,6 +297,7 @@ def feed_messages_direct(
         dry_run=dry_run,
         failure_dir=failure_dir,
         force=force,
+        verbose=verbose,
     )
 
     # Track stats before run
@@ -304,7 +306,11 @@ def feed_messages_direct(
     skipped_before = pipeline.stats.skipped_messages
     filtered_before = pipeline.stats.filtered_messages
 
-    pipeline.run()
+    try:
+        pipeline.run()
+    finally:
+        if verbose and pipeline.progress:
+            pipeline.progress.close()
 
     # Calculate delta from pipeline stats
     processed = pipeline.stats.messages - messages_before
@@ -329,6 +335,7 @@ def map_dump_files(
     limit: int | None = None,
     offset: int = 0,
     force: bool = False,
+    verbose: bool = False,
 ) -> FeedResult:
     """Map saved raw-message JSONL through project plugins without Kafka."""
     if limit is not None and limit < 1:
@@ -368,6 +375,7 @@ def map_dump_files(
         processor=target,
         dry_run=True,
         force=force,
+        verbose=verbose,
     )
 
 
