@@ -60,6 +60,7 @@ class PublishResult:
     failed: int = 0
     retry_attempts: int = 0
     errors: list[str] = field(default_factory=list)
+    result_file: Path | None = None
 
 
 @dataclass

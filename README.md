@@ -157,9 +157,12 @@ not retried. Use `--workers N` for bounded concurrent PUT requests. Updates for
 the same Handle remain in input order while different Handles are published in
 parallel. Verbose progress shows both the absolute Handle position and its
 position within the selected batch. Publication outcomes are written to the
-standard log file (`pid.log` by default). Pass the existing global `--verbose`
-option to enable the terminal progress bar; without it, only the final summary
-is printed.
+standard log file (`pid.log` by default) and to a run-scoped structured JSONL
+receipt under `outputs/published/`. The CLI prints the exact receipt path when
+the run finishes. Each line includes the outcome, action, PID, full URL,
+project, dataset, asset, source location, batch position, retries, and error.
+Pass the existing global `--verbose` option to enable the terminal progress
+bar; without it, only the final summary is printed.
 
 You can also pass one file, several files, or a directory. `publish` never
 changes or deletes its inputs. Publication uses Handle overwrite semantics, so

@@ -371,13 +371,17 @@ class TestPublishCommand:
         source = tmp_path / "handles.jsonl"
         source.touch()
         publisher_cls.return_value.run.return_value = PublishResult(
-            total=3, succeeded=3
+            total=3,
+            succeeded=3,
+            result_file=tmp_path / "published" / "results.jsonl",
         )
 
         result = runner.invoke(cli, ["publish", str(source)])
 
         assert result.exit_code == 0
         assert "Published 3/3 handles" in result.output
+        assert "Publication results:" in result.output
+        assert "results.jsonl" in result.output
         publisher_cls.return_value.run.assert_called_once()
         assert publisher_cls.return_value.run.call_args.kwargs["limit"] is None
         assert publisher_cls.return_value.run.call_args.kwargs["offset"] == 0

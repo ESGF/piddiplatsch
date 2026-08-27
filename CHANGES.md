@@ -11,6 +11,8 @@ All notable changes to this project are documented here.
 - Added configurable Handle PUT latency to the Docker mock service, defaulting to 50 ms.
 - Added separate `harvest` and `map` commands for queue-to-raw-JSONL and
   raw-JSONL-to-Handle-JSONL processing.
+- Added a run-scoped structured JSONL receipt containing every successful or
+  failed deferred Handle publication outcome.
 
 ### Changed
 - Handle publication selects `rest` or legacy `pyhandle`; both always write the

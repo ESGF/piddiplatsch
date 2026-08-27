@@ -165,6 +165,65 @@ def test_logs_dataset_context_for_file_asset(tmp_path, caplog):
     assert "file_name=example.nc" in file_line
 
 
+def test_writes_structured_result_jsonl_for_successes_and_failures(tmp_path):
+    source = tmp_path / "handles.jsonl"
+    result_file = tmp_path / "receipts" / "publication.jsonl"
+    write_jsonl(
+        source,
+        [
+            handle_record(
+                "good",
+                data={
+                    "AGGREGATION_LEVEL": "FILE",
+                    "DATASET_ID": "CMIP6.CMIP.example",
+                    "FILE_NAME": "example.nc",
+                },
+            ),
+            handle_record("failed"),
+        ],
+    )
+
+    result = HandlePublisher(FakeBackend(failing_pid="failed")).run(
+        [source], workers=2, result_file=result_file
+    )
+
+    receipts = [json.loads(line) for line in result_file.read_text().splitlines()]
+    receipts_by_handle = {receipt["handle"]: receipt for receipt in receipts}
+    success = receipts_by_handle["21.TEST/good"]
+    failure = receipts_by_handle["21.TEST/failed"]
+    assert result.result_file == result_file
+    assert len(receipts) == 2
+    assert success["schema_version"] == 1
+    assert success["status"] == "succeeded"
+    assert success["action"] == "published"
+    assert success["project"] == "cmip6"
+    assert success["dataset_id"] == "CMIP6.CMIP.example"
+    assert success["file_name"] == "example.nc"
+    assert success["source_file"] == str(source.resolve())
+    assert success["source_line"] == 1
+    assert success["position"] == 1
+    assert success["batch_index"] == 1
+    assert success["batch_total"] == 2
+    assert success["retry_attempts"] == 0
+    assert success["error"] is None
+    assert failure["status"] == "failed"
+    assert failure["action"] is None
+    assert failure["error"] == "server unavailable"
+
+
+def test_default_result_jsonl_is_run_scoped_under_output_dir(tmp_path):
+    config._set("consumer", "output_dir", str(tmp_path / "outputs"))
+    source = tmp_path / "handles.jsonl"
+    write_jsonl(source, [handle_record("abc")])
+
+    result = HandlePublisher(FakeBackend()).run([source])
+
+    assert result.result_file is not None
+    assert result.result_file.parent == tmp_path / "outputs" / "published"
+    assert result.result_file.name.startswith("publication_results_")
+    assert result.result_file.read_text().count("\n") == 1
+
+
 def test_continues_after_invalid_record_and_backend_failure(tmp_path):
     source = tmp_path / "handles.jsonl"
     write_jsonl(

@@ -285,6 +285,8 @@ def publish(
         return
 
     click.echo(f"Published {result.succeeded}/{result.total} handles.")
+    if result.result_file is not None:
+        click.echo(f"Publication results: {result.result_file}")
     if last_handle_position > offset:
         click.echo(f"Processed handles: {offset + 1}-{last_handle_position}.")
     if limit is not None and result.total == limit:

@@ -1,19 +1,24 @@
 from __future__ import annotations
 
+import json
 import logging
+import threading
 import time
 from collections.abc import Callable, Iterable
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from contextlib import AbstractContextManager
 from dataclasses import dataclass
 from pathlib import Path
 from queue import Queue
 from typing import Any, Protocol
+from uuid import uuid4
 
 import requests
 
+from piddiplatsch.config import config
 from piddiplatsch.exceptions import JsonlReadError
 from piddiplatsch.handles.rest_backend import RestHandleClient
-from piddiplatsch.helpers import find_jsonl, read_jsonl
+from piddiplatsch.helpers import find_jsonl, read_jsonl, utc_now
 from piddiplatsch.result import PublishResult
 
 
@@ -24,6 +29,7 @@ class PreparedHandleBackend(Protocol):
 
 
 ProgressCallback = Callable[[int, int, str, Exception | None], None]
+OutcomeCallback = Callable[["_PublicationOutcome"], None]
 
 
 @dataclass(frozen=True)
@@ -46,6 +52,28 @@ class _PublicationContext:
     project: str | None
     dataset_id: str | None
     file_name: str | None
+
+
+class _PublicationResultWriter(AbstractContextManager):
+    """Append structured per-Handle outcomes to one run-scoped JSONL file."""
+
+    def __init__(self, path: Path) -> None:
+        self.path = path
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        self._stream = self.path.open("a", encoding="utf-8")
+        self._lock = threading.Lock()
+
+    def write(self, record: dict[str, Any]) -> None:
+        line = json.dumps(record) + "\n"
+        with self._lock:
+            self._stream.write(line)
+            self._stream.flush()
+
+    def close(self) -> None:
+        self._stream.close()
+
+    def __exit__(self, exc_type, exc_value, traceback) -> None:
+        self.close()
 
 
 class HandlePublisher:
@@ -73,6 +101,7 @@ class HandlePublisher:
         retry_delay: float = 1.0,
         workers: int = 1,
         progress_callback: ProgressCallback | None = None,
+        result_file: Path | None = None,
     ) -> PublishResult:
         if limit is not None and limit < 1:
             raise ValueError("limit must be at least 1")
@@ -124,14 +153,26 @@ class HandlePublisher:
                 self.logger.error("Could not read Handle JSONL file %s: %s", path, exc)
 
         total_records = len(records)
-
-        outcomes = self._publish_records(
-            records,
-            retries=retries,
-            retry_delay=retry_delay,
-            workers=workers,
-            progress_callback=progress_callback,
-        )
+        if total_records:
+            result.result_file = result_file or self._new_result_file()
+            self.logger.info("Writing publication results to %s", result.result_file)
+            with _PublicationResultWriter(result.result_file) as writer:
+                outcomes = self._publish_records(
+                    records,
+                    retries=retries,
+                    retry_delay=retry_delay,
+                    workers=workers,
+                    progress_callback=progress_callback,
+                    outcome_callback=lambda outcome: writer.write(
+                        self._result_record(
+                            outcome,
+                            position=offset + outcome.index,
+                            batch_total=total_records,
+                        )
+                    ),
+                )
+        else:
+            outcomes = []
         for outcome in sorted(outcomes, key=lambda item: item.index):
             index = outcome.index
             result.total += 1
@@ -192,6 +233,7 @@ class HandlePublisher:
         retry_delay: float,
         workers: int,
         progress_callback: ProgressCallback | None,
+        outcome_callback: OutcomeCallback | None = None,
     ) -> list[_PublicationOutcome]:
         contexts = self._publication_contexts(records)
         indexed_records = [
@@ -201,6 +243,8 @@ class HandlePublisher:
         if workers == 1 or len(indexed_records) < 2:
 
             def report(outcome: _PublicationOutcome) -> None:
+                if outcome_callback is not None:
+                    outcome_callback(outcome)
                 if progress_callback is not None:
                     progress_callback(
                         outcome.index,
@@ -257,6 +301,8 @@ class HandlePublisher:
                     completed_chains += 1
                     continue
                 outcomes.append(outcome)
+                if outcome_callback is not None:
+                    outcome_callback(outcome)
                 if progress_callback is not None:
                     progress_callback(
                         outcome.index,
@@ -267,6 +313,43 @@ class HandlePublisher:
             for future in as_completed(futures):
                 future.result()
         return outcomes
+
+    @staticmethod
+    def _result_record(
+        outcome: _PublicationOutcome,
+        *,
+        position: int,
+        batch_total: int,
+    ) -> dict[str, Any]:
+        succeeded = outcome.error is None
+        return {
+            "schema_version": 1,
+            "timestamp": utc_now().isoformat(),
+            "status": "succeeded" if succeeded else "failed",
+            "action": outcome.action if succeeded else None,
+            "handle": outcome.handle,
+            "url": outcome.url,
+            "project": outcome.project,
+            "dataset_id": outcome.dataset_id,
+            "file_name": outcome.file_name,
+            "source_file": str(outcome.path.resolve()),
+            "source_line": outcome.line_number,
+            "position": position,
+            "batch_index": outcome.index,
+            "batch_total": batch_total,
+            "retry_attempts": outcome.retry_attempts,
+            "error": str(outcome.error) if outcome.error is not None else None,
+        }
+
+    @staticmethod
+    def _new_result_file() -> Path:
+        output_dir = Path(config.get("consumer", {}).get("output_dir", "outputs"))
+        timestamp = utc_now().strftime("%Y%m%dT%H%M%S%fZ")
+        return (
+            output_dir
+            / "published"
+            / f"publication_results_{timestamp}_{uuid4().hex[:8]}.jsonl"
+        )
 
     def _publish_chain(
         self,

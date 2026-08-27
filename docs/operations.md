@@ -8,6 +8,7 @@ Piddiplatsch writes daily JSONL files beneath `consumer.output_dir`:
 | --- | --- |
 | `dump/` | Original Kafka messages written by every `harvest` or `consume` run. |
 | `<plugin>/handles/` | Handle records produced by that plugin. Direct REST/pyhandle publication writes the JSONL record before contacting the server; each line also includes `project`. |
+| `published/` | One run-scoped JSONL receipt per `publish` run, containing every successful or failed Handle outcome. |
 | `skipped/` | Records deferred after transient external failures. |
 | `failures/r<N>/` | Records that failed processing, grouped by retry count. |
 
@@ -19,6 +20,12 @@ JSONL Handle output is always enabled, including direct publication. If the
 audit record cannot be appended, that Handle is not sent to the server. A
 server-side failure leaves the JSONL record available for inspection or later
 publication.
+
+Deferred publication writes each outcome immediately to a unique
+`published/publication_results_<timestamp>_<id>.jsonl` file and prints its path
+in the final CLI summary. Parallel completion order may differ from input order;
+`position`, `batch_index`, `source_file`, and `source_line` provide stable
+ordering and provenance.
 
 ## Staged commands
 
