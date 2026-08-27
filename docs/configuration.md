@@ -23,7 +23,7 @@ piddi --config custom.toml config show
 | `consumer.transient` | `retries` | Number of retries for transient STAC patch retrieval. |
 | `consumer.transient` | `backoff_initial`, `backoff_max` | Exponential retry delay bounds in seconds. |
 | `consumer.transient` | `preflight_stac` | Probe the configured STAC service before consuming. |
-| `handle` | `backend` | `jsonl` (default) for local output, `rest` for publication, or legacy `pyhandle`. |
+| `handle` | `backend` | `rest` for publication or legacy `pyhandle`; both always write JSONL first. |
 | `handle` | `server_url`, `prefix`, `username`, `password` | Handle service connection and credentials. |
 | `handle` | `verify_https` | Verify Handle service TLS certificates; defaults to `true`. |
 | `handle` | `timeout` | Per-request Handle REST timeout in seconds; defaults to `10`. |
@@ -40,10 +40,12 @@ the project-scoped Handle JSONL file before contacting the service. This audit
 output is not optional; `[consumer].output_dir` controls its root directory.
 
 `piddi publish` always uses the REST Handle client, independently of the
-configured `handle.backend`. This allows one configuration to keep the Kafka
-consumer on the safe `jsonl` backend while a separate process publishes closed
-daily files using the configured `server_url`, `prefix`, `username`, `password`,
-TLS verification, and timeout settings.
+configured `handle.backend`. The Kafka consumer always records prepared Handles
+to project-scoped JSONL before publishing through either `rest` or `pyhandle`.
+Use `consume --dry-run` when JSONL should be written without contacting a Handle
+service. The deferred command publishes closed daily files using the configured
+`server_url`, `prefix`, `username`, `password`, TLS verification, and timeout
+settings.
 
 Every successful publication writes an INFO entry to the configured `--log`
 file (`pid.log` by default). The entry identifies whether the server created or

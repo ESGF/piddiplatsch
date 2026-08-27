@@ -49,15 +49,17 @@ def get_handle_backend(
     Return a HandleBackend based on configuration.
 
     Config keys expected in [handle] section:
-      backend = "rest" | "pyhandle" | "jsonl"
-      jsonl_path = "test-handles.jsonl"  # only for jsonl
+      backend = "rest" | "pyhandle"
+
+    Both publication backends are wrapped by the immutable JSONL audit
+    recorder. JSONL-only operation is selected explicitly with dry_run.
     """
     if dry_run:
         logging.warning("Dry-run enabled: using JSONL handle backend")
         return JsonlHandleBackend(project=project)
 
-    backend_type: Literal["rest", "pyhandle", "jsonl"] = config.get(
-        "handle", "backend", fallback="jsonl"
+    backend_type: Literal["rest", "pyhandle"] = config.get(
+        "handle", "backend", fallback="rest"
     )
     logging.warning(f"Using handle backend: {backend_type}")
 
@@ -72,8 +74,5 @@ def get_handle_backend(
             HandleClient.from_config(),
             project=project,
         )
-
-    if backend_type == "jsonl":
-        return JsonlHandleBackend(project=project)
 
     raise ValueError(f"Unknown handle backend type: {backend_type}")

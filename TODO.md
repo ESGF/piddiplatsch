@@ -505,8 +505,8 @@ extension before designing around one.
 
 - Preserve opt-in direct publication for small runs, debugging, and sites that
   do not want a separate publisher deployment.
-- Define how the current `handle.backend = "jsonl"`, `--dry-run`, and JSONL file
-  format migrate to the production spool without accidentally publishing old
+- Define how the current `--dry-run` JSONL-only workflow and JSONL audit format
+  migrate to the production spool without accidentally publishing old
   diagnostic files.
 - Provide an inspection/validation command that checks outbox schema and
   integrity without publishing.

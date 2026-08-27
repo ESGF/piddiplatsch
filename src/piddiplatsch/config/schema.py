@@ -78,7 +78,7 @@ class KafkaConfig(BaseModel):
 class HandleConfig(BaseModel):
     model_config = ConfigDict(extra="allow")
 
-    backend: Literal["rest", "pyhandle", "jsonl"] | None = None
+    backend: Literal["rest", "pyhandle"] = "rest"
     server_url: str | None = None
     prefix: str | None = None
     username: str | None = None
@@ -88,15 +88,14 @@ class HandleConfig(BaseModel):
 
     @model_validator(mode="after")
     def _check_publication_requirements(self) -> HandleConfig:
-        if self.backend in ("rest", "pyhandle"):
-            if not self.server_url:
-                raise ValueError("Missing required setting: [handle].server_url")
-            if not self.prefix:
-                raise ValueError("Missing required setting: [handle].prefix")
-            if not self.username:
-                raise ValueError("Missing required setting: [handle].username")
-            if not self.password:
-                raise ValueError("Missing required setting: [handle].password")
+        if not self.server_url:
+            raise ValueError("Missing required setting: [handle].server_url")
+        if not self.prefix:
+            raise ValueError("Missing required setting: [handle].prefix")
+        if not self.username:
+            raise ValueError("Missing required setting: [handle].username")
+        if not self.password:
+            raise ValueError("Missing required setting: [handle].password")
         return self
 
 

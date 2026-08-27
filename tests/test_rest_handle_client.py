@@ -5,7 +5,6 @@ import requests
 
 from piddiplatsch.config import config
 from piddiplatsch.handles.api import get_handle_backend
-from piddiplatsch.handles.jsonl_backend import JsonlHandleBackend
 from piddiplatsch.handles.pyhandle_backend import HandleClient
 from piddiplatsch.handles.recording_backend import RecordingHandleBackend
 from piddiplatsch.handles.rest_backend import RestHandleClient
@@ -159,10 +158,16 @@ def test_handle_backend_factory_selects_rest(monkeypatch):
     assert backend.backend is sentinel
 
 
-def test_handle_backend_factory_defaults_to_jsonl():
+def test_handle_backend_factory_defaults_to_rest(monkeypatch):
+    sentinel = object()
     config._set("handle", None, {"prefix": "21.TEST"})
+    monkeypatch.setattr(
+        "piddiplatsch.handles.api.RestHandleClient.from_config", lambda: sentinel
+    )
 
-    assert isinstance(get_handle_backend(), JsonlHandleBackend)
+    backend = get_handle_backend()
+    assert isinstance(backend, RecordingHandleBackend)
+    assert backend.backend is sentinel
 
 
 def test_handle_backend_factory_keeps_pyhandle(monkeypatch):

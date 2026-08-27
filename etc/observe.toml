@@ -9,7 +9,7 @@
 #
 # Notes:
 # - Keeps brokers, topic, and plugin defaults from the base config
-# - Switches Handle backend to JSONL (no external calls)
+# - Uses --dry-run for JSONL-only output (no external calls)
 # - Allows many errors and continues on transient skips
 # - Disables strict schema checks
 #############################################
@@ -19,9 +19,6 @@ max_errors = 1000
 
 [consumer.transient]
 stop_on_skip = false
-
-[handle]
-backend = "jsonl"
 
 [schema]
 strict_mode = false

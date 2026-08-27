@@ -11,7 +11,8 @@ All notable changes to this project are documented here.
 - Added configurable Handle PUT latency to the Docker mock service, defaulting to 50 ms.
 
 ### Changed
-- JSONL is now the safe default Handle backend, and strict schema validation defaults to enabled.
+- Handle publication selects `rest` or legacy `pyhandle`; both always write the
+  JSONL audit record first, while `--dry-run` remains JSONL-only.
 - Deferred Handle publication supports bounded batches, offsets, and transient retries with exponential backoff.
 - Successful deferred publications now log created/updated Handle REST URLs and
   project, dataset, and asset context.

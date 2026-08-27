@@ -6,11 +6,25 @@ from piddiplatsch.core.models import strict_mode
 def _base_config():
     return {
         "consumer": {"projects": ["cmip6"], "topic": "CMIP6"},
-        # Keep handle as jsonl for tests to avoid publication credentials
-        "handle": {"backend": "jsonl"},
+        "handle": {
+            "backend": "rest",
+            "server_url": "https://handles.example.test",
+            "prefix": "21.TEST",
+            "username": "300:21.TEST/testuser",
+            "password": "testpass",
+        },
         # Disable lookups unless explicitly tested
         "lookup": {"enabled": False},
     }
+
+
+def test_jsonl_is_not_a_selectable_publication_backend():
+    cfg = _base_config()
+    cfg["handle"]["backend"] = "jsonl"
+
+    errors, _ = validate_config(cfg)
+
+    assert any("handle.backend" in error for error in errors)
 
 
 def test_invalid_bootstrap_servers_format():

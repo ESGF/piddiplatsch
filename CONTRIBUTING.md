@@ -56,7 +56,7 @@ piddi --config observe.toml consume --dry-run --dump --force
 
 This configuration:
 - Sets `consumer.max_errors=1000` and `stop_on_skip=false` to keep processing
-- Uses `handle.backend=jsonl` for local record output
+- Uses `consume --dry-run` for local JSONL-only Handle output
 - Disables strict schema checks (`schema.strict_mode=false`)
 
 ### Config Validation
@@ -300,7 +300,7 @@ import pytest
 
 pytestmark = pytest.mark.integration
 
-def test_pipeline_with_jsonl_backend():
+def test_pipeline_with_dry_run_output():
     # Test component interactions
     pass
 ```

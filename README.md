@@ -115,9 +115,10 @@ See the configuration at [etc/observe.toml](etc/observe.toml).
 ### Deferred Handle publication
 
 The Kafka consumer can write prepared Handles to daily JSONL files while
-a separate command publishes a closed file later. Keep `[handle].backend` set to
-`jsonl` (or run `consume --dry-run`) and configure the REST server and
-credentials in the same local configuration file.
+a separate command publishes a closed file later. Run `consume --dry-run` to
+avoid live publication; JSONL audit files are also always written before normal
+`rest` or `pyhandle` publication. Configure the REST server and credentials in
+the same local configuration file.
 
 For example, publish all project files from yesterday:
 
