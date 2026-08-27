@@ -71,27 +71,35 @@ make develop
 # 2) Run tests
 make test            # unit + integration
 
-# 3) Run the consumer (requires Kafka + Handle)
-piddi --help         # commands: consume, publish, retry
+# 3) Harvest and map from Kafka (Handle publication is deferred)
+piddi --help         # commands: harvest, map, consume, publish, retry
 piddi consume --help
 piddi --verbose consume
 ```
 
 **Prerequisites for real runs**
 
-You need a Kafka broker and a Handle Service (or mock Handle server) available.  
-For safe local exploration, you can use `--dry-run` or observe mode (see below).
+You need Kafka for `harvest` and `consume`. A Handle Service (or mock Handle
+server) is required only for `publish` or `consume --publish`.
 
 ---
 
-## 🧪 Safe Exploration (Dry-Run & Observe)
+## 🧪 Safe Exploration and Staged Processing
 
-Dry-run mode disables all Handle Service writes:
+The default `consume` path dumps every raw queue message before plugin routing,
+then maps selected projects into Handle JSONL without contacting a Handle
+Service:
 
 ```bash
-piddi --config custom.toml --verbose consume --dry-run
-# optionally also dump messages
-piddi --config custom.toml --verbose consume --dry-run --dump
+piddi --config custom.toml --verbose consume
+```
+
+The same work can be separated. `harvest` only reads Kafka and writes raw JSONL;
+`map` replays one or more dump files through the selected plugins:
+
+```bash
+piddi --config custom.toml harvest
+piddi --config custom.toml map outputs/dump/dump_messages_2026-08-27.jsonl
 ```
 
 ### Observe Mode (Example)
@@ -101,24 +109,23 @@ For exploratory runs without external dependencies, use the relaxed example conf
 ```bash
 #copy and run locally
 cp etc/observe.toml .
-piddi --config observe.toml consume --dry-run --dump --force
+piddi --config observe.toml consume --force
 ```
 
 What this does:
 - no external Handle Service calls
 - records written to `outputs/<plugin>/handles/` as JSONL
 - continues through transient skips (`--force`)
-- dumps incoming messages to `outputs/dump/` when `--dump` is used
+- dumps every incoming message to `outputs/dump/` before plugin filtering
 
 See the configuration at [etc/observe.toml](etc/observe.toml).
 
 ### Deferred Handle publication
 
-The Kafka consumer can write prepared Handles to daily JSONL files while
-a separate command publishes a closed file later. Run `consume --dry-run` to
-avoid live publication; JSONL audit files are also always written before normal
-`rest` or `pyhandle` publication. Configure the REST server and credentials in
-the same local configuration file.
+The Kafka consumer writes prepared Handles to daily JSONL files while a
+separate command publishes a closed file later. JSONL audit files are also
+always written before direct `rest` or `pyhandle` publication. Configure the
+REST server and credentials in the same local configuration file.
 
 For example, publish all project files from yesterday:
 
@@ -181,11 +188,19 @@ Common first runs:
 
 - Inspect messages only:
   ```bash
-  piddi consume --dry-run --dump
+  piddi harvest
   ```
 - Observe without stopping on skips:
   ```bash
-  piddi consume --dry-run --force
+  piddi consume --force
+  ```
+- Replay a saved dump through the configured plugins:
+  ```bash
+  piddi map outputs/dump/dump_messages_2026-08-27.jsonl
+  ```
+- Harvest, map, and publish immediately:
+  ```bash
+  piddi consume --publish
   ```
 - Override configured projects for one run:
   ```bash
@@ -259,11 +274,11 @@ vim custom.toml   # set brokers, group.id, SASL, CA path, etc.
 piddi --config custom.toml config validate
 piddi --config custom.toml config show
 
-# Safe test run (no Handle writes; dumps messages)
-piddi --config custom.toml --verbose consume --dry-run --dump
+# Safe test run (no Handle writes; raw dump is automatic)
+piddi --config custom.toml --verbose consume
 ```
 
-This keeps your private ESGF credentials local while enabling safe end-to-end testing with `--dry-run` and `--dump`.
+This keeps your private ESGF credentials local while enabling safe staged testing.
 
 ### Validate Config
 

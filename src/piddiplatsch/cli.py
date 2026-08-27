@@ -6,7 +6,13 @@ import toml
 from tqdm import tqdm
 
 from piddiplatsch.config import config
-from piddiplatsch.consumer import configured_projects, start_consumer
+from piddiplatsch.consumer import (
+    HarvestProcessor,
+    configured_projects,
+    map_dump_files,
+    start_consumer,
+)
+from piddiplatsch.exceptions import JsonlReadError
 from piddiplatsch.handles.publish import HandlePublisher
 from piddiplatsch.persist.retry import RetryRunner
 
@@ -45,11 +51,10 @@ def cli(ctx, config_file, debug, verbose, log):
 
 
 @cli.command()
-@click.option("--dump", is_flag=True, help="Dump all consumed messages to JSONL files.")
 @click.option(
-    "--dry-run",
+    "--publish",
     is_flag=True,
-    help="Do not publish to handle server; write handles to JSONL only.",
+    help="Also publish mapped Handles immediately; JSONL is always written first.",
 )
 @click.option(
     "--force",
@@ -68,8 +73,8 @@ def cli(ctx, config_file, debug, verbose, log):
     help="Run all registered project plugins (overrides config).",
 )
 @click.pass_context
-def consume(ctx, dump, dry_run, force, projects, all_projects):
-    """Start the Kafka consumer."""
+def consume(ctx, publish, force, projects, all_projects):
+    """Harvest and map Kafka messages, deferring publication by default."""
     if projects and all_projects:
         raise click.UsageError("--project cannot be combined with --all-projects")
     topic = config.get("consumer", "topic")
@@ -79,11 +84,96 @@ def consume(ctx, dump, dry_run, force, projects, all_projects):
         topic,
         kafka_cfg,
         projects=selection,
-        dump_messages=dump,
+        dump_messages=True,
         verbose=ctx.obj["verbose"],
-        dry_run=dry_run,
+        dry_run=not publish,
         force=force,
     )
+
+
+@cli.command("harvest")
+@click.pass_context
+def harvest(ctx):
+    """Harvest Kafka messages into raw JSONL without mapping."""
+    start_consumer(
+        config.get("consumer", "topic"),
+        config.get("kafka"),
+        processor=HarvestProcessor(),
+        dump_messages=True,
+        verbose=ctx.obj["verbose"],
+        force=True,
+    )
+
+
+@cli.command("map")
+@click.argument(
+    "path",
+    type=click.Path(exists=True, path_type=Path),
+    nargs=-1,
+    required=True,
+)
+@click.option(
+    "--project",
+    "projects",
+    multiple=True,
+    help="Project plugin to run; repeat to select several (overrides config).",
+)
+@click.option(
+    "--all-projects",
+    is_flag=True,
+    help="Run all registered project plugins (overrides config).",
+)
+@click.option(
+    "--limit",
+    type=click.IntRange(min=1),
+    help="Stop after mapping this many dumped messages in total.",
+)
+@click.option(
+    "--offset",
+    type=click.IntRange(min=0),
+    default=0,
+    show_default=True,
+    help="Skip this many dumped messages before mapping.",
+)
+@click.option(
+    "--force",
+    is_flag=True,
+    help="Continue on transient external failures (e.g., STAC down).",
+)
+def map_messages(
+    path: tuple[Path, ...],
+    projects: tuple[str, ...],
+    all_projects: bool,
+    limit: int | None,
+    offset: int,
+    force: bool,
+):
+    """Map raw message JSONL through plugins into Handle JSONL."""
+    if projects and all_projects:
+        raise click.UsageError("--project cannot be combined with --all-projects")
+    selection = "all" if all_projects else (projects or None)
+    try:
+        result = map_dump_files(
+            path,
+            projects=selection,
+            limit=limit,
+            offset=offset,
+            force=force,
+        )
+    except (JsonlReadError, OSError, ValueError) as exc:
+        raise click.ClickException(str(exc)) from exc
+
+    if result.total == 0:
+        click.echo("No dumped messages found.")
+        return
+    click.echo(f"Mapped {result.succeeded}/{result.total} dumped messages.")
+    if result.filtered:
+        click.echo(f"Filtered by project selection: {result.filtered}")
+    if result.skipped:
+        click.echo(f"Skipped: {result.skipped}")
+    if result.failed:
+        click.echo(f"Failed: {result.failed}")
+        raise click.exceptions.Exit(1)
 
 
 # publish command

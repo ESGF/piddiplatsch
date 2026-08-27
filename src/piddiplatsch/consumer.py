@@ -11,6 +11,7 @@ from confluent_kafka import KafkaException
 from piddiplatsch.config import config
 from piddiplatsch.core.routing import ProjectRouter
 from piddiplatsch.exceptions import MaxErrorsExceededError, StopOnTransientSkipError
+from piddiplatsch.helpers import find_jsonl, read_jsonl
 from piddiplatsch.monitoring.stats import CounterKey, stats
 from piddiplatsch.persist.dump import DumpRecorder
 from piddiplatsch.persist.recovery import FailureRecorder
@@ -122,6 +123,19 @@ class DirectConsumer(BaseConsumer):
 
     def consume(self):
         yield from self.messages
+
+
+class HarvestProcessor:
+    """Accept raw messages after they have been dumped."""
+
+    def __str__(self) -> str:
+        return "harvest"
+
+    def preflight_check(self, stop_on_transient_skip: bool = True) -> None:
+        return None
+
+    def process(self, key: str, value: dict) -> ProcessingResult:
+        return ProcessingResult(key=key, success=True)
 
 
 # ----------------------------
@@ -305,6 +319,55 @@ def feed_messages_direct(
         failed=failed,
         skipped=skipped,
         filtered=filtered,
+    )
+
+
+def map_dump_files(
+    paths: list[Path] | tuple[Path, ...],
+    *,
+    projects: list[str] | tuple[str, ...] | str | None = None,
+    limit: int | None = None,
+    offset: int = 0,
+    force: bool = False,
+) -> FeedResult:
+    """Map saved raw-message JSONL through project plugins without Kafka."""
+    if limit is not None and limit < 1:
+        raise ValueError("limit must be at least 1")
+    if offset < 0:
+        raise ValueError("offset cannot be negative")
+
+    messages: list[tuple[str, dict]] = []
+    offset_remaining = offset
+    for path in find_jsonl(paths):
+        remaining = None if limit is None else limit - len(messages)
+        if remaining == 0:
+            break
+
+        file_offset = 0
+        if offset_remaining:
+            skipped = read_jsonl(path, limit=offset_remaining)
+            file_offset = len(skipped)
+            offset_remaining -= file_offset
+            if offset_remaining:
+                continue
+
+        records = read_jsonl(path, limit=remaining, offset=file_offset)
+        messages.extend(
+            (f"{path}:{file_offset + index}", record)
+            for index, record in enumerate(records, start=1)
+        )
+
+    if not messages:
+        return FeedResult()
+
+    target = build_processing_target(projects=projects, dry_run=True)
+    if not force:
+        target.preflight_check(stop_on_transient_skip=True)
+    return feed_messages_direct(
+        messages,
+        processor=target,
+        dry_run=True,
+        force=force,
     )
 
 

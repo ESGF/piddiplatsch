@@ -6,12 +6,12 @@ Piddiplatsch writes daily JSONL files beneath `consumer.output_dir`:
 
 | Directory | Contents |
 | --- | --- |
-| `dump/` | Original Kafka messages when `--dump` is enabled. |
+| `dump/` | Original Kafka messages written by every `harvest` or `consume` run. |
 | `<plugin>/handles/` | Handle records produced by that plugin. Direct REST/pyhandle publication writes the JSONL record before contacting the server; each line also includes `project`. |
 | `skipped/` | Records deferred after transient external failures. |
 | `failures/r<N>/` | Records that failed processing, grouped by retry count. |
 
-The raw dump is intentionally global and written before routing. It preserves
+The raw dump is intentionally global and always written before routing. It preserves
 the consumed Kafka order and remains suitable for replay or investigation;
 creating filtered per-plugin dumps would lose that simple ordering guarantee.
 
@@ -19,6 +19,29 @@ JSONL Handle output is always enabled, including direct publication. If the
 audit record cannot be appended, that Handle is not sent to the server. A
 server-side failure leaves the JSONL record available for inspection or later
 publication.
+
+## Staged commands
+
+```bash
+# Kafka -> raw JSONL only
+piddi --config custom.toml harvest
+
+# raw JSONL -> project-scoped Handle JSONL only
+piddi --config custom.toml map outputs/dump/dump_messages_2026-08-27.jsonl
+
+# Handle JSONL -> REST Handle Service
+piddi --config custom.toml publish outputs/cmip6/handles/handles_2026-08-27.jsonl
+
+# Kafka -> raw JSONL -> Handle JSONL (default production ingestion)
+piddi --config custom.toml consume
+
+# All three stages in one process
+piddi --config custom.toml consume --publish
+```
+
+`map` accepts files or directories plus `--project`, `--all-projects`,
+`--limit`, `--offset`, and `--force`. It never contacts Kafka or a Handle
+Service and does not modify its input dumps.
 
 ## Real Handle service contract test
 

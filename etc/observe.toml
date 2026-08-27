@@ -2,14 +2,14 @@
 # Observe Mode (Example Configuration)
 #
 # Purpose: relaxed exploratory runs before real PID registration.
-# Suggested CLI: --dry-run --dump --force
+# Suggested CLI: consume --force
 #
 # Usage:
-#   piddi --config etc/observe.toml consume --dry-run --dump --force
+#   piddi --config etc/observe.toml consume --force
 #
 # Notes:
 # - Keeps brokers, topic, and plugin defaults from the base config
-# - Uses --dry-run for JSONL-only output (no external calls)
+# - Plain consume creates raw and Handle JSONL without Handle-service calls
 # - Allows many errors and continues on transient skips
 # - Disables strict schema checks
 #############################################

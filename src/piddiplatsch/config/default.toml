@@ -53,8 +53,8 @@ preflight_stac = true
 
 [handle]
 # Handle publication backend: use "rest" or "pyhandle" for the legacy client.
-# Both backends always write the immutable JSONL audit record first. Use
-# `consume --dry-run` to write JSONL without contacting a Handle service.
+# Both backends always write the immutable JSONL audit record first. Plain
+# `consume` defers publication; use `consume --publish` for immediate delivery.
 # Avoid committing real credentials; set username/password via overrides.
 # Example override (custom.toml):
 # [handle]

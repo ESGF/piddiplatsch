@@ -42,8 +42,9 @@ output is not optional; `[consumer].output_dir` controls its root directory.
 `piddi publish` always uses the REST Handle client, independently of the
 configured `handle.backend`. The Kafka consumer always records prepared Handles
 to project-scoped JSONL before publishing through either `rest` or `pyhandle`.
-Use `consume --dry-run` when JSONL should be written without contacting a Handle
-service. The deferred command publishes closed daily files using the configured
+Plain `consume` writes JSONL without contacting a Handle service; add
+`--publish` only when immediate publication is intended. The deferred command
+publishes closed daily files using the configured
 `server_url`, `prefix`, `username`, `password`, TLS verification, and timeout
 settings.
 
