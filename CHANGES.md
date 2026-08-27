@@ -17,6 +17,8 @@ All notable changes to this project are documented here.
   JSONL audit record first.
 - `consume` now always dumps raw messages before plugin filtering and defers
   Handle publication by default; `consume --publish` runs all three stages.
+- REST publication suppresses repeated urllib3 insecure-request warnings when
+  `handle.verify_https = false` was explicitly configured.
 - Deferred Handle publication supports bounded batches, offsets, and transient retries with exponential backoff.
 - Successful deferred publications now log created/updated Handle REST URLs and
   project, dataset, and asset context.
