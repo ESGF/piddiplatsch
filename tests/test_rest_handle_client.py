@@ -7,6 +7,7 @@ from piddiplatsch.config import config
 from piddiplatsch.handles.api import get_handle_backend
 from piddiplatsch.handles.jsonl_backend import JsonlHandleBackend
 from piddiplatsch.handles.pyhandle_backend import HandleClient
+from piddiplatsch.handles.recording_backend import RecordingHandleBackend
 from piddiplatsch.handles.rest_backend import RestHandleClient
 
 
@@ -143,7 +144,9 @@ def test_handle_backend_factory_selects_rest(monkeypatch):
         "piddiplatsch.handles.api.RestHandleClient.from_config", lambda: sentinel
     )
 
-    assert get_handle_backend() is sentinel
+    backend = get_handle_backend()
+    assert isinstance(backend, RecordingHandleBackend)
+    assert backend.backend is sentinel
 
 
 def test_handle_backend_factory_defaults_to_jsonl():
@@ -159,5 +162,7 @@ def test_handle_backend_factory_keeps_pyhandle(monkeypatch):
         "piddiplatsch.handles.api.HandleClient.from_config", lambda: sentinel
     )
 
-    assert get_handle_backend() is sentinel
+    backend = get_handle_backend()
+    assert isinstance(backend, RecordingHandleBackend)
+    assert backend.backend is sentinel
     assert HandleClient is not RestHandleClient

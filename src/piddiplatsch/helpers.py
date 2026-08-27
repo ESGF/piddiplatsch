@@ -1,4 +1,5 @@
 import json
+import threading
 from collections.abc import Iterable
 from datetime import UTC, datetime
 from pathlib import Path
@@ -22,6 +23,7 @@ class DailyJsonlWriter:
     def __init__(self, root_dir: Path):
         self.root_dir = Path(root_dir)
         self.root_dir.mkdir(parents=True, exist_ok=True)
+        self._lock = threading.Lock()
 
     @staticmethod
     def wrap_with_infos(data: dict, infos: dict) -> dict:
@@ -35,9 +37,11 @@ class DailyJsonlWriter:
         target_dir = Path(subdir) if subdir else self.root_dir
         target_dir.mkdir(parents=True, exist_ok=True)
         target_path = target_dir / dated_filename
-        with target_path.open("a", encoding="utf-8") as f:
-            json.dump(data, f)
-            f.write("\n")
+        line = json.dumps(data) + "\n"
+        with self._lock, target_path.open("a", encoding="utf-8") as f:
+            # Write a complete JSONL record in one operation so threads sharing
+            # this writer cannot interleave json.dump() fragments.
+            f.write(line)
         return target_path
 
 

@@ -1,6 +1,9 @@
 import json
 import logging
+import threading
+import time
 
+import pytest
 import requests
 
 from piddiplatsch.config import config
@@ -33,6 +36,26 @@ class TransientBackend(FakeBackend):
         if self.calls <= self.failures:
             raise self.exception
         super().add(pid, record)
+
+
+class ConcurrentBackend(FakeBackend):
+    def __init__(self):
+        super().__init__()
+        self.lock = threading.Lock()
+        self.active = 0
+        self.max_active = 0
+
+    def add(self, pid, record):
+        with self.lock:
+            self.active += 1
+            self.max_active = max(self.max_active, self.active)
+        try:
+            time.sleep(0.02)
+            with self.lock:
+                self.published.append((pid, record))
+        finally:
+            with self.lock:
+                self.active -= 1
 
 
 def write_jsonl(path, records):
@@ -93,7 +116,7 @@ def test_logs_each_publication_and_summary(tmp_path, caplog):
     with caplog.at_level(logging.INFO, logger="piddiplatsch.handles.publish"):
         HandlePublisher(FakeBackend()).run([source], offset=10, limit=1)
 
-    assert "Published handle 21.TEST/abc (record=11 batch=1/1)" in caplog.text
+    assert "Published handle 21.TEST/abc (position=11 batch=1/1)" in caplog.text
     assert "Handle publication complete: published=1 total=1" in caplog.text
 
 
@@ -130,7 +153,7 @@ def test_continues_after_invalid_record_and_backend_failure(tmp_path):
 def test_rejects_malformed_jsonl_without_publishing_partial_file(tmp_path):
     source = tmp_path / "handles.jsonl"
     source.write_text(
-        f'{json.dumps(handle_record("first"))}\nnot-json\n', encoding="utf-8"
+        f"{json.dumps(handle_record('first'))}\nnot-json\n", encoding="utf-8"
     )
     backend = FakeBackend()
 
@@ -186,7 +209,7 @@ def test_limit_caps_records_across_files_and_stops_reading(tmp_path):
     second = tmp_path / "handles_2.jsonl"
     write_jsonl(first, [handle_record("one"), handle_record("two")])
     second.write_text(
-        f'{json.dumps(handle_record("three"))}\nmalformed-tail', encoding="utf-8"
+        f"{json.dumps(handle_record('three'))}\nmalformed-tail", encoding="utf-8"
     )
     backend = FakeBackend()
 
@@ -277,3 +300,32 @@ def test_does_not_retry_permanent_http_error(tmp_path):
     assert result.retry_attempts == 0
     assert backend.calls == 1
     assert delays == []
+
+
+def test_parallel_publication_keeps_updates_for_one_pid_in_order(tmp_path):
+    source = tmp_path / "handles.jsonl"
+    first = handle_record("same")
+    first["data"]["VERSION"] = "1"
+    second = handle_record("other")
+    second["data"]["VERSION"] = "1"
+    third = handle_record("same")
+    third["data"]["VERSION"] = "2"
+    write_jsonl(source, [first, second, third])
+    backend = ConcurrentBackend()
+
+    result = HandlePublisher(backend).run([source], workers=3)
+
+    assert result.succeeded == 3
+    assert backend.max_active >= 2
+    same_versions = [
+        record["VERSION"] for pid, record in backend.published if pid == "same"
+    ]
+    assert same_versions == ["1", "2"]
+
+
+def test_rejects_invalid_worker_count(tmp_path):
+    source = tmp_path / "handles.jsonl"
+    write_jsonl(source, [handle_record("abc")])
+
+    with pytest.raises(ValueError, match="workers must be at least 1"):
+        HandlePublisher(FakeBackend()).run([source], workers=0)

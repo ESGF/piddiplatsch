@@ -131,3 +131,41 @@ def test_app_instances_have_isolated_state(auth_headers):
         response = second_client.get(f"/api/handles/{TEST_HANDLE}")
 
     assert response.get_json()["responseCode"] == 100
+
+
+def test_configured_delay_applies_only_to_valid_puts(auth_headers):
+    delays = []
+    app = create_app(put_delay_seconds=0.05, sleep=delays.append)
+    with app.test_client() as delayed_client:
+        delayed_client.get(f"/api/handles/{TEST_HANDLE}")
+        delayed_client.put(
+            f"/api/handles/{TEST_HANDLE}",
+            data="not-json",
+            content_type="application/json",
+            headers=auth_headers,
+        )
+        delayed_client.put(
+            f"/api/handles/{TEST_HANDLE}", json=TEST_RECORD, headers=auth_headers
+        )
+
+    assert delays == [0.05]
+
+
+def test_delay_can_be_configured_from_environment(monkeypatch, auth_headers):
+    delays = []
+    monkeypatch.setenv("PIDDI_MOCK_HANDLE_PUT_DELAY_SECONDS", "0.025")
+    app = create_app(sleep=delays.append)
+    with app.test_client() as delayed_client:
+        delayed_client.put(
+            f"/api/handles/{TEST_HANDLE}", json=TEST_RECORD, headers=auth_headers
+        )
+
+    assert delays == [0.025]
+
+
+@pytest.mark.parametrize("delay", [-0.1, "invalid"])
+def test_rejects_invalid_delay_configuration(monkeypatch, delay):
+    monkeypatch.setenv("PIDDI_MOCK_HANDLE_PUT_DELAY_SECONDS", str(delay))
+
+    with pytest.raises(ValueError, match="PIDDI_MOCK_HANDLE_PUT_DELAY_SECONDS"):
+        create_app()

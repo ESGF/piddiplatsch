@@ -24,7 +24,7 @@ cd piddiplatsch
 conda env create
 conda activate piddi
 
-# Install in development mode with dev dependencies
+# Install the project and its development dependencies with pip:
 pip install -e ".[dev]"
 # OR
 make develop

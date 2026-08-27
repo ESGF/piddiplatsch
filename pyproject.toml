@@ -126,6 +126,7 @@ testpaths = ["tests"]
 markers = [
     "integration: Integration tests (uses JSONL backend, no Docker required)",
     "smoke: End-to-end tests (requires Docker services: Kafka and Handle server)",
+  "live: Opt-in contract tests against a configured real Handle service",
   "plugin: Plugin tests (extensibility, discovery, and plugin logic)",
   "cmip6: CMIP6 plugin tests",
   "cmip7: CMIP7 plugin tests",

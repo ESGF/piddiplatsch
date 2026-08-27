@@ -95,6 +95,58 @@ edge-case coverage and operational rollout checks. All projects observed in the
 captured queue now have plugins; CORDEX-CMIP7 remains a future project pending a
 representative publication record.
 
+### Implemented on `dev-rest-client2` (2026-08-26)
+
+- Added a first-party REST backend for single-Handle `PUT`/`GET`, complete-record
+  overwrite, Handle response-code checking, configurable request timeout/TLS
+  verification, and pooled sessions isolated per publisher worker thread.
+- Added `piddi publish` support for bounded concurrent single-Handle PUTs with
+  retries and exponential backoff. Different Handles can run concurrently;
+  repeated updates for the same Handle remain in source order within one run.
+- Direct REST and legacy `pyhandle` publication now write the project-scoped
+  JSONL Handle entry before contacting the service. Failure to write the audit
+  entry prevents publication.
+- Added exact REST request/response tests, Docker end-to-end coverage, parallel
+  create/update coverage, and opt-in live-service contract tests.
+- Added configurable mock PUT latency. Docker defaults to 50 ms, approximating
+  20 serial Handle registrations per second while allowing concurrent requests
+  to overlap.
+
+### Next task: real Handle service and authentication
+
+Validate the REST backend against a disposable non-production Handle prefix and
+implement only the authentication mode that the deployed service requires.
+
+- Obtain the service URL, disposable prefix, service/version information, and
+  credentials through an approved secret channel. Keep credentials in
+  environment variables or ignored local configuration.
+- Confirm whether the indexed Handle username/password works with HTTP Basic
+  authentication. Capture only sanitized request/response metadata; never log
+  authorization headers, passwords, session material, or private keys.
+- If Basic authentication is unsupported, determine whether the target requires
+  Handle session/challenge authentication or client certificates. Prefer the
+  complete `pyhandle` backend for complex authentication instead of reading its
+  private cookies, nonces, or generated headers.
+- Require HTTPS for authenticated remote writes. Add custom CA-bundle and client
+  certificate configuration only when required by the real target; keep plain
+  HTTP limited to explicitly local test services.
+- Run the opt-in live contract suite against the disposable prefix: create,
+  resolve, overwrite/update, parallel publication, and same-PID ordering. Define
+  retention or cleanup for the uniquely named test Handles it creates.
+- Publish equivalent Handle values through REST and `pyhandle`, then compare the
+  resolved types, indices, administrator value/permissions, encoding, and TTLs.
+- Verify and classify real authentication/authorization failures separately
+  from validation, rate-limit, timeout, connection, and server failures. Confirm
+  which outcomes are safe to retry.
+- Benchmark sequential REST, concurrent REST at several worker counts, and
+  `pyhandle`. Determine whether the observed 20 Handles/second limit is global,
+  per credential, or per connection before choosing a production default.
+
+Acceptance criteria: the live suite passes without exposing secrets, the
+required authentication strategy is documented and selected explicitly, REST
+and `pyhandle` produce compatible Handle values, and a measured safe worker/rate
+limit is documented for the target service.
+
 ### Target design
 
 - Keep one Kafka consumer and introduce a project router between message
@@ -294,21 +346,20 @@ consumption wait on Handle-service throughput by default.
 
 #### Publisher process
 
-- Add a separate long-running publisher command/process that reads sealed
-  outbox files and publishes their Handle operations, for example
-  `piddi publish [PATH ...]` plus a watch/spool mode.
-- Make publisher concurrency, batch size, rate limit, request timeout, retry
-  policy, exponential backoff, and shutdown draining configurable per Handle
-  service. Measure real throughput before choosing defaults.
+- Extend the existing `piddi publish [PATH ...]` command with a long-running
+  watch/spool mode for sealed outbox files.
+- Concurrency, request timeout, retry count, and exponential backoff are
+  configurable. Add per-service batch size/capability, rate limiting, and
+  shutdown draining after measuring real throughput.
 - Persist line-level delivery progress so one bad Handle does not require
   replaying a large file from the beginning. Keep the original immutable outbox
   data and record failure details separately.
 - Define success as an idempotent upsert/overwrite. Expect at-least-once delivery
   across crashes and retries; never rely on exactly-once network publication.
-- Preserve the source order of updates for the same PID. Parallel workers must
-  not allow an older queued record to overwrite a newer one. Decide whether to
-  partition/serialize by PID, attach and compare source offsets/versions, or
-  safely compact superseded full-state updates.
+- Preserve source order beyond the current single-run per-PID serialization.
+  Decide how watch mode and multiple publisher processes prevent an older file
+  or queued update from overwriting newer state, using source offsets/versions,
+  partitioning, or safe compaction.
 - Decide whether dataset Handles must be visible before their file Handles, and
   preserve that ordering if any consumer or validation process requires it.
 - Expose backlog age/size, ready and in-flight files, Handles/second, successes,
@@ -316,12 +367,17 @@ consumption wait on Handle-service throughput by default.
 - Support graceful stop/restart without losing the current checkpoint or
   leaving an unrecoverable file claim.
 
-#### Minimal Handle REST client
+#### Minimal Handle REST client (initial implementation complete)
 
-Keep the existing `pyhandle` backend as a compatibility option, but add a small
-first-party client for the Handle HTTP JSON REST API. Implement only the
-operations piddi needs for publication and verification; do not attempt to
-replace the full Handle client library.
+Keep the existing `pyhandle` backend as a compatibility option. The small
+first-party Handle HTTP JSON REST client should remain limited to operations
+piddi needs for publication and verification; do not attempt to replace the
+full Handle client library.
+
+Single-Handle REST upsert/retrieval, overwrite semantics, bounded concurrent
+publication, timeouts, TLS verification, response-code checking, and HTTP Basic
+request construction are implemented. Real-service authentication, parity, and
+throughput verification are the immediate remaining work described above.
 
 The standard Handle v9 REST API documents one Handle per
 `PUT /api/handles/{handle}`. The request body's array contains multiple values
@@ -408,12 +464,12 @@ extension before designing around one.
 
 ##### REST client verification
 
-- Add contract tests for exact REST URLs, JSON Handle values, authentication,
-  TLS configuration, overwrite semantics, response-code parsing, and secret
-  redaction.
-- Test single success, existing-Handle update, malformed values, unauthorized
-  access, timeout, rate limiting, 5xx responses, and connection loss after the
-  server may already have committed the upsert.
+- Existing local contract tests cover exact REST URLs, JSON Handle values, Basic
+  authentication construction, TLS configuration, overwrite semantics,
+  response-code parsing, single success, existing-Handle update, and
+  unauthorized access. Add explicit secret-redaction coverage.
+- Add transport tests for timeout, rate limiting, 5xx responses, and connection
+  loss after the server may already have committed the upsert.
 - Test batch capability detection, supported batching, unsupported fallback,
   partial batch success, oversized batches, and `required` mode failure.
 - Run parity tests that publish equivalent records through `pyhandle` and the

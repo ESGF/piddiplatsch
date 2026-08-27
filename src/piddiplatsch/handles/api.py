@@ -7,6 +7,7 @@ from piddiplatsch.config import config
 from piddiplatsch.handles.base import HandleBackend
 from piddiplatsch.handles.jsonl_backend import JsonlHandleBackend
 from piddiplatsch.handles.pyhandle_backend import HandleClient
+from piddiplatsch.handles.recording_backend import RecordingHandleBackend
 from piddiplatsch.handles.rest_backend import RestHandleClient
 
 
@@ -27,7 +28,7 @@ class HandleAPI(HandleAPIProtocol):
         dry_run: bool = False,
         project: str | None = None,
     ):
-        self.backend: HandleBackend = backend or get_handle_backend(
+        self.backend: HandleAPIProtocol = backend or get_handle_backend(
             dry_run=dry_run,
             project=project,
         )
@@ -43,7 +44,7 @@ class HandleAPI(HandleAPIProtocol):
 def get_handle_backend(
     dry_run: bool = False,
     project: str | None = None,
-) -> HandleBackend:
+) -> HandleAPIProtocol:
     """
     Return a HandleBackend based on configuration.
 
@@ -61,10 +62,16 @@ def get_handle_backend(
     logging.warning(f"Using handle backend: {backend_type}")
 
     if backend_type == "rest":
-        return RestHandleClient.from_config()
+        return RecordingHandleBackend(
+            RestHandleClient.from_config(),
+            project=project,
+        )
 
     if backend_type == "pyhandle":
-        return HandleClient.from_config()
+        return RecordingHandleBackend(
+            HandleClient.from_config(),
+            project=project,
+        )
 
     if backend_type == "jsonl":
         return JsonlHandleBackend(project=project)
