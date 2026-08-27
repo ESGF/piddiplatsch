@@ -2,13 +2,22 @@ from __future__ import annotations
 
 import base64
 import threading
-from typing import Any
+from dataclasses import dataclass
+from typing import Any, Literal
 from urllib.parse import quote
 
 import requests
 
 from piddiplatsch.config import config
 from piddiplatsch.handles.base import HandleBackend
+
+
+@dataclass(frozen=True)
+class HandleWriteResult:
+    """Result metadata for a successful Handle REST write."""
+
+    action: Literal["created", "updated", "published"]
+    url: str
 
 
 class RestHandleClient(HandleBackend):
@@ -47,7 +56,7 @@ class RestHandleClient(HandleBackend):
             timeout=config.get("handle", "timeout", 10.0),
         )
 
-    def _store(self, handle: str, handle_data: dict[str, Any]) -> None:
+    def _store(self, handle: str, handle_data: dict[str, Any]) -> HandleWriteResult:
         response = self._session().put(
             self._url(handle),
             params={"overwrite": "true"},
@@ -61,6 +70,14 @@ class RestHandleClient(HandleBackend):
         )
         response.raise_for_status()
         self._require_success(response)
+        action: Literal["created", "updated", "published"]
+        if response.status_code == 201:
+            action = "created"
+        elif response.status_code == 200:
+            action = "updated"
+        else:
+            action = "published"
+        return HandleWriteResult(action=action, url=self.record_url(handle))
 
     def _retrieve(self, handle: str) -> dict[str, Any] | None:
         response = self._session().get(
@@ -103,6 +120,10 @@ class RestHandleClient(HandleBackend):
 
     def _url(self, handle: str) -> str:
         return f"{self.server_url}{self.api_path}{quote(handle, safe='/')}"
+
+    def record_url(self, handle: str) -> str:
+        """Return the clean REST URL for manually inspecting a Handle."""
+        return self._url(handle)
 
     def _authentication_token(self) -> str:
         # Handle credentials use an indexed handle as the username. Its colon

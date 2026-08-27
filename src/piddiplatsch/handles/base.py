@@ -11,9 +11,9 @@ class HandleBackend(ABC):
     Abstract backend template. Implements create-or-update logic.
     """
 
-    def add(self, pid: str, record: dict[str, Any]) -> None:
+    def add(self, pid: str, record: dict[str, Any]) -> Any:
         handle, handle_data = self._prepare(pid, record)
-        self._store(handle, handle_data)
+        return self._store(handle, handle_data)
 
     def get(self, pid: str) -> dict[str, Any] | None:
         """Retrieve a stored handle record for the given PID.
@@ -33,7 +33,7 @@ class HandleBackend(ABC):
         return handle, handle_data
 
     @abstractmethod
-    def _store(self, handle: str, handle_data: dict[str, Any]) -> None:
+    def _store(self, handle: str, handle_data: dict[str, Any]) -> Any:
         raise NotImplementedError
 
     @abstractmethod

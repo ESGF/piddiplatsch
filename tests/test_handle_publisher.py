@@ -9,6 +9,7 @@ import requests
 from piddiplatsch.config import config
 from piddiplatsch.handles.jsonl_backend import JsonlHandleBackend
 from piddiplatsch.handles.publish import HandlePublisher
+from piddiplatsch.handles.rest_backend import HandleWriteResult
 
 
 class FakeBackend:
@@ -56,6 +57,15 @@ class ConcurrentBackend(FakeBackend):
         finally:
             with self.lock:
                 self.active -= 1
+
+
+class ReportingBackend(FakeBackend):
+    def add(self, pid, record):
+        super().add(pid, record)
+        return HandleWriteResult(
+            action="updated",
+            url=f"https://handles.example.test/api/handles/{self.prefix}/{pid}",
+        )
 
 
 def write_jsonl(path, records):
@@ -114,10 +124,45 @@ def test_logs_each_publication_and_summary(tmp_path, caplog):
     )
 
     with caplog.at_level(logging.INFO, logger="piddiplatsch.handles.publish"):
-        HandlePublisher(FakeBackend()).run([source], offset=10, limit=1)
+        HandlePublisher(ReportingBackend()).run([source], offset=10, limit=1)
 
-    assert "Published handle 21.TEST/abc (position=11 batch=1/1)" in caplog.text
+    assert "Updated handle handle=21.TEST/abc" in caplog.text
+    assert "url=https://handles.example.test/api/handles/21.TEST/abc" in caplog.text
+    assert "project=cmip6" in caplog.text
+    assert "dataset_id=-" in caplog.text
+    assert "file_name=-" in caplog.text
+    assert "position=11 batch=1/1" in caplog.text
     assert "Handle publication complete: published=1 total=1" in caplog.text
+
+
+def test_logs_dataset_context_for_file_asset(tmp_path, caplog):
+    source = tmp_path / "handles.jsonl"
+    dataset = handle_record(
+        "dataset",
+        project=None,
+        data={
+            "AGGREGATION_LEVEL": "DATASET",
+            "DATASET_ID": "CMIP6.CMIP.example",
+        },
+    )
+    file = handle_record(
+        "file",
+        project=None,
+        data={
+            "AGGREGATION_LEVEL": "FILE",
+            "FILE_NAME": "example.nc",
+            "IS_PART_OF": "hdl:21.TEST/dataset",
+        },
+    )
+    write_jsonl(source, [dataset, file])
+
+    with caplog.at_level(logging.INFO, logger="piddiplatsch.handles.publish"):
+        HandlePublisher(ReportingBackend()).run([source], workers=2)
+
+    file_line = next(line for line in caplog.messages if "handle=21.TEST/file" in line)
+    assert "project=cmip6" in file_line
+    assert "dataset_id=CMIP6.CMIP.example" in file_line
+    assert "file_name=example.nc" in file_line
 
 
 def test_continues_after_invalid_record_and_backend_failure(tmp_path):

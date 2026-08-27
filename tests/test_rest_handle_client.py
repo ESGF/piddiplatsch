@@ -56,7 +56,7 @@ def make_client(response):
 def test_rest_client_puts_single_handle_with_overwrite():
     client, session = make_client(FakeResponse({"responseCode": 1}))
 
-    client.add(
+    result = client.add(
         "abc",
         {
             "URL": "https://example.test/abc",
@@ -88,6 +88,16 @@ def test_rest_client_puts_single_handle_with_overwrite():
     ]
     token = base64.b64encode(b"300%3A21.TEST/testuser:secret").decode()
     assert request["headers"]["Authorization"] == f"Basic {token}"
+    assert result.action == "updated"
+    assert result.url == "https://handles.example.test/api/handles/21.TEST/abc"
+
+
+def test_rest_client_reports_created_handle():
+    client, _ = make_client(FakeResponse({"responseCode": 1}, status_code=201))
+
+    result = client.add("abc", {"URL": "https://example.test/abc"})
+
+    assert result.action == "created"
 
 
 def test_rest_client_decodes_handle_values():

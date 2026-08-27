@@ -13,6 +13,8 @@ All notable changes to this project are documented here.
 ### Changed
 - JSONL is now the safe default Handle backend, and strict schema validation defaults to enabled.
 - Deferred Handle publication supports bounded batches, offsets, and transient retries with exponential backoff.
+- Successful deferred publications now log created/updated Handle REST URLs and
+  project, dataset, and asset context.
 - Direct REST and pyhandle publication now always writes the project-scoped JSONL audit record before contacting the Handle service.
 - Tests now use temporary folders and leave local output files untouched.
 - Cleaned up dependencies, development tools, CI, and packaging.

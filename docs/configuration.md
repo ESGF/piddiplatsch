@@ -45,6 +45,14 @@ consumer on the safe `jsonl` backend while a separate process publishes closed
 daily files using the configured `server_url`, `prefix`, `username`, `password`,
 TLS verification, and timeout settings.
 
+Every successful publication writes an INFO entry to the configured `--log`
+file (`pid.log` by default). The entry identifies whether the server created or
+updated the Handle and includes its directly resolvable REST URL, project,
+dataset ID, file name, and source position. For file assets, the publisher joins
+`IS_PART_OF` to a dataset record in the selected batch so the asset log entry
+also includes `DATASET_ID`. Context that is unavailable in older JSONL input is
+written as `-`.
+
 All additional keys under `[kafka]` are passed to `confluent-kafka`. Dotted
 librdkafka keys must be quoted in TOML, for example
 `"bootstrap.servers" = "broker:9092"`.
