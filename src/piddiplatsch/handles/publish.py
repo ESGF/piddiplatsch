@@ -240,9 +240,7 @@ class HandlePublisher:
     ) -> None:
         if self.backend is not None:
             return
-        projects = {
-            context.project for context in contexts.values() if context.project
-        }
+        projects = {context.project for context in contexts.values() if context.project}
         if len(projects) > 1:
             raise ValueError(
                 "Handle input contains multiple projects with potentially "

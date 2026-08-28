@@ -84,7 +84,9 @@ class Config:
         selected = self.get_plugin(project, "handle") if project else None
         return selected or handles.get("default")
 
-    def get_handle(self, project: str | None = None, profile: str | None = None) -> dict:
+    def get_handle(
+        self, project: str | None = None, profile: str | None = None
+    ) -> dict:
         """Resolve one Handle server configuration.
 
         Projects select profiles with ``plugins.<project>.handle``. Callers may
