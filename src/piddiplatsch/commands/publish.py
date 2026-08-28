@@ -1,26 +1,20 @@
 """Publish command implementation."""
 
 from dataclasses import dataclass
-from datetime import datetime
 from pathlib import Path
 
 import click
 
-from piddiplatsch.commands.base import Command
-from piddiplatsch.commands.helper import resolve_dated_input
+from piddiplatsch.commands.base import FileBatchCommand
 from piddiplatsch.core.plugin import normalize_project_id
 from piddiplatsch.handles.publish import HandlePublisher
 from piddiplatsch.result import PublishResult
 
 
 @dataclass(kw_only=True)
-class PublishCommand(Command):
+class PublishCommand(FileBatchCommand):
     """Publish prepared handles."""
 
-    paths: tuple[Path, ...] = ()
-    input_date: datetime | None = None
-    limit: int | None = None
-    offset: int = 0
     retries: int = 0
     retry_delay: float = 1.0
     workers: int = 1
@@ -56,16 +50,12 @@ class PublishCommand(Command):
         self._show_result(result, progress.position)
 
     def _resolve_paths(self) -> tuple[Path, ...]:
-        if self.paths and self.input_date is not None:
-            raise click.UsageError("PATH cannot be combined with --date")
+        self.validate_input()
         project_name = normalize_project_id(self.project or "")
         if self.input_date is not None and not project_name:
             raise click.UsageError("--date requires --project")
-        date = self.input_date.date().isoformat() if self.input_date is not None else ""
-        return resolve_dated_input(
-            self.paths,
-            self.input_date,
-            relative_path=Path(project_name) / "handles" / f"handles_{date}.jsonl",
+        return self.resolve_paths(
+            relative_path=lambda date: Path(project_name) / "handles" / f"handles_{date}.jsonl",
             missing_label="Handle file",
         )
 

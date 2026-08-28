@@ -101,7 +101,7 @@ class TestConsumeCommand:
         assert "--project" in result.output
         assert "--all-projects" in result.output
 
-    @patch("piddiplatsch.commands.consume.start_consumer")
+    @patch("piddiplatsch.commands.base.start_consumer")
     def test_consume_basic(self, mock_start_consumer, runner):
         """Test consume command calls start_consumer."""
         runner.invoke(cli, ["consume"])
@@ -110,7 +110,7 @@ class TestConsumeCommand:
         assert call_kwargs["dump_messages"] is True
         assert call_kwargs["dry_run"] is True
 
-    @patch("piddiplatsch.commands.consume.start_consumer")
+    @patch("piddiplatsch.commands.base.start_consumer")
     def test_consume_with_publish(self, mock_start_consumer, runner):
         runner.invoke(cli, ["consume", "--publish"])
         assert mock_start_consumer.called
@@ -118,7 +118,7 @@ class TestConsumeCommand:
         assert call_kwargs["dump_messages"] is True
         assert call_kwargs["dry_run"] is False
 
-    @patch("piddiplatsch.commands.consume.start_consumer")
+    @patch("piddiplatsch.commands.base.start_consumer")
     def test_consume_with_verbose(self, mock_start_consumer, runner):
         """Test consume command with --verbose flag."""
         runner.invoke(cli, ["--verbose", "consume"])
@@ -127,7 +127,7 @@ class TestConsumeCommand:
         assert call_kwargs.get("verbose") is True
         assert isinstance(call_kwargs["progress"], Progress)
 
-    @patch("piddiplatsch.commands.consume.start_consumer")
+    @patch("piddiplatsch.commands.base.start_consumer")
     def test_consume_with_several_projects(self, mock_start_consumer, runner):
         result = runner.invoke(
             cli,
@@ -136,13 +136,13 @@ class TestConsumeCommand:
         assert result.exit_code == 0
         assert mock_start_consumer.call_args.kwargs["projects"] == ("cmip6", "cmip7")
 
-    @patch("piddiplatsch.commands.consume.start_consumer")
+    @patch("piddiplatsch.commands.base.start_consumer")
     def test_consume_with_all_projects(self, mock_start_consumer, runner):
         result = runner.invoke(cli, ["consume", "--all-projects"])
         assert result.exit_code == 0
         assert mock_start_consumer.call_args.kwargs["projects"] == "all"
 
-    @patch("piddiplatsch.commands.consume.start_consumer")
+    @patch("piddiplatsch.commands.base.start_consumer")
     def test_consume_rejects_named_and_all_projects(self, mock_start_consumer, runner):
         result = runner.invoke(
             cli,
@@ -159,7 +159,7 @@ class TestHarvestCommand:
         assert result.exit_code == 0
         assert "raw JSONL" in result.output
 
-    @patch("piddiplatsch.commands.harvest.start_consumer")
+    @patch("piddiplatsch.commands.base.start_consumer")
     def test_harvest_dumps_without_mapping(self, mock_start_consumer, runner):
         result = runner.invoke(cli, ["harvest"])
         assert result.exit_code == 0
@@ -168,7 +168,7 @@ class TestHarvestCommand:
         assert kwargs["dump_messages"] is True
         assert kwargs["force"] is True
 
-    @patch("piddiplatsch.commands.harvest.start_consumer")
+    @patch("piddiplatsch.commands.base.start_consumer")
     def test_harvest_with_verbose_uses_stream_progress(self, mock_start_consumer, runner):
         result = runner.invoke(cli, ["--verbose", "harvest"])
 
@@ -716,21 +716,21 @@ class TestPublishCommand:
 class TestCLIOptions:
     """Test global CLI options."""
 
-    @patch("piddiplatsch.commands.consume.start_consumer")
+    @patch("piddiplatsch.commands.base.start_consumer")
     def test_debug_flag(self, mock_start_consumer, runner):
         """Test --debug flag."""
         runner.invoke(cli, ["--debug", "consume"])
         # Debug should configure logging but not affect command execution
         assert mock_start_consumer.called
 
-    @patch("piddiplatsch.commands.consume.start_consumer")
+    @patch("piddiplatsch.commands.base.start_consumer")
     def test_log_file_option(self, mock_start_consumer, runner, tmp_path):
         """Test --log option."""
         log_file = tmp_path / "test.log"
         runner.invoke(cli, ["--log", str(log_file), "consume"])
         assert mock_start_consumer.called
 
-    @patch("piddiplatsch.commands.consume.start_consumer")
+    @patch("piddiplatsch.commands.base.start_consumer")
     def test_config_file_option(self, mock_start_consumer, runner, tmp_path):
         """Test --config option."""
         config_file = tmp_path / "custom.toml"

@@ -2,24 +2,17 @@
 
 from dataclasses import dataclass
 
-from piddiplatsch.commands.base import Command
-from piddiplatsch.config import config
-from piddiplatsch.consumer import HarvestProcessor, start_consumer
+from piddiplatsch.commands.base import KafkaCommand
+from piddiplatsch.consumer import HarvestProcessor
 
 
 @dataclass(kw_only=True)
-class HarvestCommand(Command):
+class HarvestCommand(KafkaCommand):
     """Harvest Kafka messages without mapping them."""
 
     def execute(self) -> None:
-        progress = self.progress(title="harvest", stream=True)
-        with progress:
-            start_consumer(
-                config.get("consumer", "topic"),
-                config.get("kafka"),
-                processor=HarvestProcessor(),
-                dump_messages=True,
-                verbose=self.verbose,
-                progress=progress,
-                force=True,
-            )
+        self.run_consumer(
+            title="harvest",
+            processor=HarvestProcessor(),
+            force=True,
+        )

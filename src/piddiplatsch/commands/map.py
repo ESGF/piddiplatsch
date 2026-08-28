@@ -1,37 +1,29 @@
 """Map command implementation."""
 
 from dataclasses import dataclass
-from datetime import datetime
 from pathlib import Path
 
 import click
 
-from piddiplatsch.commands.base import Command
-from piddiplatsch.commands.helper import resolve_dated_input, select_projects
+from piddiplatsch.commands.base import FileBatchCommand
+from piddiplatsch.commands.helper import select_projects
 from piddiplatsch.consumer import map_dump_files
 from piddiplatsch.exceptions import JsonlReadError
 
 
 @dataclass(kw_only=True)
-class MapCommand(Command):
+class MapCommand(FileBatchCommand):
     """Map dumped messages through the selected project plugins."""
 
-    paths: tuple[Path, ...] = ()
-    input_date: datetime | None = None
     projects: tuple[str, ...] = ()
     all_projects: bool = False
-    limit: int | None = None
-    offset: int = 0
     force: bool = False
 
     def execute(self) -> None:
         progress = self.progress(title="map", stream=True)
         selection = select_projects(self.projects, self.all_projects)
-        date = self.input_date.date().isoformat() if self.input_date is not None else ""
-        paths = resolve_dated_input(
-            self.paths,
-            self.input_date,
-            relative_path=Path("dump") / f"dump_messages_{date}.jsonl",
+        paths = self.resolve_paths(
+            relative_path=lambda date: Path("dump") / f"dump_messages_{date}.jsonl",
             missing_label="Raw dump",
         )
         try:
