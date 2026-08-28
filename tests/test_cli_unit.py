@@ -6,8 +6,9 @@ import pytest
 from click.testing import CliRunner
 
 from piddiplatsch.cli import cli
+from piddiplatsch.config import config
 from piddiplatsch.consumer import HarvestProcessor
-from piddiplatsch.result import FeedResult, PublishResult
+from piddiplatsch.result import FeedResult, ProjectPublishResult, PublishResult
 
 
 @pytest.fixture
@@ -137,6 +138,7 @@ class TestMapCommand:
         assert "--limit" in result.output
         assert "--offset" in result.output
         assert "--project" in result.output
+        assert "--date" in result.output
 
     @patch("piddiplatsch.cli.map_dump_files")
     def test_map_calls_mapper(self, mock_map_dump_files, runner, tmp_path):
@@ -181,6 +183,45 @@ class TestMapCommand:
 
         assert result.exit_code == 0
         assert mock_map_dump_files.call_args.kwargs["verbose"] is True
+
+    @patch("piddiplatsch.cli.map_dump_files")
+    def test_map_resolves_date_from_output_dir(
+        self, mock_map_dump_files, runner, tmp_path
+    ):
+        output_dir = tmp_path / "outputs"
+        source = output_dir / "dump" / "dump_messages_2026-08-27.jsonl"
+        source.parent.mkdir(parents=True)
+        source.write_text("{}\n")
+        config._set("consumer", "output_dir", str(output_dir))
+        mock_map_dump_files.return_value = FeedResult(total=1, succeeded=1)
+
+        result = runner.invoke(
+            cli,
+            ["map", "--project", "cmip6", "--date", "2026-08-27"],
+        )
+
+        assert result.exit_code == 0
+        assert mock_map_dump_files.call_args.args[0] == (source,)
+        assert mock_map_dump_files.call_args.kwargs["projects"] == ("cmip6",)
+
+    @patch("piddiplatsch.cli.map_dump_files")
+    def test_map_requires_path_or_date(self, mock_map_dump_files, runner):
+        result = runner.invoke(cli, ["map", "--project", "cmip6"])
+
+        assert result.exit_code == 2
+        assert "Provide PATH or --date" in result.output
+        mock_map_dump_files.assert_not_called()
+
+    @patch("piddiplatsch.cli.map_dump_files")
+    def test_map_rejects_path_and_date(self, mock_map_dump_files, runner, tmp_path):
+        source = tmp_path / "dump.jsonl"
+        source.touch()
+
+        result = runner.invoke(cli, ["map", str(source), "--date", "2026-08-27"])
+
+        assert result.exit_code == 2
+        assert "cannot be combined" in result.output
+        mock_map_dump_files.assert_not_called()
 
     @patch("piddiplatsch.cli.map_dump_files")
     def test_map_rejects_named_and_all_projects(
@@ -365,25 +406,90 @@ class TestPublishCommand:
         assert "--retries" in result.output
         assert "--retry-delay" in result.output
         assert "--workers" in result.output
+        assert "--project" in result.output
+        assert "--date" in result.output
 
     @patch("piddiplatsch.cli.HandlePublisher")
     def test_publish_reports_success(self, publisher_cls, runner, tmp_path):
         source = tmp_path / "handles.jsonl"
         source.touch()
         publisher_cls.return_value.run.return_value = PublishResult(
-            total=3, succeeded=3
+            total=3,
+            succeeded=3,
+            result_file=tmp_path / "published" / "results.jsonl",
         )
 
         result = runner.invoke(cli, ["publish", str(source)])
 
         assert result.exit_code == 0
         assert "Published 3/3 handles" in result.output
+        assert "Publication results:" in result.output
+        assert "results.jsonl" in result.output
         publisher_cls.return_value.run.assert_called_once()
         assert publisher_cls.return_value.run.call_args.kwargs["limit"] is None
         assert publisher_cls.return_value.run.call_args.kwargs["offset"] == 0
         assert publisher_cls.return_value.run.call_args.kwargs["retries"] == 0
         assert publisher_cls.return_value.run.call_args.kwargs["retry_delay"] == 1.0
         assert publisher_cls.return_value.run.call_args.kwargs["workers"] == 1
+
+    @patch("piddiplatsch.cli.HandlePublisher")
+    def test_publish_resolves_project_date_from_output_dir(
+        self, publisher_cls, runner, tmp_path
+    ):
+        output_dir = tmp_path / "outputs"
+        source = output_dir / "cmip6" / "handles" / "handles_2026-08-27.jsonl"
+        source.parent.mkdir(parents=True)
+        source.touch()
+        config._set("consumer", "output_dir", str(output_dir))
+        publisher_cls.return_value.run.return_value = PublishResult(
+            total=1, succeeded=1
+        )
+
+        result = runner.invoke(
+            cli,
+            ["publish", "--project", "CMIP6", "--date", "2026-08-27"],
+        )
+
+        assert result.exit_code == 0
+        assert publisher_cls.return_value.run.call_args.args[0] == (source,)
+        assert publisher_cls.return_value.run.call_args.kwargs["project"] == "CMIP6"
+
+    @patch("piddiplatsch.cli.HandlePublisher")
+    def test_publish_date_requires_project(self, publisher_cls, runner):
+        result = runner.invoke(cli, ["publish", "--date", "2026-08-27"])
+
+        assert result.exit_code == 2
+        assert "--date requires --project" in result.output
+        publisher_cls.assert_not_called()
+
+    @patch("piddiplatsch.cli.HandlePublisher")
+    def test_publish_requires_path_or_date(self, publisher_cls, runner):
+        result = runner.invoke(cli, ["publish", "--project", "cmip6"])
+
+        assert result.exit_code == 2
+        assert "Provide PATH or --date" in result.output
+        publisher_cls.assert_not_called()
+
+    @patch("piddiplatsch.cli.HandlePublisher")
+    def test_publish_rejects_path_and_date(self, publisher_cls, runner, tmp_path):
+        source = tmp_path / "handles.jsonl"
+        source.touch()
+
+        result = runner.invoke(
+            cli,
+            [
+                "publish",
+                str(source),
+                "--project",
+                "cmip6",
+                "--date",
+                "2026-08-27",
+            ],
+        )
+
+        assert result.exit_code == 2
+        assert "cannot be combined" in result.output
+        publisher_cls.assert_not_called()
 
     @patch("piddiplatsch.cli.HandlePublisher")
     def test_publish_exits_nonzero_after_failures(
@@ -410,21 +516,39 @@ class TestPublishCommand:
         source = tmp_path / "handles.jsonl"
         source.touch()
 
-        def run(paths, limit, offset, retries, retry_delay, workers, progress_callback):
+        def run(
+            paths,
+            limit,
+            offset,
+            retries,
+            retry_delay,
+            workers,
+            progress_callback,
+            project,
+        ):
             progress_callback(1, 1, "21.TEST/abc", None)
             return PublishResult(total=1, succeeded=1)
 
         publisher_cls.return_value.run.side_effect = run
 
         result = runner.invoke(
-            cli, ["--verbose", "publish", "--offset", "1000", str(source)]
+            cli,
+            [
+                "--verbose",
+                "publish",
+                "--project",
+                "cmip6",
+                "--offset",
+                "1000",
+                str(source),
+            ],
         )
 
         assert result.exit_code == 0
         assert "Processed handles: 1001-1001" in result.output
         tqdm_cls.assert_called_once_with(
             total=1,
-            desc="publish handles 1001-1001",
+            desc="publish cmip6 handles 1001-1001",
             unit="handle",
             dynamic_ncols=True,
         )
@@ -440,7 +564,16 @@ class TestPublishCommand:
         source = tmp_path / "handles.jsonl"
         source.touch()
 
-        def run(paths, limit, offset, retries, retry_delay, workers, progress_callback):
+        def run(
+            paths,
+            limit,
+            offset,
+            retries,
+            retry_delay,
+            workers,
+            progress_callback,
+            project,
+        ):
             progress_callback(1, 1, "21.TEST/abc", None)
             return PublishResult(total=1, succeeded=1)
 
@@ -451,6 +584,41 @@ class TestPublishCommand:
         assert result.exit_code == 0
         assert "Published 1/1 handles" in result.output
         tqdm_cls.assert_not_called()
+
+    @patch("piddiplatsch.cli.HandlePublisher")
+    def test_publish_passes_project_and_prints_project_summary(
+        self, publisher_cls, runner, tmp_path
+    ):
+        source = tmp_path / "handles.jsonl"
+        source.touch()
+        publisher_cls.return_value.run.return_value = PublishResult(
+            total=3,
+            succeeded=2,
+            failed=1,
+            projects={"cmip6": ProjectPublishResult(total=3, succeeded=2, failed=1)},
+        )
+
+        result = runner.invoke(cli, ["publish", "--project", "cmip6", str(source)])
+
+        assert result.exit_code == 1
+        assert publisher_cls.return_value.run.call_args.kwargs["project"] == "cmip6"
+        assert "cmip6: 2/3 published, 1 failed" in result.output
+
+    @patch("piddiplatsch.cli.HandlePublisher")
+    def test_publish_reports_project_mismatch_cleanly(
+        self, publisher_cls, runner, tmp_path
+    ):
+        source = tmp_path / "handles.jsonl"
+        source.touch()
+        publisher_cls.return_value.run.side_effect = ValueError(
+            "Handle batch does not match project 'cmip6'"
+        )
+
+        result = runner.invoke(cli, ["publish", "--project", "cmip6", str(source)])
+
+        assert result.exit_code == 1
+        assert "does not match project" in result.output
+        assert result.exception.__class__.__name__ != "ValueError"
 
     @patch("piddiplatsch.cli.HandlePublisher")
     def test_publish_passes_limit(self, publisher_cls, runner, tmp_path):

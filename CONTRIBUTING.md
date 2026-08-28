@@ -38,7 +38,8 @@ Kafka is required for queue commands. Handle services are required only for
 explicit publication (or use the local Docker stack for smoke tests).
 
 - Harvest queue messages only: `piddi harvest`
-- Map saved raw JSONL: `piddi map <path...>`
+- Map a dated raw dump: `piddi map --date YYYY-MM-DD`
+- Map explicit saved JSONL: `piddi map <path...>`
 - Harvest and map: `piddi consume`
 - Harvest, map, and publish: `piddi consume --publish`
 - Common flags:

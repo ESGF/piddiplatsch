@@ -7,6 +7,7 @@ from typing import Any, Literal
 from urllib.parse import quote
 
 import requests
+import urllib3
 
 from piddiplatsch.config import config
 from piddiplatsch.handles.base import HandleBackend
@@ -42,6 +43,11 @@ class RestHandleClient(HandleBackend):
         self.password = password
         self.verify_https = verify_https
         self.timeout = timeout
+        if not verify_https:
+            # The operator explicitly opted out of certificate verification.
+            # Avoid emitting one urllib3 warning per request, which otherwise
+            # corrupts tqdm output during large parallel publications.
+            urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
         self._injected_session = session
         self._thread_local = threading.local()
 

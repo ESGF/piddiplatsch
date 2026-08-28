@@ -52,6 +52,15 @@ class RetryResult:
 
 
 @dataclass
+class ProjectPublishResult:
+    """Per-project publication counters."""
+
+    total: int = 0
+    succeeded: int = 0
+    failed: int = 0
+
+
+@dataclass
 class PublishResult:
     """Result of publishing prepared Handle records from JSONL files."""
 
@@ -60,6 +69,9 @@ class PublishResult:
     failed: int = 0
     retry_attempts: int = 0
     errors: list[str] = field(default_factory=list)
+    result_file: Path | None = None
+    project: str | None = None
+    projects: dict[str, ProjectPublishResult] = field(default_factory=dict)
 
 
 @dataclass

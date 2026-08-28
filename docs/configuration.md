@@ -25,7 +25,7 @@ piddi --config custom.toml config show
 | `consumer.transient` | `preflight_stac` | Probe the configured STAC service before consuming. |
 | `handle` | `backend` | `rest` for publication or legacy `pyhandle`; both always write JSONL first. |
 | `handle` | `server_url`, `prefix`, `username`, `password` | Handle service connection and credentials. |
-| `handle` | `verify_https` | Verify Handle service TLS certificates; defaults to `true`. |
+| `handle` | `verify_https` | Verify Handle service TLS certificates; defaults to `true`. Setting it to `false` suppresses repeated urllib3 insecure-request warnings. |
 | `handle` | `timeout` | Per-request Handle REST timeout in seconds; defaults to `10`. |
 | `stac` | `base_url`, `timeout`, `collection` | STAC lookup and patch retrieval settings. |
 | `lookup` | `enabled`, `backend` | Enable version lookup using `stac` or `es`. |

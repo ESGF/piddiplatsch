@@ -1,9 +1,13 @@
 from __future__ import annotations
 
+import json
 import logging
+import re
+import threading
 import time
 from collections.abc import Callable, Iterable
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from contextlib import AbstractContextManager
 from dataclasses import dataclass
 from pathlib import Path
 from queue import Queue
@@ -11,10 +15,12 @@ from typing import Any, Protocol
 
 import requests
 
+from piddiplatsch.config import config
+from piddiplatsch.core.plugin import normalize_project_id
 from piddiplatsch.exceptions import JsonlReadError
 from piddiplatsch.handles.rest_backend import RestHandleClient
-from piddiplatsch.helpers import find_jsonl, read_jsonl
-from piddiplatsch.result import PublishResult
+from piddiplatsch.helpers import find_jsonl, read_jsonl, utc_now
+from piddiplatsch.result import ProjectPublishResult, PublishResult
 
 
 class PreparedHandleBackend(Protocol):
@@ -24,6 +30,7 @@ class PreparedHandleBackend(Protocol):
 
 
 ProgressCallback = Callable[[int, int, str, Exception | None], None]
+OutcomeCallback = Callable[["_PublicationOutcome"], None]
 
 
 @dataclass(frozen=True)
@@ -46,6 +53,28 @@ class _PublicationContext:
     project: str | None
     dataset_id: str | None
     file_name: str | None
+
+
+class _PublicationResultWriter(AbstractContextManager):
+    """Append structured per-Handle outcomes to one run-scoped JSONL file."""
+
+    def __init__(self, path: Path) -> None:
+        self.path = path
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        self._stream = self.path.open("a", encoding="utf-8")
+        self._lock = threading.Lock()
+
+    def write(self, record: dict[str, Any]) -> None:
+        line = json.dumps(record) + "\n"
+        with self._lock:
+            self._stream.write(line)
+            self._stream.flush()
+
+    def close(self) -> None:
+        self._stream.close()
+
+    def __exit__(self, exc_type, exc_value, traceback) -> None:
+        self.close()
 
 
 class HandlePublisher:
@@ -73,6 +102,8 @@ class HandlePublisher:
         retry_delay: float = 1.0,
         workers: int = 1,
         progress_callback: ProgressCallback | None = None,
+        result_file: Path | None = None,
+        project: str | None = None,
     ) -> PublishResult:
         if limit is not None and limit < 1:
             raise ValueError("limit must be at least 1")
@@ -124,14 +155,34 @@ class HandlePublisher:
                 self.logger.error("Could not read Handle JSONL file %s: %s", path, exc)
 
         total_records = len(records)
-
-        outcomes = self._publish_records(
+        self._require_validatable_input(project, result.errors)
+        contexts = self._publication_contexts(records)
+        result.project = self._resolve_project(
             records,
-            retries=retries,
-            retry_delay=retry_delay,
-            workers=workers,
-            progress_callback=progress_callback,
+            contexts,
+            requested_project=project,
         )
+        if total_records:
+            result.result_file = result_file or self._new_result_file(result.project)
+            self.logger.info("Writing publication results to %s", result.result_file)
+            with _PublicationResultWriter(result.result_file) as writer:
+                outcomes = self._publish_records(
+                    records,
+                    retries=retries,
+                    retry_delay=retry_delay,
+                    workers=workers,
+                    progress_callback=progress_callback,
+                    contexts=contexts,
+                    outcome_callback=lambda outcome: writer.write(
+                        self._result_record(
+                            outcome,
+                            position=offset + outcome.index,
+                            batch_total=total_records,
+                        )
+                    ),
+                )
+        else:
+            outcomes = []
         for outcome in sorted(outcomes, key=lambda item: item.index):
             index = outcome.index
             result.total += 1
@@ -155,6 +206,14 @@ class HandlePublisher:
                     total_records,
                     outcome.error,
                 )
+            project_result = result.projects.setdefault(
+                outcome.project or "unknown", ProjectPublishResult()
+            )
+            project_result.total += 1
+            if outcome.error is None:
+                project_result.succeeded += 1
+            else:
+                project_result.failed += 1
 
         self.logger.info(
             "Handle publication complete: published=%d total=%d failed=%d retries=%d offset=%d",
@@ -192,8 +251,9 @@ class HandlePublisher:
         retry_delay: float,
         workers: int,
         progress_callback: ProgressCallback | None,
+        contexts: dict[int, _PublicationContext],
+        outcome_callback: OutcomeCallback | None = None,
     ) -> list[_PublicationOutcome]:
-        contexts = self._publication_contexts(records)
         indexed_records = [
             (index, path, line_number, record, contexts[index])
             for index, (path, line_number, record) in enumerate(records, start=1)
@@ -201,6 +261,8 @@ class HandlePublisher:
         if workers == 1 or len(indexed_records) < 2:
 
             def report(outcome: _PublicationOutcome) -> None:
+                if outcome_callback is not None:
+                    outcome_callback(outcome)
                 if progress_callback is not None:
                     progress_callback(
                         outcome.index,
@@ -257,6 +319,8 @@ class HandlePublisher:
                     completed_chains += 1
                     continue
                 outcomes.append(outcome)
+                if outcome_callback is not None:
+                    outcome_callback(outcome)
                 if progress_callback is not None:
                     progress_callback(
                         outcome.index,
@@ -267,6 +331,106 @@ class HandlePublisher:
             for future in as_completed(futures):
                 future.result()
         return outcomes
+
+    @staticmethod
+    def _result_record(
+        outcome: _PublicationOutcome,
+        *,
+        position: int,
+        batch_total: int,
+    ) -> dict[str, Any]:
+        succeeded = outcome.error is None
+        return {
+            "schema_version": 1,
+            "timestamp": utc_now().isoformat(),
+            "status": "succeeded" if succeeded else "failed",
+            "action": outcome.action if succeeded else None,
+            "handle": outcome.handle,
+            "url": outcome.url,
+            "project": outcome.project,
+            "dataset_id": outcome.dataset_id,
+            "file_name": outcome.file_name,
+            "source_file": str(outcome.path.resolve()),
+            "source_line": outcome.line_number,
+            "position": position,
+            "batch_index": outcome.index,
+            "batch_total": batch_total,
+            "retry_attempts": outcome.retry_attempts,
+            "error": str(outcome.error) if outcome.error is not None else None,
+        }
+
+    @staticmethod
+    def _validate_project(
+        records: list[tuple[Path, int, dict[str, Any]]],
+        contexts: dict[int, _PublicationContext],
+        expected_project: str,
+    ) -> None:
+        mismatches = []
+        for index, (path, line_number, _) in enumerate(records, start=1):
+            actual = contexts[index].project
+            if actual != expected_project:
+                mismatches.append(
+                    f"{path}:{line_number} ({actual or 'project missing'})"
+                )
+                if len(mismatches) == 5:
+                    break
+        if mismatches:
+            details = ", ".join(mismatches)
+            raise ValueError(
+                f"Handle batch does not match project {expected_project!r}: {details}"
+            )
+
+    @staticmethod
+    def _require_validatable_input(project: str | None, errors: list[str]) -> None:
+        if project is not None and errors:
+            raise ValueError(
+                f"Cannot validate project {project!r} because Handle input could "
+                f"not be read: {errors[0]}"
+            )
+
+    @classmethod
+    def _resolve_project(
+        cls,
+        records: list[tuple[Path, int, dict[str, Any]]],
+        contexts: dict[int, _PublicationContext],
+        *,
+        requested_project: str | None,
+    ) -> str | None:
+        expected = normalize_project_id(requested_project or "") or None
+        if requested_project is not None and expected is None:
+            raise ValueError("project must not be empty")
+        if expected is not None:
+            cls._validate_project(records, contexts, expected)
+            return expected
+        if not records or any(not context.project for context in contexts.values()):
+            return None
+        projects = {context.project for context in contexts.values()}
+        return next(iter(projects)) if len(projects) == 1 else None
+
+    @staticmethod
+    def _new_result_file(project: str | None = None) -> Path:
+        output_dir = Path(config.get("consumer", {}).get("output_dir", "outputs"))
+        result_dir = output_dir / "published"
+        result_dir.mkdir(parents=True, exist_ok=True)
+        timestamp = utc_now().strftime("%Y-%m-%d_%H-%M-%S")
+        project_slug = re.sub(r"[^a-z0-9-]+", "-", project or "").strip("-")
+        stem = (
+            f"published_{project_slug}_handles_{timestamp}"
+            if project_slug
+            else f"published_handles_{timestamp}"
+        )
+        counter = 1
+        while True:
+            suffix = "" if counter == 1 else f"_{counter}"
+            candidate = result_dir / f"{stem}{suffix}.jsonl"
+            try:
+                # Reserve the name atomically so concurrent runs cannot select
+                # the same human-readable filename.
+                candidate.touch(exist_ok=False)
+            except FileExistsError:
+                counter += 1
+                continue
+            return candidate
 
     def _publish_chain(
         self,
@@ -387,6 +551,7 @@ class HandlePublisher:
                 project = project_by_handle.get(parent or "")
             if not project and dataset_id:
                 project = dataset_id.split(".", 1)[0].lower()
+            project = normalize_project_id(project) or None
 
             file_name = data.get("FILE_NAME")
             if not isinstance(file_name, str) or not file_name:

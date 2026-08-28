@@ -11,12 +11,20 @@ All notable changes to this project are documented here.
 - Added configurable Handle PUT latency to the Docker mock service, defaulting to 50 ms.
 - Added separate `harvest` and `map` commands for queue-to-raw-JSONL and
   raw-JSONL-to-Handle-JSONL processing.
+- Added a run-scoped structured JSONL receipt containing every successful or
+  failed deferred Handle publication outcome.
+- Added optional project validation and per-project summaries to `publish`,
+  while retaining generic mixed-project publication when no project is given.
+- Added explicit `--date YYYY-MM-DD` input selection to `map` and project-aware
+  `publish`, while retaining generic file and directory inputs.
 
 ### Changed
 - Handle publication selects `rest` or legacy `pyhandle`; both always write the
   JSONL audit record first.
 - `consume` now always dumps raw messages before plugin filtering and defers
   Handle publication by default; `consume --publish` runs all three stages.
+- REST publication suppresses repeated urllib3 insecure-request warnings when
+  `handle.verify_https = false` was explicitly configured.
 - Deferred Handle publication supports bounded batches, offsets, and transient retries with exponential backoff.
 - Successful deferred publications now log created/updated Handle REST URLs and
   project, dataset, and asset context.

@@ -8,6 +8,7 @@ Piddiplatsch writes daily JSONL files beneath `consumer.output_dir`:
 | --- | --- |
 | `dump/` | Original Kafka messages written by every `harvest` or `consume` run. |
 | `<plugin>/handles/` | Handle records produced by that plugin. Direct REST/pyhandle publication writes the JSONL record before contacting the server; each line also includes `project`. |
+| `published/` | One run-scoped JSONL receipt per `publish` run, containing every successful or failed Handle outcome. |
 | `skipped/` | Records deferred after transient external failures. |
 | `failures/r<N>/` | Records that failed processing, grouped by retry count. |
 
@@ -20,6 +21,14 @@ audit record cannot be appended, that Handle is not sent to the server. A
 server-side failure leaves the JSONL record available for inspection or later
 publication.
 
+Deferred publication writes each outcome immediately to a readable, unique
+`published/published_<project>_handles_YYYY-MM-DD_HH-MM-SS.jsonl` file using UTC
+and prints its path in the final CLI summary. Generic mixed-project batches use
+`published_handles_...jsonl`. If another run starts during the same second,
+`_2`, `_3`, and so on are appended. Parallel completion order may differ from
+input order; `position`, `batch_index`, `source_file`, and `source_line` provide
+stable ordering and provenance.
+
 ## Staged commands
 
 ```bash
@@ -27,10 +36,10 @@ publication.
 piddi --config custom.toml harvest
 
 # raw JSONL -> project-scoped Handle JSONL only
-piddi --config custom.toml map outputs/dump/dump_messages_2026-08-27.jsonl
+piddi --config custom.toml map --project cmip6 --date 2026-08-27
 
 # Handle JSONL -> REST Handle Service
-piddi --config custom.toml publish outputs/cmip6/handles/handles_2026-08-27.jsonl
+piddi --config custom.toml publish --project cmip6 --date 2026-08-27
 
 # Kafka -> raw JSONL -> Handle JSONL (default production ingestion)
 piddi --config custom.toml consume
@@ -42,6 +51,18 @@ piddi --config custom.toml consume --publish
 `map` accepts files or directories plus `--project`, `--all-projects`,
 `--limit`, `--offset`, and `--force`. It never contacts Kafka or a Handle
 Service and does not modify its input dumps.
+
+The `--date YYYY-MM-DD` convenience resolves the standard configured file:
+`map` uses `dump/dump_messages_<date>.jsonl`, while `publish` requires a project
+and uses `<project>/handles/handles_<date>.jsonl`. Explicit paths remain
+available for both commands. A path and `--date` are mutually exclusive; if
+neither is supplied, the command fails instead of guessing today, latest, or
+all files.
+
+`publish --project NAME` validates every selected Handle before publishing and
+stops without sending anything if a project is missing or different. Plain
+`publish` remains the generic mode and permits mixed-project batches. The final
+summary always provides per-project counts when project metadata is available.
 
 ## Real Handle service contract test
 

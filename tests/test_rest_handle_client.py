@@ -2,6 +2,7 @@ import base64
 
 import pytest
 import requests
+import urllib3
 
 from piddiplatsch.config import config
 from piddiplatsch.handles.api import get_handle_backend
@@ -50,6 +51,17 @@ def make_client(response):
         session=session,
     )
     return client, session
+
+
+def test_rest_client_suppresses_repeated_warning_when_verification_is_disabled(
+    monkeypatch,
+):
+    calls = []
+    monkeypatch.setattr(urllib3, "disable_warnings", calls.append)
+
+    make_client(FakeResponse({"responseCode": 1}))
+
+    assert calls == [urllib3.exceptions.InsecureRequestWarning]
 
 
 def test_rest_client_puts_single_handle_with_overwrite():
