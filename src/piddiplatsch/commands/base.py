@@ -80,6 +80,7 @@ class KafkaCommand(Command, ABC):
         projects: list[str] | tuple[str, ...] | str | None = None,
         dry_run: bool = False,
         force: bool = False,
+        idle_timeout: float | None = None,
     ) -> None:
         progress = self.progress(title=title, stream=True)
         with progress:
@@ -93,6 +94,7 @@ class KafkaCommand(Command, ABC):
                 progress=progress,
                 dry_run=dry_run,
                 force=force,
+                idle_timeout=idle_timeout,
             )
 
 

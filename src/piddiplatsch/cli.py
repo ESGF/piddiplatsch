@@ -70,10 +70,17 @@ def consume(ctx: click.Context, publish: bool, force: bool, projects: tuple[str,
 
 
 @cli.command("harvest")
+@click.option(
+    "--idle-timeout",
+    type=click.FloatRange(min=0.1),
+    default=5.0,
+    show_default=True,
+    help="Stop after this many seconds without a Kafka message.",
+)
 @click.pass_context
-def harvest(ctx: click.Context) -> None:
+def harvest(ctx: click.Context, idle_timeout: float) -> None:
     """Harvest Kafka messages into raw JSONL without mapping."""
-    HarvestCommand(verbose=ctx.obj["verbose"]).execute()
+    HarvestCommand(verbose=ctx.obj["verbose"], idle_timeout=idle_timeout).execute()
 
 
 # command map

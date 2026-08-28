@@ -158,6 +158,7 @@ class TestHarvestCommand:
         result = runner.invoke(cli, ["harvest", "--help"])
         assert result.exit_code == 0
         assert "raw JSONL" in result.output
+        assert "--idle-timeout" in result.output
 
     @patch("piddiplatsch.commands.base.start_consumer")
     def test_harvest_dumps_without_mapping(self, mock_start_consumer, runner):
@@ -167,6 +168,14 @@ class TestHarvestCommand:
         assert isinstance(kwargs["processor"], HarvestProcessor)
         assert kwargs["dump_messages"] is True
         assert kwargs["force"] is True
+        assert kwargs["idle_timeout"] == 5.0
+
+    @patch("piddiplatsch.commands.base.start_consumer")
+    def test_harvest_passes_idle_timeout(self, mock_start_consumer, runner):
+        result = runner.invoke(cli, ["harvest", "--idle-timeout", "2.5"])
+
+        assert result.exit_code == 0
+        assert mock_start_consumer.call_args.kwargs["idle_timeout"] == 2.5
 
     @patch("piddiplatsch.commands.base.start_consumer")
     def test_harvest_with_verbose_uses_stream_progress(self, mock_start_consumer, runner):

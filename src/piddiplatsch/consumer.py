@@ -2,6 +2,7 @@ import json
 import logging
 import signal
 import sys
+import time
 from enum import StrEnum
 from pathlib import Path
 
@@ -80,17 +81,37 @@ class BaseConsumer:
 class KafkaConsumer(BaseConsumer):
     """Kafka consumer wrapper."""
 
-    def __init__(self, topic: str, kafka_cfg: dict):
+    def __init__(
+        self,
+        topic: str,
+        kafka_cfg: dict,
+        *,
+        idle_timeout: float | None = None,
+        clock=time.monotonic,
+    ):
+        if idle_timeout is not None and idle_timeout <= 0:
+            raise ValueError("idle timeout must be positive")
         self.topic = topic
+        self.idle_timeout = idle_timeout
+        self.clock = clock
         self.consumer = ConfluentConsumer(kafka_cfg)
         self.consumer.subscribe([self.topic])
 
     def consume(self):
+        last_message_at = self.clock()
         try:
             while True:
-                msg = self.consumer.poll(timeout=1.0)
+                poll_timeout = 1.0
+                if self.idle_timeout is not None:
+                    remaining = self.idle_timeout - (self.clock() - last_message_at)
+                    if remaining <= 0:
+                        return
+                    poll_timeout = min(poll_timeout, remaining)
+
+                msg = self.consumer.poll(timeout=poll_timeout)
                 if msg is None:
                     continue
+                last_message_at = self.clock()
                 if msg.error():
                     raise KafkaException(msg.error())
 
@@ -404,6 +425,7 @@ def start_consumer(
     dry_run: bool = False,
     force: bool = False,
     progress: BaseProgress | None = None,
+    idle_timeout: float | None = None,
 ):
     # Initialize stats from the fully loaded configuration for this run.
     stats_config = config.get("stats", {})
@@ -446,7 +468,7 @@ def start_consumer(
     if direct_messages is not None:
         consumer = DirectConsumer(direct_messages)
     elif topic and kafka_cfg:
-        consumer = KafkaConsumer(topic, kafka_cfg)
+        consumer = KafkaConsumer(topic, kafka_cfg, idle_timeout=idle_timeout)
     else:
         raise ValueError("Either Kafka config or direct_messages must be provided")
 
