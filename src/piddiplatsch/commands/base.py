@@ -12,7 +12,12 @@ import click
 from piddiplatsch.commands.helper import resolve_dated_input
 from piddiplatsch.config import config
 from piddiplatsch.consumer import start_consumer
-from piddiplatsch.monitoring.progress import BaseProgress, BoundedProgress, get_progress
+from piddiplatsch.monitoring.progress import (
+    STREAM_PROGRESS_LEGEND,
+    BaseProgress,
+    BoundedProgress,
+    get_progress,
+)
 
 
 @dataclass(kw_only=True)
@@ -55,6 +60,8 @@ class Command(ABC):
         start: int = 0,
     ) -> BaseProgress:
         """Create the requested progress style using this command's verbosity."""
+        if stream and self.verbose:
+            click.echo(STREAM_PROGRESS_LEGEND)
         return get_progress(
             title=title,
             use_tqdm=self.verbose,

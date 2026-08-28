@@ -9,6 +9,10 @@ from tqdm import tqdm
 from piddiplatsch.helpers import utc_now
 from piddiplatsch.monitoring.stats import stats
 
+STREAM_PROGRESS_LEGEND = (
+    "Progress: msg/hdl messages/handles; E/F/W/D errors/filtered/warnings/retracted; replica, skip, patch; last_err age; ⏱ elapsed."
+)
+
 
 class BaseProgress(AbstractContextManager):
     """Base class for progress display."""

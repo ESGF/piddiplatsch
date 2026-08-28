@@ -121,8 +121,10 @@ class TestConsumeCommand:
     @patch("piddiplatsch.commands.base.start_consumer")
     def test_consume_with_verbose(self, mock_start_consumer, runner):
         """Test consume command with --verbose flag."""
-        runner.invoke(cli, ["--verbose", "consume"])
+        result = runner.invoke(cli, ["--verbose", "consume"])
         assert mock_start_consumer.called
+        assert "msg/hdl messages/handles" in result.output
+        assert "E/F/W/D errors/filtered/warnings/retracted" in result.output
         call_kwargs = mock_start_consumer.call_args.kwargs
         assert call_kwargs.get("verbose") is True
         assert isinstance(call_kwargs["progress"], Progress)
