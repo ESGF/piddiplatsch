@@ -15,6 +15,8 @@ All notable changes to this project are documented here.
   failed deferred Handle publication outcome.
 - Added optional project validation and per-project summaries to `publish`,
   while retaining generic mixed-project publication when no project is given.
+- Added explicit `--date YYYY-MM-DD` input selection to `map` and project-aware
+  `publish`, while retaining generic file and directory inputs.
 
 ### Changed
 - Handle publication selects `rest` or legacy `pyhandle`; both always write the

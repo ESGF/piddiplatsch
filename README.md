@@ -99,7 +99,7 @@ The same work can be separated. `harvest` only reads Kafka and writes raw JSONL;
 
 ```bash
 piddi --config custom.toml harvest
-piddi --config custom.toml map outputs/dump/dump_messages_2026-08-27.jsonl
+piddi --config custom.toml map --date 2026-08-27
 ```
 
 ### Observe Mode (Example)
@@ -130,28 +130,33 @@ REST server and credentials in the same local configuration file.
 For example, publish all project files from yesterday:
 
 ```bash
-piddi --config custom.toml --verbose publish --project cmip6 \
-  outputs/cmip6/handles/handles_2026-08-24.jsonl
+piddi --config custom.toml --verbose publish \
+  --project cmip6 --date 2026-08-24
 ```
 
 `--project` validates the complete selected batch before the first request. It
 does not filter mismatches. Omit it to retain the generic publisher, including
 support for intentionally mixed-project inputs.
 
+The date form resolves files beneath the configured `consumer.output_dir`.
+`map --date YYYY-MM-DD` selects the global raw dump; `publish --project NAME
+--date YYYY-MM-DD` selects that project's Handle file. A path and `--date`
+cannot be combined, and neither command guesses a date when both are omitted.
+
 For a limited trial against the current file, cap the total number of attempted
 Handles:
 
 ```bash
 piddi --config custom.toml --verbose publish --limit 1000 \
-  outputs/cmip6/handles/handles_2026-08-25.jsonl
+  --project cmip6 --date 2026-08-25
 ```
 
 Continue with the next batch by combining the offset and limit:
 
 ```bash
 piddi --config custom.toml --verbose publish \
-  --offset 1000 --limit 1000 --retries 3 \
-  outputs/cmip6/handles/handles_2026-08-25.jsonl
+  --project cmip6 --date 2026-08-25 \
+  --offset 1000 --limit 1000 --retries 3
 ```
 
 Retries cover transient connection errors, timeouts, rate limiting, and server
@@ -208,7 +213,7 @@ Common first runs:
   ```
 - Replay a saved dump through the configured plugins:
   ```bash
-  piddi map outputs/dump/dump_messages_2026-08-27.jsonl
+  piddi map --date 2026-08-27
   ```
 - Harvest, map, and publish immediately:
   ```bash
@@ -232,7 +237,7 @@ Use the global `-v` or `--verbose` option to display live progress for
 
 ```bash
 piddi -c custom.toml -v consume
-piddi -c custom.toml -v map outputs/dump/dump_messages_2026-08-27.jsonl
+piddi -c custom.toml -v map --date 2026-08-27
 ```
 
 Status line format:

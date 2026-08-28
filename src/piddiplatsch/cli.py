@@ -1,4 +1,5 @@
 import json
+from datetime import datetime
 from pathlib import Path
 
 import click
@@ -12,6 +13,7 @@ from piddiplatsch.consumer import (
     map_dump_files,
     start_consumer,
 )
+from piddiplatsch.core.plugin import normalize_project_id
 from piddiplatsch.exceptions import JsonlReadError
 from piddiplatsch.handles.publish import HandlePublisher
 from piddiplatsch.persist.retry import RetryRunner
@@ -111,7 +113,13 @@ def harvest(ctx):
     "path",
     type=click.Path(exists=True, path_type=Path),
     nargs=-1,
-    required=True,
+    required=False,
+)
+@click.option(
+    "--date",
+    "input_date",
+    type=click.DateTime(formats=["%Y-%m-%d"]),
+    help="Map the raw dump for this date from the configured output directory.",
 )
 @click.option(
     "--project",
@@ -150,10 +158,12 @@ def map_messages(
     limit: int | None,
     offset: int,
     force: bool,
+    input_date: datetime | None,
 ):
     """Map raw message JSONL through plugins into Handle JSONL."""
     if projects and all_projects:
         raise click.UsageError("--project cannot be combined with --all-projects")
+    path = _resolve_map_paths(path, input_date)
     selection = "all" if all_projects else (projects or None)
     try:
         result = map_dump_files(
@@ -188,7 +198,13 @@ def map_messages(
     "path",
     type=click.Path(exists=True, path_type=Path),
     nargs=-1,
-    required=True,
+    required=False,
+)
+@click.option(
+    "--date",
+    "input_date",
+    type=click.DateTime(formats=["%Y-%m-%d"]),
+    help="Publish this project's Handle file for the given date.",
 )
 @click.option(
     "--limit",
@@ -237,12 +253,14 @@ def publish(
     retry_delay: float,
     workers: int,
     project: str | None,
+    input_date: datetime | None,
 ):
     """Publish prepared handles from immutable JSONL FILE_OR_DIRECTORY inputs.
 
     The source files are never changed. Re-running a file is safe because the
     Handle REST client publishes with overwrite enabled.
     """
+    path = _resolve_publish_paths(path, input_date, project)
     verbose = ctx.obj.get("verbose", False)
     last_handle_position = offset
     progress_bar = None
@@ -323,6 +341,48 @@ def _show_publish_projects(result: PublishResult) -> None:
             f"  {project_name}: {project_result.succeeded}/{project_result.total} "
             f"published, {project_result.failed} failed"
         )
+
+
+def _resolve_map_paths(
+    paths: tuple[Path, ...], input_date: datetime | None
+) -> tuple[Path, ...]:
+    if paths and input_date is not None:
+        raise click.UsageError("PATH cannot be combined with --date")
+    if paths:
+        return paths
+    if input_date is None:
+        raise click.UsageError("Provide PATH or --date")
+    output_dir = Path(config.get("consumer", {}).get("output_dir", "outputs"))
+    path = output_dir / "dump" / f"dump_messages_{input_date.date().isoformat()}.jsonl"
+    if not path.is_file():
+        raise click.ClickException(f"Raw dump does not exist: {path}")
+    return (path,)
+
+
+def _resolve_publish_paths(
+    paths: tuple[Path, ...],
+    input_date: datetime | None,
+    project: str | None,
+) -> tuple[Path, ...]:
+    if paths and input_date is not None:
+        raise click.UsageError("PATH cannot be combined with --date")
+    if paths:
+        return paths
+    if input_date is None:
+        raise click.UsageError("Provide PATH or --date")
+    project_name = normalize_project_id(project or "")
+    if not project_name:
+        raise click.UsageError("--date requires --project")
+    output_dir = Path(config.get("consumer", {}).get("output_dir", "outputs"))
+    path = (
+        output_dir
+        / project_name
+        / "handles"
+        / f"handles_{input_date.date().isoformat()}.jsonl"
+    )
+    if not path.is_file():
+        raise click.ClickException(f"Handle file does not exist: {path}")
+    return (path,)
 
 
 # retry command

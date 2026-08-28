@@ -36,11 +36,10 @@ stable ordering and provenance.
 piddi --config custom.toml harvest
 
 # raw JSONL -> project-scoped Handle JSONL only
-piddi --config custom.toml map outputs/dump/dump_messages_2026-08-27.jsonl
+piddi --config custom.toml map --project cmip6 --date 2026-08-27
 
 # Handle JSONL -> REST Handle Service
-piddi --config custom.toml publish --project cmip6 \
-  outputs/cmip6/handles/handles_2026-08-27.jsonl
+piddi --config custom.toml publish --project cmip6 --date 2026-08-27
 
 # Kafka -> raw JSONL -> Handle JSONL (default production ingestion)
 piddi --config custom.toml consume
@@ -52,6 +51,13 @@ piddi --config custom.toml consume --publish
 `map` accepts files or directories plus `--project`, `--all-projects`,
 `--limit`, `--offset`, and `--force`. It never contacts Kafka or a Handle
 Service and does not modify its input dumps.
+
+The `--date YYYY-MM-DD` convenience resolves the standard configured file:
+`map` uses `dump/dump_messages_<date>.jsonl`, while `publish` requires a project
+and uses `<project>/handles/handles_<date>.jsonl`. Explicit paths remain
+available for both commands. A path and `--date` are mutually exclusive; if
+neither is supplied, the command fails instead of guessing today, latest, or
+all files.
 
 `publish --project NAME` validates every selected Handle before publishing and
 stops without sending anything if a project is missing or different. Plain
