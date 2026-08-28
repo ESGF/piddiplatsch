@@ -11,7 +11,7 @@ def get_lookup() -> AbstractLookup:
     """
 
     # Check for config-based disable flag
-    if not config.get("lookup", "enabled", True):
+    if not config.get("lookup", "enabled", False):
         return DummyLookup()
 
     backend = config.get("lookup", "backend", "stac").lower()

@@ -22,13 +22,13 @@ piddi --config custom.toml config show
 | `consumer.transient` | `stop_on_skip` | Stop after a transient external failure unless `--force` is used. |
 | `consumer.transient` | `retries` | Number of retries for transient STAC patch retrieval. |
 | `consumer.transient` | `backoff_initial`, `backoff_max` | Exponential retry delay bounds in seconds. |
-| `consumer.transient` | `preflight_stac` | Probe the configured STAC service before consuming. |
+| `consumer.transient` | `preflight_stac` | Probe the configured STAC service before consuming; disabled by default. |
 | `handle` | `backend` | `rest` for publication or legacy `pyhandle`; both always write JSONL first. |
 | `handle` | `server_url`, `prefix`, `username`, `password` | Handle service connection and credentials. |
 | `handle` | `verify_https` | Verify Handle service TLS certificates; defaults to `true`. Setting it to `false` suppresses repeated urllib3 insecure-request warnings. |
 | `handle` | `timeout` | Per-request Handle REST timeout in seconds; defaults to `10`. |
-| `stac` | `base_url`, `timeout`, `collection` | STAC lookup and patch retrieval settings. |
-| `lookup` | `enabled`, `backend` | Enable version lookup using `stac` or `es`. |
+| `stac` | `base_url`, `timeout`, `collection` | Optional STAC lookup and patch retrieval settings; no remote URL is configured by default. |
+| `lookup` | `enabled`, `backend` | Enable version lookup using `stac` or `es`; disabled by default. |
 | `elasticsearch` | `base_url`, `index` | Elasticsearch lookup settings when `lookup.backend = "es"`. |
 | `schema` | `strict_mode` | Reject incomplete or unsupported records; defaults to `true`. |
 | `plugins.<name>` | `landing_page_url`, `max_parts`, `excluded_asset_keys` | Project-specific Handle-record behavior. |

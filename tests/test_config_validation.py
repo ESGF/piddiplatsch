@@ -1,6 +1,8 @@
 from piddiplatsch.config import config
-from piddiplatsch.config.schema import validate_config
+from piddiplatsch.config.schema import LookupConfig, validate_config
 from piddiplatsch.core.models import strict_mode
+from piddiplatsch.lookup.api import get_lookup
+from piddiplatsch.lookup.base import DummyLookup
 
 
 def _base_config():
@@ -16,6 +18,16 @@ def _base_config():
         # Disable lookups unless explicitly tested
         "lookup": {"enabled": False},
     }
+
+
+def test_lookup_is_disabled_by_default():
+    assert LookupConfig().enabled is False
+
+
+def test_lookup_without_enabled_flag_uses_dummy_backend():
+    config._set("lookup", None, {})
+
+    assert isinstance(get_lookup(), DummyLookup)
 
 
 def test_jsonl_is_not_a_selectable_publication_backend():

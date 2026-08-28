@@ -36,8 +36,8 @@ retries = 3
 # Exponential backoff for transient retries (seconds).
 backoff_initial = 0.5  # seconds
 backoff_max = 5.0      # seconds cap
-# Probe STAC health at startup; if unhealthy and not forced, exit early (fail-fast).
-preflight_stac = true
+# Probe STAC health at startup when remote STAC integration is enabled.
+preflight_stac = false
 
 [kafka]
 # Kafka client configuration. Environment overrides recommended for brokers and group.
@@ -73,8 +73,8 @@ verify_https = true
 timeout = 10
 
 [stac]
-# Remote STAC API base URL; omit to use local/dummy client.
-base_url = "https://api.stac.esgf.ceda.ac.uk"
+# Remote STAC integration is opt-in. Set a base URL in a site configuration.
+# base_url = "https://api.stac.esgf.ceda.ac.uk"
 timeout = 10  # seconds
 collection = "cmip6"
 
@@ -118,7 +118,7 @@ excluded_asset_keys = ["reference_file", "globus", "thumbnail", "quicklook"]
 [lookup]
 # Lookup backend: "stac" (requires stac.base_url) or "es" (requires elasticsearch.base_url).
 backend = "stac"
-enabled = true
+enabled = false
 
 [stats]
 # Log interval (seconds) for console/DB reporters.
