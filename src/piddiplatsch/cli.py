@@ -23,7 +23,7 @@ CONTEXT_SETTINGS = {"help_option_names": ["-h", "--help"]}
 @click.version_option()
 @click.option("-c", "--config", "config_file", type=click.Path(), help="Path to custom config TOML file.")
 @click.option("--debug", is_flag=True, help="Enable debug logging.")
-@click.option("-v", "--verbose", is_flag=True, help="Show progress bar.")
+@click.option("-v", "--verbose", is_flag=True, help="Show progress information.")
 @click.option(
     "-l",
     "--log",
@@ -41,9 +41,11 @@ def cli(ctx: click.Context, config_file: str | None, debug: bool, verbose: bool,
     config.configure_logging(debug=debug, log=log)
 
 
+# command consume
+
+
 @cli.command()
 @click.option("--publish", is_flag=True, help="Also publish mapped Handles immediately; JSONL is always written first.")
-@click.option("--force", is_flag=True, help="Continue on transient external failures (e.g., STAC down).")
 @click.option(
     "--project",
     "projects",
@@ -51,6 +53,7 @@ def cli(ctx: click.Context, config_file: str | None, debug: bool, verbose: bool,
     help="Project plugin to run; repeat to select several (overrides config).",
 )
 @click.option("--all-projects", is_flag=True, help="Run all registered project plugins (overrides config).")
+@click.option("--force", is_flag=True, help="Continue on transient external failures (e.g., STAC down).")
 @click.pass_context
 def consume(ctx: click.Context, publish: bool, force: bool, projects: tuple[str, ...], all_projects: bool) -> None:
     """Harvest and map Kafka messages, deferring publication by default."""
@@ -63,11 +66,17 @@ def consume(ctx: click.Context, publish: bool, force: bool, projects: tuple[str,
     ).execute()
 
 
+# command harvest
+
+
 @cli.command("harvest")
 @click.pass_context
 def harvest(ctx: click.Context) -> None:
     """Harvest Kafka messages into raw JSONL without mapping."""
     HarvestCommand(verbose=ctx.obj["verbose"]).execute()
+
+
+# command map
 
 
 @cli.command("map")
@@ -118,6 +127,9 @@ def map_messages(
     ).execute()
 
 
+# command publish
+
+
 @cli.command("publish")
 @click.argument("path", type=click.Path(exists=True, path_type=Path), nargs=-1, required=False)
 @click.option(
@@ -126,6 +138,7 @@ def map_messages(
     type=click.DateTime(formats=["%Y-%m-%d"]),
     help="Publish this project's Handle file for the given date.",
 )
+@click.option("--project", help="Validate that every selected Handle belongs to this project.")
 @click.option("--limit", type=click.IntRange(min=1), help="Stop after attempting this many handles in total.")
 @click.option(
     "--offset",
@@ -155,7 +168,6 @@ def map_messages(
     show_default=True,
     help="Publish different handles concurrently; updates to one handle stay ordered.",
 )
-@click.option("--project", help="Validate that every selected Handle belongs to this project.")
 @click.pass_context
 def publish(
     ctx: click.Context,
@@ -174,7 +186,7 @@ def publish(
     Handle REST client publishes with overwrite enabled.
     """
     PublishCommand(
-        verbose=ctx.obj.get("verbose", False),
+        verbose=ctx.obj["verbose"],
         paths=path,
         input_date=input_date,
         limit=limit,
@@ -186,6 +198,9 @@ def publish(
     ).execute()
 
 
+# command retry
+
+
 @cli.command("retry")
 @click.argument("path", type=click.Path(exists=True, path_type=Path), nargs=-1, required=True)
 @click.option("--delete-after", is_flag=True, help="Delete files after successful retry.")
@@ -195,20 +210,25 @@ def retry(ctx: click.Context, path: tuple[Path, ...], delete_after: bool, dry_ru
     """Retry failed items from failure .jsonl file(s) or directory.
 
     Accepts multiple arguments:
-    - Individual files: retry file1.jsonl file2.jsonl
-    - Directories: retry outputs/failures/r0/
-    - Glob patterns: retry outputs/failures/r0/*.jsonl
+
+    \b
+      Individual files: retry file1.jsonl file2.jsonl
+      Directories: retry outputs/failures/r0/
+      Glob patterns: retry outputs/failures/r0/*.jsonl
 
     Internals: This command uses `RetryRunner` to aggregate results across
     inputs, invoke the processing pipeline, and optionally remove source files
     when `--delete-after` is set and all items succeed.
     """
     RetryCommand(
-        verbose=ctx.obj.get("verbose", False),
+        verbose=ctx.obj["verbose"],
         paths=path,
         delete_after=delete_after,
         dry_run=dry_run,
     ).execute()
+
+
+# command config
 
 
 @cli.group(name="config")
@@ -216,10 +236,16 @@ def config_cmd() -> None:
     """Configuration commands."""
 
 
+# command config validate
+
+
 @config_cmd.command("validate")
 def config_validate() -> None:
     """Validate the loaded configuration file and defaults."""
     ConfigValidateCommand().execute()
+
+
+# command config show
 
 
 @config_cmd.command("show")
@@ -229,10 +255,10 @@ def config_validate() -> None:
     type=click.Choice(["toml", "json"], case_sensitive=False),
     default="toml",
     show_default=True,
-    help="Output format",
+    help="Output format.",
 )
-@click.option("--section", type=str, help="Show only a specific section")
-@click.option("--key", type=str, help="Show a specific key within section")
+@click.option("--section", type=str, help="Show only a specific section.")
+@click.option("--key", type=str, help="Show a specific key within section.")
 def config_show(fmt: str, section: str | None, key: str | None) -> None:
     """Print the effective configuration (defaults + overrides)."""
     ConfigShowCommand(fmt=fmt, section=section, key=key).execute()

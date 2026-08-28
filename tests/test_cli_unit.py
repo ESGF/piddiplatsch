@@ -727,3 +727,11 @@ class TestCLIOptions:
 
         runner.invoke(cli, ["--config", str(config_file), "consume"])
         assert mock_start_consumer.called
+
+
+class TestConfigCommand:
+    def test_show_key_requires_section(self, runner):
+        result = runner.invoke(cli, ["config", "show", "--key", "topic"])
+
+        assert result.exit_code == 2
+        assert "--key requires --section" in result.output

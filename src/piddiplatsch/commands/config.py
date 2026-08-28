@@ -37,6 +37,8 @@ class ConfigShowCommand(Command):
     key: str | None = None
 
     def execute(self) -> None:
+        if self.key and not self.section:
+            raise click.UsageError("--key requires --section")
         if self.section and self.key:
             value = config.get(self.section, self.key)
             if value is None:
