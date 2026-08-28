@@ -60,8 +60,8 @@ All additional keys under `[kafka]` are passed to `confluent-kafka`. Dotted
 librdkafka keys must be quoted in TOML, for example
 `"bootstrap.servers" = "broker:9092"`.
 
-Use `etc/observe.toml` for safe exploration and `etc/esgf-example.toml` as a
-starting point for authenticated ESGF Kafka settings.
+Use `etc/esgf-example.toml` as a starting point for authenticated ESGF Kafka
+settings.
 
 Select projects in configuration:
 

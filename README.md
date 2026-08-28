@@ -102,24 +102,6 @@ piddi --config custom.toml harvest
 piddi --config custom.toml map --date 2026-08-27
 ```
 
-### Observe Mode (Example)
-
-For exploratory runs without external dependencies, use the relaxed example config:
-
-```bash
-#copy and run locally
-cp etc/observe.toml .
-piddi --config observe.toml consume --force
-```
-
-What this does:
-- no external Handle Service calls
-- records written to `outputs/<plugin>/handles/` as JSONL
-- continues through transient skips (`--force`)
-- dumps every incoming message to `outputs/dump/` before plugin filtering
-
-See the configuration at [etc/observe.toml](etc/observe.toml).
-
 ### Deferred Handle publication
 
 The Kafka consumer writes prepared Handles to daily JSONL files while a

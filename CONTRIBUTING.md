@@ -52,20 +52,6 @@ explicit publication (or use the local Docker stack for smoke tests).
 before plugin routing. Plain `consume` writes Handle JSONL without contacting a
 Handle Service.
 
-### Observe Mode Example
-
-For exploratory runs without real Handle writes:
-
-```bash
-cp etc/observe.toml .
-piddi --config observe.toml consume --force
-```
-
-This configuration:
-- Sets `consumer.max_errors=1000` and `stop_on_skip=false` to keep processing
-- Uses the default deferred `consume` mode for JSONL-only Handle output
-- Disables strict schema checks (`schema.strict_mode=false`)
-
 ### Config Validation
 
 Validate the loaded configuration (defaults merged with `--config file`). Structural checks only; exits non-zero on errors:
