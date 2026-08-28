@@ -14,10 +14,14 @@ class RecordingHandleBackend:
         backend: HandleBackend,
         *,
         project: str | None = None,
+        handle_profile: str | None = None,
         recorder: JsonlHandleBackend | None = None,
     ) -> None:
         self.backend = backend
-        self.recorder = recorder or JsonlHandleBackend(project=project)
+        self.recorder = recorder or JsonlHandleBackend(
+            project=project,
+            handle_profile=handle_profile,
+        )
         self.prefix = getattr(backend, "prefix", None)
 
     def add(self, pid: str, record: dict[str, Any]) -> Any:

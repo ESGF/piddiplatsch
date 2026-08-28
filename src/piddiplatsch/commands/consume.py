@@ -14,6 +14,7 @@ class ConsumeCommand(KafkaCommand):
     force: bool = False
     projects: tuple[str, ...] = ()
     all_projects: bool = False
+    handle_profile: str | None = None
 
     def execute(self) -> None:
         self.run_consumer(
@@ -21,4 +22,5 @@ class ConsumeCommand(KafkaCommand):
             projects=select_projects(self.projects, self.all_projects),
             dry_run=not self.publish,
             force=self.force,
+            handle_profile=self.handle_profile,
         )

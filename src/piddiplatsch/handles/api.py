@@ -27,10 +27,12 @@ class HandleAPI(HandleAPIProtocol):
         *,
         dry_run: bool = False,
         project: str | None = None,
+        handle_profile: str | None = None,
     ):
         self.backend: HandleAPIProtocol = backend or get_handle_backend(
             dry_run=dry_run,
             project=project,
+            handle_profile=handle_profile,
         )
 
     def add(self, pid: str, record: dict[str, Any]) -> None:
@@ -44,11 +46,12 @@ class HandleAPI(HandleAPIProtocol):
 def get_handle_backend(
     dry_run: bool = False,
     project: str | None = None,
+    handle_profile: str | None = None,
 ) -> HandleAPIProtocol:
     """
     Return a HandleBackend based on configuration.
 
-    Config keys expected in [handle] section:
+    Config keys expected in the project's ``[handles.profiles.*]`` section:
       backend = "rest" | "pyhandle"
 
     Both publication backends are wrapped by the immutable JSONL audit
@@ -56,23 +59,30 @@ def get_handle_backend(
     """
     if dry_run:
         logging.warning("Dry-run enabled: using JSONL handle backend")
-        return JsonlHandleBackend(project=project)
+        return JsonlHandleBackend(project=project, handle_profile=handle_profile)
 
-    backend_type: Literal["rest", "pyhandle"] = config.get(
-        "handle", "backend", fallback="rest"
+    handle_config = config.get_handle(project=project, profile=handle_profile)
+    backend_type: Literal["rest", "pyhandle"] = handle_config.get("backend", "rest")
+    profile = handle_profile or config.get_handle_profile(project)
+    logging.warning(
+        "Using Handle backend: %s (project=%s profile=%s)",
+        backend_type,
+        project or "default",
+        profile or "legacy",
     )
-    logging.warning(f"Using handle backend: {backend_type}")
 
     if backend_type == "rest":
         return RecordingHandleBackend(
-            RestHandleClient.from_config(),
+            RestHandleClient.from_config(project=project, profile=handle_profile),
             project=project,
+            handle_profile=handle_profile,
         )
 
     if backend_type == "pyhandle":
         return RecordingHandleBackend(
-            HandleClient.from_config(),
+            HandleClient.from_config(project=project, profile=handle_profile),
             project=project,
+            handle_profile=handle_profile,
         )
 
     raise ValueError(f"Unknown handle backend type: {backend_type}")

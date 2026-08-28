@@ -18,10 +18,17 @@ class JsonlHandleBackend(HandleBackend):
        "timestamp": "<ISO8601>", "project": "<plugin>"}
     """
 
-    def __init__(self, project: str | None = None):
+    def __init__(
+        self,
+        project: str | None = None,
+        handle_profile: str | None = None,
+    ):
         # Read output_dir from [consumer] section, fallback to outputs
         base_dir = config.get("consumer", {}).get("output_dir", "outputs")
         self.project = project
+        self.prefix = config.get_handle(project=project, profile=handle_profile).get(
+            "prefix", ""
+        )
         dump_dir = Path(base_dir)
         if project:
             dump_dir /= project

@@ -119,6 +119,7 @@ class StacProjectProcessor(BaseProcessor):
             item,
             exclude_keys=self.excluded_asset_keys,
             additional_attributes={"publication_time": metadata.get("time")},
+            handle_profile=self.handle_profile,
         )
         record.validate()
         result.num_handles, result.handle_processing_time = self._add_records_from_item(
@@ -205,7 +206,11 @@ class StacProjectProcessor(BaseProcessor):
             for asset_key in assets:
                 if asset_key in excluded:
                     continue
-                asset_record = self.file_record(item, asset_key)
+                asset_record = self.file_record(
+                    item,
+                    asset_key,
+                    handle_profile=self.handle_profile,
+                )
                 try:
                     asset_record.validate()
                 except ValueError as exc:

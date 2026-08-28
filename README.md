@@ -102,30 +102,14 @@ piddi --config custom.toml harvest
 piddi --config custom.toml map --date 2026-08-27
 ```
 
-### Observe Mode (Example)
-
-For exploratory runs without external dependencies, use the relaxed example config:
-
-```bash
-#copy and run locally
-cp etc/observe.toml .
-piddi --config observe.toml consume --force
-```
-
-What this does:
-- no external Handle Service calls
-- records written to `outputs/<plugin>/handles/` as JSONL
-- continues through transient skips (`--force`)
-- dumps every incoming message to `outputs/dump/` before plugin filtering
-
-See the configuration at [etc/observe.toml](etc/observe.toml).
-
 ### Deferred Handle publication
 
 The Kafka consumer writes prepared Handles to daily JSONL files while a
 separate command publishes a closed file later. JSONL audit files are also
 always written before direct `rest` or `pyhandle` publication. Configure the
-REST server and credentials in the same local configuration file.
+Each project selects a named Handle profile containing its REST server, prefix,
+and credentials. Keep site profiles and secrets in the same ignored local
+configuration file.
 
 For example, publish all project files from yesterday:
 

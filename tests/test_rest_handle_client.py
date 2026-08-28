@@ -162,7 +162,8 @@ def test_handle_backend_factory_selects_rest(monkeypatch):
     sentinel = object()
     config._set("handle", "backend", "rest")
     monkeypatch.setattr(
-        "piddiplatsch.handles.api.RestHandleClient.from_config", lambda: sentinel
+        "piddiplatsch.handles.api.RestHandleClient.from_config",
+        lambda **_kwargs: sentinel,
     )
 
     backend = get_handle_backend()
@@ -174,7 +175,8 @@ def test_handle_backend_factory_defaults_to_rest(monkeypatch):
     sentinel = object()
     config._set("handle", None, {"prefix": "21.TEST"})
     monkeypatch.setattr(
-        "piddiplatsch.handles.api.RestHandleClient.from_config", lambda: sentinel
+        "piddiplatsch.handles.api.RestHandleClient.from_config",
+        lambda **_kwargs: sentinel,
     )
 
     backend = get_handle_backend()
@@ -186,10 +188,42 @@ def test_handle_backend_factory_keeps_pyhandle(monkeypatch):
     sentinel = object()
     config._set("handle", "backend", "pyhandle")
     monkeypatch.setattr(
-        "piddiplatsch.handles.api.HandleClient.from_config", lambda: sentinel
+        "piddiplatsch.handles.api.HandleClient.from_config",
+        lambda **_kwargs: sentinel,
     )
 
     backend = get_handle_backend()
     assert isinstance(backend, RecordingHandleBackend)
     assert backend.backend is sentinel
     assert HandleClient is not RestHandleClient
+
+
+def test_rest_client_uses_project_handle_profile():
+    config._set("handle", None, {})
+    config._set(
+        "handles",
+        None,
+        {
+            "default": "mock",
+            "profiles": {
+                "mock": {
+                    "server_url": "http://localhost:8000",
+                    "prefix": "21.TEST",
+                    "username": "mock-user",
+                    "password": "mock-password",
+                },
+                "dkrz-test": {
+                    "server_url": "https://handles.example.test",
+                    "prefix": "21.T14995",
+                    "username": "dkrz-user",
+                    "password": "dkrz-password",
+                },
+            },
+        },
+    )
+    config._set("plugins", None, {"cmip6": {"handle": "dkrz-test"}})
+
+    client = RestHandleClient.from_config(project="cmip6")
+
+    assert client.server_url == "https://handles.example.test"
+    assert client.prefix == "21.T14995"

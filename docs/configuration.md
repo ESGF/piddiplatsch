@@ -23,14 +23,16 @@ piddi --config custom.toml config show
 | `consumer.transient` | `retries` | Number of retries for transient STAC patch retrieval. |
 | `consumer.transient` | `backoff_initial`, `backoff_max` | Exponential retry delay bounds in seconds. |
 | `consumer.transient` | `preflight_stac` | Probe the configured STAC service before consuming; disabled by default. |
-| `handle` | `backend` | `rest` for publication or legacy `pyhandle`; both always write JSONL first. |
-| `handle` | `server_url`, `prefix`, `username`, `password` | Handle service connection and credentials. |
-| `handle` | `verify_https` | Verify Handle service TLS certificates; defaults to `true`. Setting it to `false` suppresses repeated urllib3 insecure-request warnings. |
-| `handle` | `timeout` | Per-request Handle REST timeout in seconds; defaults to `10`. |
+| `handles` | `default` | Handle profile used when a project does not select one explicitly. |
+| `handles.defaults` | `backend`, `verify_https`, `timeout` | Common values inherited by every named Handle profile. |
+| `handles.profiles.<name>` | `backend` | `rest` for publication or legacy `pyhandle`; both always write JSONL first. |
+| `handles.profiles.<name>` | `server_url`, `prefix`, `username`, `password` | Connection and credentials for one Handle service. |
+| `handles.profiles.<name>` | `verify_https`, `timeout` | TLS verification and per-request timeout for one Handle service. |
 | `stac` | `base_url`, `timeout`, `collection` | Optional STAC lookup and patch retrieval settings; no remote URL is configured by default. |
 | `lookup` | `enabled`, `backend` | Enable version lookup using `stac` or `es`; disabled by default. |
 | `elasticsearch` | `base_url`, `index` | Elasticsearch lookup settings when `lookup.backend = "es"`. |
 | `schema` | `strict_mode` | Reject incomplete or unsupported records; defaults to `true`. |
+| `plugins.<name>` | `handle` | Named Handle profile used by this project. |
 | `plugins.<name>` | `landing_page_url`, `max_parts`, `excluded_asset_keys` | Project-specific Handle-record behavior. |
 | `stats` | `interval_seconds`, `summary_interval` | Statistics reporting intervals. |
 | `stats` | `enable_db`, `db_path` | Optional SQLite statistics reporter. |
@@ -40,13 +42,28 @@ the project-scoped Handle JSONL file before contacting the service. This audit
 output is not optional; `[consumer].output_dir` controls its root directory.
 
 `piddi publish` always uses the REST Handle client, independently of the
-configured `handle.backend`. The Kafka consumer always records prepared Handles
-to project-scoped JSONL before publishing through either `rest` or `pyhandle`.
+profile's configured `backend`. The Kafka consumer always records prepared
+Handles to project-scoped JSONL before publishing through either `rest` or `pyhandle`.
 Plain `consume` writes JSONL without contacting a Handle service; add
 `--publish` only when immediate publication is intended. The deferred command
-publishes closed daily files using the configured
+publishes closed daily files using the project's selected profile and its
 `server_url`, `prefix`, `username`, `password`, TLS verification, and timeout
-settings.
+settings. A deferred batch containing multiple projects is rejected; publish
+each project's JSONL separately so server selection is unambiguous.
+
+## Multiple Handle servers
+
+Each named profile inherits `[handles.defaults]` and overrides those values
+with its own table. All projects inherit `[handles].default`. A project may select another named
+profile with `plugins.<name>.handle`, and `--handle-profile NAME` temporarily
+overrides both settings for `consume`, `map`, `publish`, or `retry`. Existing
+Handle files retain their mapped prefix, so publication still rejects an
+override whose prefix does not match the records.
+
+Keep real credentials in an ignored local override. Configuration examples can
+live under `etc/`. The legacy single
+`[handle]` table remains supported temporarily and overrides named profiles,
+but new configuration should use `[handles.profiles.<name>]`.
 
 Every successful publication writes an INFO entry to the configured `--log`
 file (`pid.log` by default). The entry identifies whether the server created or
@@ -60,8 +77,8 @@ All additional keys under `[kafka]` are passed to `confluent-kafka`. Dotted
 librdkafka keys must be quoted in TOML, for example
 `"bootstrap.servers" = "broker:9092"`.
 
-Use `etc/observe.toml` for safe exploration and `etc/esgf-example.toml` as a
-starting point for authenticated ESGF Kafka settings.
+Use `etc/esgf-example.toml` as a starting point for authenticated ESGF Kafka
+settings.
 
 Select projects in configuration:
 

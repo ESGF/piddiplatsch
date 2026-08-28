@@ -18,6 +18,7 @@ class RetryCommand(Command):
     paths: tuple[Path, ...]
     delete_after: bool = False
     dry_run: bool = False
+    handle_profile: str | None = None
 
     def execute(self) -> None:
         failure_dir = (
@@ -33,6 +34,7 @@ class RetryCommand(Command):
             failure_dir=failure_dir,
             delete_after=self.delete_after,
             dry_run=self.dry_run,
+            handle_profile=self.handle_profile,
         )
         with progress:
             result = runner.run_batch(

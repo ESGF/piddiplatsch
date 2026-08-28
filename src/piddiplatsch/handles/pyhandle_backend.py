@@ -20,6 +20,11 @@ class HandleClient(HandleBackend):
         password: str,
         verify_https: bool = True,
     ):
+        self.server_url = server_url
+        self.prefix = prefix
+        self.username = username
+        self.password = password
+        self.verify_https = verify_https
         handle_cfg = {
             "client": "rest",
             "handle_server_url": server_url,
@@ -34,13 +39,19 @@ class HandleClient(HandleBackend):
         ).instantiate_with_credentials(cred)
 
     @classmethod
-    def from_config(cls) -> "HandleClient":
+    def from_config(
+        cls,
+        *,
+        project: str | None = None,
+        profile: str | None = None,
+    ) -> "HandleClient":
+        handle_config = config.get_handle(project=project, profile=profile)
         return cls(
-            server_url=config.get("handle", "server_url"),
-            prefix=config.get("handle", "prefix"),
-            username=config.get("handle", "username"),
-            password=config.get("handle", "password"),
-            verify_https=config.get("handle", "verify_https", True),
+            server_url=handle_config.get("server_url"),
+            prefix=handle_config.get("prefix"),
+            username=handle_config.get("username"),
+            password=handle_config.get("password"),
+            verify_https=handle_config.get("verify_https", True),
         )
 
     def _store(self, handle: str, handle_data: dict[str, Any]) -> None:

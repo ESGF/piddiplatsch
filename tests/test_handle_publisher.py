@@ -117,6 +117,42 @@ def test_publishes_prepared_records_without_changing_source(tmp_path):
     assert source.read_bytes() == original
 
 
+def test_configured_publisher_resolves_backend_from_input_project(
+    tmp_path, monkeypatch
+):
+    source = tmp_path / "handles.jsonl"
+    write_jsonl(source, [handle_record("abc", project="cmip6")])
+    backend = FakeBackend()
+    selected = []
+
+    def from_config(*, project=None, profile=None):
+        selected.append((project, profile))
+        return backend
+
+    monkeypatch.setattr(
+        "piddiplatsch.handles.publish.RestHandleClient.from_config", from_config
+    )
+
+    result = HandlePublisher().run([source], handle_profile="dkrz-test")
+
+    assert result.succeeded == 1
+    assert selected == [("cmip6", "dkrz-test")]
+
+
+def test_configured_publisher_rejects_mixed_project_batch(tmp_path):
+    source = tmp_path / "handles.jsonl"
+    write_jsonl(
+        source,
+        [
+            handle_record("one", project="cmip6"),
+            handle_record("two", project="cmip7"),
+        ],
+    )
+
+    with pytest.raises(ValueError, match="multiple projects"):
+        HandlePublisher().run([source])
+
+
 def test_logs_each_publication_and_summary(tmp_path, caplog):
     source = tmp_path / "handles.jsonl"
     write_jsonl(

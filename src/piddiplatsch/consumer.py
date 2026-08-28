@@ -37,6 +37,7 @@ def build_processing_target(
     processor=None,
     projects: list[str] | tuple[str, ...] | str | None = None,
     dry_run: bool = False,
+    handle_profile: str | None = None,
 ):
     """Build a project router or use an explicitly supplied processing object."""
     if processor is not None and projects is not None:
@@ -48,7 +49,11 @@ def build_processing_target(
             )
         return processor
     selection = configured_projects() if projects is None else projects
-    return ProjectRouter(selection, dry_run=dry_run)
+    return ProjectRouter(
+        selection,
+        dry_run=dry_run,
+        handle_profile=handle_profile,
+    )
 
 
 class StopCause(StrEnum):
@@ -307,12 +312,14 @@ def feed_messages_direct(
     force: bool = False,
     verbose: bool = False,
     progress: BaseProgress | None = None,
+    handle_profile: str | None = None,
 ) -> FeedResult:
     consumer = DirectConsumer(messages)
     target = build_processing_target(
         processor=processor,
         projects=projects,
         dry_run=dry_run,
+        handle_profile=handle_profile,
     )
     pipeline = ConsumerPipeline(
         consumer,
@@ -360,6 +367,7 @@ def map_dump_files(
     force: bool = False,
     verbose: bool = False,
     progress: BaseProgress | None = None,
+    handle_profile: str | None = None,
 ) -> FeedResult:
     """Map saved raw-message JSONL through project plugins without Kafka."""
     if limit is not None and limit < 1:
@@ -391,7 +399,11 @@ def map_dump_files(
     if not messages:
         return FeedResult()
 
-    target = build_processing_target(projects=projects, dry_run=True)
+    target = build_processing_target(
+        projects=projects,
+        dry_run=True,
+        handle_profile=handle_profile,
+    )
     if not force:
         target.preflight_check(stop_on_transient_skip=True)
     return feed_messages_direct(
@@ -401,6 +413,7 @@ def map_dump_files(
         force=force,
         verbose=verbose,
         progress=progress,
+        handle_profile=handle_profile,
     )
 
 
@@ -437,6 +450,7 @@ def start_consumer(
     force: bool = False,
     progress: BaseProgress | None = None,
     idle_timeout: float | None = None,
+    handle_profile: str | None = None,
 ):
     # Initialize stats from the fully loaded configuration for this run.
     stats_config = config.get("stats", {})
@@ -455,6 +469,7 @@ def start_consumer(
         processor=processor,
         projects=projects,
         dry_run=dry_run,
+        handle_profile=handle_profile,
     )
     # Optional STAC preflight
     try:

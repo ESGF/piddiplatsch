@@ -52,14 +52,20 @@ class RestHandleClient(HandleBackend):
         self._thread_local = threading.local()
 
     @classmethod
-    def from_config(cls) -> RestHandleClient:
+    def from_config(
+        cls,
+        *,
+        project: str | None = None,
+        profile: str | None = None,
+    ) -> RestHandleClient:
+        handle_config = config.get_handle(project=project, profile=profile)
         return cls(
-            server_url=config.get("handle", "server_url"),
-            prefix=config.get("handle", "prefix"),
-            username=config.get("handle", "username"),
-            password=config.get("handle", "password"),
-            verify_https=config.get("handle", "verify_https", True),
-            timeout=config.get("handle", "timeout", 10.0),
+            server_url=handle_config.get("server_url"),
+            prefix=handle_config.get("prefix"),
+            username=handle_config.get("username"),
+            password=handle_config.get("password"),
+            verify_https=handle_config.get("verify_https", True),
+            timeout=handle_config.get("timeout", 10.0),
         )
 
     def _store(self, handle: str, handle_data: dict[str, Any]) -> HandleWriteResult:

@@ -71,6 +71,50 @@ class Config:
             return merged.get(key, fallback)
         return merged
 
+    def get_handle_profile(self, project: str | None = None) -> str | None:
+        """Return the named Handle profile selected for a project.
+
+        A legacy ``[handle]`` section has no profile name and takes precedence
+        when present so existing site configuration keeps working during the
+        migration to ``[handles.profiles.*]``.
+        """
+        if self.config_data.get("handle"):
+            return None
+        handles = self.config_data.get("handles", {}) or {}
+        selected = self.get_plugin(project, "handle") if project else None
+        return selected or handles.get("default")
+
+    def get_handle(
+        self, project: str | None = None, profile: str | None = None
+    ) -> dict:
+        """Resolve one Handle server configuration.
+
+        Projects select profiles with ``plugins.<project>.handle``. Callers may
+        explicitly select a profile, otherwise ``handles.default`` is used.
+        """
+        legacy = self.config_data.get("handle")
+        if legacy:
+            return legacy
+
+        handles = self.config_data.get("handles", {}) or {}
+        selected = profile or self.get_handle_profile(project)
+        if not selected:
+            raise ValueError(
+                "No Handle profile selected; set [handles].default or "
+                "[plugins.<project>].handle"
+            )
+        profiles = handles.get("profiles", {}) or {}
+        try:
+            profile_config = profiles[selected]
+        except KeyError as exc:
+            raise ValueError(f"Unknown Handle profile {selected!r}") from exc
+        if not isinstance(profile_config, dict):
+            raise ValueError(f"Handle profile {selected!r} must be a table")
+        defaults = handles.get("defaults", {}) or {}
+        if not isinstance(defaults, dict):
+            raise ValueError("[handles.defaults] must be a table")
+        return {**defaults, **profile_config}
+
     def configure_logging(self, debug: bool = False, log: str | None = None):
         log_level = logging.DEBUG if debug else logging.INFO
 

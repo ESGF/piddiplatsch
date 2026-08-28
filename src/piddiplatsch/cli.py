@@ -70,6 +70,10 @@ def cli(
     help="Run all registered project plugins (overrides config).",
 )
 @click.option(
+    "--handle-profile",
+    help="Override the configured Handle profile for this command.",
+)
+@click.option(
     "--force",
     is_flag=True,
     help="Continue on transient external failures (e.g., STAC down).",
@@ -81,6 +85,7 @@ def consume(
     force: bool,
     projects: tuple[str, ...],
     all_projects: bool,
+    handle_profile: str | None,
 ) -> None:
     """Harvest and map Kafka messages, deferring publication by default."""
     ConsumeCommand(
@@ -89,6 +94,7 @@ def consume(
         force=force,
         projects=projects,
         all_projects=all_projects,
+        handle_profile=handle_profile,
     ).execute()
 
 
@@ -134,6 +140,10 @@ def harvest(ctx: click.Context, idle_timeout: float) -> None:
     help="Run all registered project plugins (overrides config).",
 )
 @click.option(
+    "--handle-profile",
+    help="Override the configured Handle profile for this command.",
+)
+@click.option(
     "--limit",
     type=click.IntRange(min=1),
     help="Stop after mapping this many dumped messages in total.",
@@ -160,6 +170,7 @@ def map_messages(
     limit: int | None,
     offset: int,
     force: bool,
+    handle_profile: str | None,
 ) -> None:
     """Map raw message JSONL through plugins into Handle JSONL."""
     MapCommand(
@@ -171,6 +182,7 @@ def map_messages(
         limit=limit,
         offset=offset,
         force=force,
+        handle_profile=handle_profile,
     ).execute()
 
 
@@ -189,6 +201,10 @@ def map_messages(
 )
 @click.option(
     "--project", help="Validate that every selected Handle belongs to this project."
+)
+@click.option(
+    "--handle-profile",
+    help="Override the configured Handle profile for this command.",
 )
 @click.option(
     "--limit",
@@ -234,6 +250,7 @@ def publish(
     retry_delay: float,
     workers: int,
     project: str | None,
+    handle_profile: str | None,
 ) -> None:
     """Publish prepared handles from immutable JSONL FILE_OR_DIRECTORY inputs.
 
@@ -250,6 +267,7 @@ def publish(
         retry_delay=retry_delay,
         workers=workers,
         project=project,
+        handle_profile=handle_profile,
     ).execute()
 
 
@@ -268,9 +286,17 @@ def publish(
     is_flag=True,
     help="Write handles to JSONL without contacting Handle Service.",
 )
+@click.option(
+    "--handle-profile",
+    help="Override the configured Handle profile for this command.",
+)
 @click.pass_context
 def retry(
-    ctx: click.Context, path: tuple[Path, ...], delete_after: bool, dry_run: bool
+    ctx: click.Context,
+    path: tuple[Path, ...],
+    delete_after: bool,
+    dry_run: bool,
+    handle_profile: str | None,
 ) -> None:
     """Retry failed items from failure .jsonl file(s) or directory.
 
@@ -290,6 +316,7 @@ def retry(
         paths=path,
         delete_after=delete_after,
         dry_run=dry_run,
+        handle_profile=handle_profile,
     ).execute()
 
 

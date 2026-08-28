@@ -36,8 +36,9 @@ class CMIP6DatasetRecord(ProjectDatasetRecord, BaseCMIP6Record):
         item: dict[str, Any],
         exclude_keys: list[str] | None = None,
         additional_attributes: dict[str, Any] | None = None,
+        handle_profile: str | None = None,
     ) -> None:
-        super().__init__(item, exclude_keys, additional_attributes)
+        super().__init__(item, exclude_keys, additional_attributes, handle_profile)
         self.lookup = get_lookup()
 
     @cached_property

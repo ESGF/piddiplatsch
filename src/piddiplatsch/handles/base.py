@@ -20,11 +20,11 @@ class HandleBackend(ABC):
 
         Returns a dict of fields (including 'URL') or None if not found.
         """
-        handle = build_handle(pid)
+        handle = build_handle(pid, prefix=self.prefix)
         return self._retrieve(handle)
 
     def _prepare(self, pid: str, record: dict[str, Any]) -> tuple[str, dict[str, Any]]:
-        handle = build_handle(pid)
+        handle = build_handle(pid, prefix=self.prefix)
         handle_data = prepare_handle_data(record)
 
         if "URL" not in handle_data or not handle_data["URL"]:

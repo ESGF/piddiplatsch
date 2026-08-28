@@ -71,11 +71,13 @@ class ProjectRouter:
         projects: Iterable[str] | str,
         *,
         dry_run: bool = False,
+        handle_profile: str | None = None,
         processor_kwargs: dict[str, Any] | None = None,
     ) -> None:
         self.plugins = get_plugins(projects)
         kwargs = dict(processor_kwargs or {})
         kwargs.setdefault("dry_run", dry_run)
+        kwargs.setdefault("handle_profile", handle_profile)
         self.processors = {
             plugin.name: plugin.make_processor(**kwargs) for plugin in self.plugins
         }
