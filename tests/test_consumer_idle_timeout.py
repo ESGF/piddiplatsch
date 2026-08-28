@@ -1,5 +1,8 @@
 from unittest.mock import MagicMock, patch
 
+import pytest
+from confluent_kafka import KafkaException
+
 from piddiplatsch.consumer import KafkaConsumer
 
 
@@ -44,4 +47,19 @@ def test_kafka_consumer_resets_idle_timeout_after_message(consumer_cls):
 
     assert list(consumer.consume()) == [("key", {"value": 1})]
     assert client.poll.call_count == 2
+    client.close.assert_called_once_with()
+
+
+@patch("piddiplatsch.consumer.ConfluentConsumer")
+def test_kafka_consumer_fails_on_reported_error(consumer_cls):
+    error = MagicMock()
+    message = MagicMock()
+    message.error.return_value = error
+    client = consumer_cls.return_value
+    client.poll.return_value = message
+    consumer = KafkaConsumer("topic", {})
+
+    with pytest.raises(KafkaException):
+        next(consumer.consume())
+
     client.close.assert_called_once_with()

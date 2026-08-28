@@ -46,6 +46,8 @@ preflight_stac = false
 "auto.offset.reset" = "earliest"
 "enable.auto.commit" = true
 
+# Kafka-reported errors are fatal; the consumer exits instead of continuing.
+
 # Best practice for higher availability in librdkafka clients prior to 1.7.
 "session.timeout.ms" = 45000
 
