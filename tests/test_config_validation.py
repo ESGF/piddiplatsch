@@ -116,3 +116,102 @@ def test_schema_is_strict_by_default():
     config._set("schema", None, {})
 
     assert strict_mode() is True
+
+
+def test_named_handle_profiles_can_be_selected_per_project():
+    cfg = _base_config()
+    del cfg["handle"]
+    cfg["kafka"] = {"bootstrap.servers": "localhost:39092"}
+    cfg["handles"] = {
+        "default": "mock",
+        "profiles": {
+            "mock": {
+                "server_url": "http://localhost:8000",
+                "prefix": "21.TEST",
+                "username": "300:21.TEST/testuser",
+                "password": "testpass",
+            },
+            "dkrz-test": {
+                "server_url": "https://handles.example.test",
+                "prefix": "21.T14995",
+                "username": "300:21.T14995/tester",
+                "password": "secret",
+            },
+        },
+    }
+    cfg["plugins"] = {"cmip6": {"handle": "dkrz-test"}}
+
+    errors, _ = validate_config(cfg)
+
+    assert errors == []
+
+
+def test_project_rejects_unknown_handle_profile():
+    cfg = _base_config()
+    del cfg["handle"]
+    cfg["kafka"] = {"bootstrap.servers": "localhost:39092"}
+    cfg["handles"] = {
+        "default": "mock",
+        "profiles": {
+            "mock": {
+                "server_url": "http://localhost:8000",
+                "prefix": "21.TEST",
+                "username": "testuser",
+                "password": "testpass",
+            }
+        },
+    }
+    cfg["plugins"] = {"cmip6": {"handle": "missing"}}
+
+    errors, _ = validate_config(cfg)
+
+    assert any("unknown Handle profile 'missing'" in error for error in errors)
+
+
+def test_handle_profile_resolution_uses_project_selection():
+    config._set("handle", None, {})
+    config._set(
+        "handles",
+        None,
+        {
+            "default": "mock",
+            "defaults": {
+                "backend": "rest",
+                "verify_https": True,
+                "timeout": 10,
+            },
+            "profiles": {
+                "mock": {"prefix": "21.TEST"},
+                "dkrz-test": {"prefix": "21.T14995", "timeout": 20},
+            },
+        },
+    )
+    config._set("plugins", None, {"cmip6": {"handle": "dkrz-test"}})
+
+    assert config.get_handle(project="cmip6")["prefix"] == "21.T14995"
+    assert config.get_handle(project="cmip6")["backend"] == "rest"
+    assert config.get_handle(project="cmip6")["timeout"] == 20
+    assert config.get_handle(project="cmip7")["prefix"] == "21.TEST"
+    assert config.get_handle(project="cmip7")["timeout"] == 10
+
+
+def test_handle_profile_validation_applies_common_defaults():
+    cfg = _base_config()
+    del cfg["handle"]
+    cfg["kafka"] = {"bootstrap.servers": "localhost:39092"}
+    cfg["handles"] = {
+        "default": "mock",
+        "defaults": {
+            "backend": "rest",
+            "server_url": "http://localhost:8000",
+            "username": "testuser",
+            "password": "testpass",
+            "verify_https": True,
+            "timeout": 10,
+        },
+        "profiles": {"mock": {"prefix": "21.TEST"}},
+    }
+
+    errors, _ = validate_config(cfg)
+
+    assert errors == []

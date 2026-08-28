@@ -86,9 +86,10 @@ class HandlePublisher:
         *,
         sleep: Callable[[float], None] = time.sleep,
     ) -> None:
-        # Publication is deliberately independent of [handle].backend. This allows
-        # a consumer configured for JSONL output to use the same config file.
-        self.backend = backend or RestHandleClient.from_config()
+        # Publication always uses REST, independently of the selected profile's
+        # legacy backend setting. Configured clients are resolved lazily after
+        # the input project is known.
+        self.backend = backend
         self.sleep = sleep
         self.logger = logging.getLogger(__name__)
 
@@ -104,6 +105,7 @@ class HandlePublisher:
         progress_callback: ProgressCallback | None = None,
         result_file: Path | None = None,
         project: str | None = None,
+        handle_profile: str | None = None,
     ) -> PublishResult:
         if limit is not None and limit < 1:
             raise ValueError("limit must be at least 1")
@@ -161,6 +163,11 @@ class HandlePublisher:
             records,
             contexts,
             requested_project=project,
+        )
+        self._resolve_configured_backend(
+            contexts,
+            result.project,
+            handle_profile,
         )
         if total_records:
             result.result_file = result_file or self._new_result_file(result.project)
@@ -224,6 +231,27 @@ class HandlePublisher:
             offset,
         )
         return result
+
+    def _resolve_configured_backend(
+        self,
+        contexts: dict[int, _PublicationContext],
+        project: str | None,
+        handle_profile: str | None,
+    ) -> None:
+        if self.backend is not None:
+            return
+        projects = {
+            context.project for context in contexts.values() if context.project
+        }
+        if len(projects) > 1:
+            raise ValueError(
+                "Handle input contains multiple projects with potentially "
+                "different servers; publish each project separately"
+            )
+        self.backend = RestHandleClient.from_config(
+            project=project,
+            profile=handle_profile,
+        )
 
     def _log_publication(
         self,

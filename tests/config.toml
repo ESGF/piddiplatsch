@@ -17,8 +17,10 @@ preflight_stac = false
 "enable.auto.commit" = true
 "session.timeout.ms" = 45000
 
-[handle]
-backend = "rest"
+[handles]
+default = "mock"
+
+[handles.profiles.mock]
 server_url = "http://localhost:8000"
 prefix = "21.TEST"
 username = "300:21.TEST/testuser"

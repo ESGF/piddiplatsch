@@ -10,9 +10,16 @@ from multiformats import multihash
 from piddiplatsch.config import config
 
 
-def build_handle(pid: str, as_uri: bool = False) -> str:
+def build_handle(
+    pid: str,
+    as_uri: bool = False,
+    *,
+    prefix: str | None = None,
+    project: str | None = None,
+) -> str:
     scheme = "hdl"
-    prefix = config.get("handle", {}).get("prefix", "")
+    if prefix is None:
+        prefix = config.get_handle(project=project).get("prefix", "")
     if as_uri:
         handle = f"{scheme}:{prefix}/{pid}"
     else:

@@ -18,6 +18,7 @@ class MapCommand(FileBatchCommand):
     projects: tuple[str, ...] = ()
     all_projects: bool = False
     force: bool = False
+    handle_profile: str | None = None
 
     def execute(self) -> None:
         progress = self.progress(title="map", stream=True)
@@ -36,6 +37,7 @@ class MapCommand(FileBatchCommand):
                     force=self.force,
                     verbose=self.verbose,
                     progress=progress,
+                    handle_profile=self.handle_profile,
                 )
         except (JsonlReadError, OSError, ValueError) as exc:
             raise click.ClickException(str(exc)) from exc

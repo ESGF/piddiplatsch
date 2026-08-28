@@ -81,7 +81,17 @@ class TestConsumeCommand:
     @patch("piddiplatsch.cli.ConsumeCommand")
     def test_cli_delegates_to_command(self, command_cls, runner):
         result = runner.invoke(
-            cli, ["--verbose", "consume", "--publish", "--force", "--project", "cmip6"]
+            cli,
+            [
+                "--verbose",
+                "consume",
+                "--publish",
+                "--force",
+                "--project",
+                "cmip6",
+                "--handle-profile",
+                "dkrz-test",
+            ],
         )
 
         assert result.exit_code == 0
@@ -91,6 +101,7 @@ class TestConsumeCommand:
             force=True,
             projects=("cmip6",),
             all_projects=False,
+            handle_profile="dkrz-test",
         )
         command_cls.return_value.execute.assert_called_once_with()
 
@@ -219,6 +230,8 @@ class TestMapCommand:
                 "--offset",
                 "2",
                 "--force",
+                "--handle-profile",
+                "dkrz-test",
             ],
         )
 
@@ -233,6 +246,7 @@ class TestMapCommand:
             "offset": 2,
             "force": True,
             "verbose": False,
+            "handle_profile": "dkrz-test",
         }
 
     @patch("piddiplatsch.commands.map.map_dump_files")
@@ -311,6 +325,7 @@ class TestRetryCommand:
         assert "Retry failed items" in result.output
         assert "--delete-after" in result.output
         assert "--dry-run" in result.output
+        assert "--handle-profile" in result.output
 
     def test_retry_no_path(self, runner):
         """Test retry command without path argument fails."""
@@ -470,6 +485,7 @@ class TestPublishCommand:
         assert "--retry-delay" in result.output
         assert "--workers" in result.output
         assert "--project" in result.output
+        assert "--handle-profile" in result.output
         assert "--date" in result.output
 
     @patch("piddiplatsch.commands.publish.HandlePublisher")
@@ -588,6 +604,7 @@ class TestPublishCommand:
             workers,
             progress_callback,
             project,
+            handle_profile,
         ):
             progress_callback(1, 1, "21.TEST/abc", None)
             return PublishResult(total=1, succeeded=1)
@@ -636,6 +653,7 @@ class TestPublishCommand:
             workers,
             progress_callback,
             project,
+            handle_profile,
         ):
             progress_callback(1, 1, "21.TEST/abc", None)
             return PublishResult(total=1, succeeded=1)
@@ -661,10 +679,24 @@ class TestPublishCommand:
             projects={"cmip6": ProjectPublishResult(total=3, succeeded=2, failed=1)},
         )
 
-        result = runner.invoke(cli, ["publish", "--project", "cmip6", str(source)])
+        result = runner.invoke(
+            cli,
+            [
+                "publish",
+                "--project",
+                "cmip6",
+                "--handle-profile",
+                "dkrz-test",
+                str(source),
+            ],
+        )
 
         assert result.exit_code == 1
         assert publisher_cls.return_value.run.call_args.kwargs["project"] == "cmip6"
+        assert (
+            publisher_cls.return_value.run.call_args.kwargs["handle_profile"]
+            == "dkrz-test"
+        )
         assert "cmip6: 2/3 published, 1 failed" in result.output
 
     @patch("piddiplatsch.commands.publish.HandlePublisher")

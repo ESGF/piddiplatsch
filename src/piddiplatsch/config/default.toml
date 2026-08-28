@@ -4,7 +4,7 @@
 # Overview of sections:
 # - consumer: message processing pipeline defaults
 # - kafka: Kafka client settings (librdkafka options supported)
-# - handle: Handle server settings (use overrides for secrets)
+# - handles: named Handle server profiles (use overrides for secrets)
 # - stac: STAC client and collection
 # - elasticsearch: ES endpoint and index (if using ES lookups)
 # - schema: validation strictness
@@ -53,26 +53,29 @@ preflight_stac = false
 
 # Note: dotted librdkafka keys are quoted to keep them as literal TOML keys.
 
-[handle]
+[handles]
+# Used when a project does not select a profile explicitly.
+default = "mock"
+
+[handles.defaults]
 # Handle publication backend: use "rest" or "pyhandle" for the legacy client.
 # Both backends always write the immutable JSONL audit record first. Plain
 # `consume` defers publication; use `consume --publish` for immediate delivery.
-# Avoid committing real credentials; set username/password via overrides.
-# Example override (custom.toml):
-# [handle]
-# username = "300:21.TEST/your-user"
-# password = "***"
 backend = "rest"
-server_url = "http://localhost:8000"
-prefix = "21.TEST"
-username = "300:21.TEST/testuser"
-password = "testpass"
 # Keep certificate verification enabled in production. Disable only for a
 # deliberately trusted service using a self-signed certificate. When disabled,
 # repeated urllib3 InsecureRequestWarning messages are suppressed.
 verify_https = true
 # Timeout in seconds for each Handle REST request.
 timeout = 10
+
+[handles.profiles.mock]
+# Local mock Handle server. Profiles inherit [handles.defaults] and only need
+# to define values that differ or are specific to the server.
+server_url = "http://localhost:8000"
+prefix = "21.TEST"
+username = "300:21.TEST/testuser"
+password = "testpass"
 
 [stac]
 # Remote STAC integration is opt-in. Set a base URL in a site configuration.
@@ -90,31 +93,37 @@ index = "handle_21t14995"
 # Enforce strict schema validation; set false to be permissive.
 strict_mode = true
 
+# Project Handle profiles are optional. Every plugin inherits [handles].default.
+# Uncomment `handle` in a plugin table to override it for that project.
 [plugins.cmip6]
+# handle = "profile-name"
 # Base URL for landing pages used to construct dataset/file URLs.
 landing_page_url = "https://handle-esgf.dkrz.de/lp"
 
 # Limit the number of HAS_PARTS entries; -1 for unlimited.
-max_parts = -1
+max_parts = 0
 
 # Asset keys excluded from HAS_PARTS generation (non-data assets, previews, etc.).
 excluded_asset_keys = ["reference_file", "globus", "thumbnail", "quicklook"]
 
 [plugins.cmip7]
+# handle = "profile-name"
 # CMIP7 currently shares the Handle output schema and STAC mapping workflow
 # with CMIP6, while declaring its own source PID field names.
 landing_page_url = "https://handle-esgf.dkrz.de/lp"
-max_parts = -1
+max_parts = 0
 excluded_asset_keys = ["reference_file", "globus", "thumbnail", "quicklook"]
 
 [plugins.cordex-cmip6]
+# handle = "profile-name"
 landing_page_url = "https://handle-esgf.dkrz.de/lp"
-max_parts = -1
+max_parts = 0
 excluded_asset_keys = ["reference_file", "globus", "thumbnail", "quicklook"]
 
 [plugins.cmip6plus]
+# handle = "profile-name"
 landing_page_url = "https://handle-esgf.dkrz.de/lp"
-max_parts = -1
+max_parts = 0
 excluded_asset_keys = ["reference_file", "globus", "thumbnail", "quicklook"]
 
 [lookup]

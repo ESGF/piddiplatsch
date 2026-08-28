@@ -75,28 +75,78 @@ class KafkaConfig(BaseModel):
         return v
 
 
-class HandleConfig(BaseModel):
+class HandleProfileConfig(BaseModel):
     model_config = ConfigDict(extra="allow")
 
-    backend: Literal["rest", "pyhandle"] = "rest"
+    backend: Literal["rest", "pyhandle"] | None = None
     server_url: str | None = None
     prefix: str | None = None
     username: str | None = None
     password: str | None = None
+    verify_https: bool | None = None
+    timeout: float | None = Field(default=None, gt=0)
+
+
+class HandleConfig(HandleProfileConfig):
+    backend: Literal["rest", "pyhandle"] = "rest"
     verify_https: bool = True
     timeout: float = Field(default=10.0, gt=0)
 
     @model_validator(mode="after")
     def _check_publication_requirements(self) -> HandleConfig:
         if not self.server_url:
-            raise ValueError("Missing required setting: [handle].server_url")
+            raise ValueError("Missing required Handle setting: server_url")
         if not self.prefix:
-            raise ValueError("Missing required setting: [handle].prefix")
+            raise ValueError("Missing required Handle setting: prefix")
         if not self.username:
-            raise ValueError("Missing required setting: [handle].username")
+            raise ValueError("Missing required Handle setting: username")
         if not self.password:
-            raise ValueError("Missing required setting: [handle].password")
+            raise ValueError("Missing required Handle setting: password")
         return self
+
+
+class HandlesConfig(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    default: str
+    defaults: HandleProfileConfig = Field(default_factory=HandleProfileConfig)
+    profiles: dict[str, HandleProfileConfig]
+
+    @field_validator("default")
+    @classmethod
+    def _check_default_name(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("[handles].default must not be empty")
+        return value
+
+    @field_validator("profiles")
+    @classmethod
+    def _check_profiles(cls, value: dict[str, HandleConfig]):
+        if not value:
+            raise ValueError("[handles.profiles] must not be empty")
+        if any(not name.strip() for name in value):
+            raise ValueError("Handle profile names must not be empty")
+        return value
+
+    @model_validator(mode="after")
+    def _check_default_exists(self) -> HandlesConfig:
+        if self.default not in self.profiles:
+            raise ValueError(
+                f"[handles].default references unknown profile {self.default!r}"
+            )
+        for name in self.profiles:
+            try:
+                self.resolve(name)
+            except ValidationError as exc:
+                raise ValueError(
+                    f"Handle profile {name!r} is incomplete after applying defaults: {exc}"
+                ) from exc
+        return self
+
+    def resolve(self, name: str) -> HandleConfig:
+        merged = self.defaults.model_dump(exclude_none=True)
+        merged.update(self.profiles[name].model_dump(exclude_none=True))
+        return HandleConfig.model_validate(merged)
 
 
 class StacConfig(BaseModel):
@@ -125,6 +175,7 @@ class SchemaConfig(BaseModel):
 class ProjectPluginConfig(BaseModel):
     model_config = ConfigDict(extra="allow")
     landing_page_url: str | None = None
+    handle: str | None = None
 
 
 class PluginsConfig(BaseModel):
@@ -141,6 +192,7 @@ class AppConfig(BaseModel):
     consumer: ConsumerConfig
     kafka: KafkaConfig
     handle: HandleConfig | None = None
+    handles: HandlesConfig | None = None
     stac: StacConfig | None = None
     elasticsearch: ElasticsearchConfig | None = None
     lookup: LookupConfig | None = None
@@ -158,6 +210,21 @@ class AppConfig(BaseModel):
                     raise ValueError(
                         "Missing required setting: [elasticsearch].base_url"
                     )
+        return self
+
+    @model_validator(mode="after")
+    def _check_project_handle_profiles(self) -> AppConfig:
+        # Legacy [handle] overrides named profiles for compatibility.
+        if self.handle or not self.plugins:
+            return self
+        available = set(self.handles.profiles) if self.handles else set()
+        for field_name in self.plugins.__class__.model_fields:
+            plugin = getattr(self.plugins, field_name)
+            if plugin and plugin.handle and plugin.handle not in available:
+                raise ValueError(
+                    f"[plugins.{field_name}].handle references unknown Handle "
+                    f"profile {plugin.handle!r}"
+                )
         return self
 
 
@@ -179,15 +246,19 @@ def validate_config(data: dict) -> tuple[list[str], list[str]]:
         return errors, warnings
 
     # warnings
-    if (
-        cfg.handle
-        and cfg.handle.backend in ("rest", "pyhandle")
-        and (
-            cfg.handle.username == "300:21.TEST/testuser"
-            and cfg.handle.password == "testpass"
+    handle_configs = {"legacy": cfg.handle} if cfg.handle else {}
+    if cfg.handles:
+        handle_configs.update(
+            (name, cfg.handles.resolve(name)) for name in cfg.handles.profiles
         )
-    ):
-        warnings.append("[handle] demo credentials detected; do not use in production")
+    for name, handle_config in handle_configs.items():
+        if (
+            handle_config.username == "300:21.TEST/testuser"
+            and handle_config.password == "testpass"
+        ):
+            warnings.append(
+                f"Handle profile {name!r} uses demo credentials; do not use in production"
+            )
     if cfg.lookup and cfg.lookup.enabled and cfg.lookup.backend == "es":
         if cfg.elasticsearch and not (cfg.elasticsearch.index):
             warnings.append(

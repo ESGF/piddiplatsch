@@ -56,15 +56,20 @@ class BaseProjectRecord(BaseRecord):
         self,
         item: dict[str, Any],
         additional_attributes: dict[str, Any] | None = None,
+        handle_profile: str | None = None,
     ) -> None:
         if not isinstance(item, dict):
             raise ValueError("STAC item must be an object")
         super().__init__(item)
         self.additional_attributes = additional_attributes or {}
+        self.handle_profile = handle_profile
 
     @cached_property
     def prefix(self) -> str:
-        return config.get("handle", {}).get("prefix", "")
+        return config.get_handle(
+            project=self.plugin_name,
+            profile=self.handle_profile,
+        ).get("prefix", "")
 
     @cached_property
     def landing_page_url(self) -> str:
@@ -111,8 +116,9 @@ class ProjectDatasetRecord(BaseProjectRecord):
         item: dict[str, Any],
         exclude_keys: list[str] | None = None,
         additional_attributes: dict[str, Any] | None = None,
+        handle_profile: str | None = None,
     ) -> None:
-        super().__init__(item, additional_attributes)
+        super().__init__(item, additional_attributes, handle_profile)
         self.exclude_keys = set(exclude_keys or [])
         self.max_parts = config.get_plugin(self.plugin_name, "max_parts", -1)
 
@@ -149,8 +155,12 @@ class ProjectDatasetRecord(BaseProjectRecord):
             if self.max_parts > -1 and len(parts) >= self.max_parts:
                 logging.warning("Reached limit of %s assets.", self.max_parts)
                 break
-            file_pid = self.file_record(self.item, key).pid
-            parts.append(build_handle(file_pid, as_uri=True))
+            file_pid = self.file_record(
+                self.item,
+                key,
+                handle_profile=self.handle_profile,
+            ).pid
+            parts.append(build_handle(file_pid, as_uri=True, prefix=self.prefix))
         return parts
 
     @cached_property
@@ -246,8 +256,13 @@ class ProjectFileRecord(BaseProjectRecord):
     dataset_pid_fields: ClassVar[tuple[str, ...]]
     file_model: ClassVar[type[FileHandleModel]] = FileHandleModel
 
-    def __init__(self, item: dict[str, Any], asset_key: str) -> None:
-        super().__init__(item)
+    def __init__(
+        self,
+        item: dict[str, Any],
+        asset_key: str,
+        handle_profile: str | None = None,
+    ) -> None:
+        super().__init__(item, handle_profile=handle_profile)
         self.asset_key = asset_key
 
     @cached_property
@@ -298,7 +313,7 @@ class ProjectFileRecord(BaseProjectRecord):
         value = _source_pid(self.properties, self.dataset_pid_fields) or item_pid(
             self.item_id
         )
-        return build_handle(value, as_uri=True)
+        return build_handle(value, as_uri=True, prefix=self.prefix)
 
     @cached_property
     def href(self) -> str:

@@ -88,6 +88,7 @@ class KafkaCommand(Command, ABC):
         dry_run: bool = False,
         force: bool = False,
         idle_timeout: float | None = None,
+        handle_profile: str | None = None,
     ) -> None:
         progress = self.progress(title=title, stream=True)
         with progress:
@@ -102,6 +103,7 @@ class KafkaCommand(Command, ABC):
                 dry_run=dry_run,
                 force=force,
                 idle_timeout=idle_timeout,
+                handle_profile=handle_profile,
             )
 
 

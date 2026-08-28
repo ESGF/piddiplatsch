@@ -66,12 +66,14 @@ class RetryRunner:
         failure_dir: Path,
         delete_after: bool = False,
         dry_run: bool = False,
+        handle_profile: str | None = None,
         logger: logging.Logger | None = None,
     ) -> None:
         self.projects = projects
         self.failure_dir = failure_dir
         self.delete_after = delete_after
         self.dry_run = dry_run
+        self.handle_profile = handle_profile
         self.logger = logger or logging.getLogger(__name__)
 
     def run_file(self, jsonl_path: Path) -> RetryResult:
@@ -104,6 +106,7 @@ class RetryRunner:
             projects=self.projects,
             dry_run=self.dry_run,
             failure_dir=self.failure_dir,
+            handle_profile=self.handle_profile,
             force=True,
         )
 

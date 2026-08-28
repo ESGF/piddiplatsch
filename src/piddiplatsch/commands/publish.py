@@ -19,6 +19,7 @@ class PublishCommand(FileBatchCommand):
     retry_delay: float = 1.0
     workers: int = 1
     project: str | None = None
+    handle_profile: str | None = None
 
     def execute(self) -> None:
         paths = self._resolve_paths()
@@ -45,6 +46,7 @@ class PublishCommand(FileBatchCommand):
                     workers=self.workers,
                     progress_callback=show_progress,
                     project=self.project,
+                    handle_profile=self.handle_profile,
                 )
             except ValueError as exc:
                 raise click.ClickException(str(exc)) from exc
