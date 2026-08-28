@@ -1,4 +1,5 @@
 import time
+from contextlib import AbstractContextManager
 from datetime import UTC, datetime
 
 import humanize
@@ -9,8 +10,14 @@ from piddiplatsch.helpers import utc_now
 from piddiplatsch.monitoring.stats import stats
 
 
-class BaseProgress:
+class BaseProgress(AbstractContextManager):
     """Base class for progress display."""
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_value, traceback):
+        self.close()
 
     def refresh(self):
         raise NotImplementedError
@@ -24,6 +31,48 @@ class NoOpProgress(BaseProgress):
 
     def refresh(self):
         pass
+
+
+class BoundedProgress(BaseProgress):
+    """Track and optionally display progress for work with a known total."""
+
+    def __init__(self, *, title: str, unit: str, enabled: bool, start: int = 0) -> None:
+        self.title = title
+        self.unit = unit
+        self.enabled = enabled
+        self.start = start
+        self.position = start
+        self.succeeded = 0
+        self.failed = 0
+        self.bar = None
+
+    def update(self, *, total: int, position: int, ok: bool) -> None:
+        """Record one completed item and refresh the display when enabled."""
+        self.position = max(self.position, position)
+        if ok:
+            self.succeeded += 1
+        else:
+            self.failed += 1
+
+        if not self.enabled:
+            return
+        if self.bar is None:
+            self.bar = tqdm(
+                total=total,
+                desc=f"{self.title} {self.start + 1}-{self.start + total}",
+                unit=self.unit,
+                dynamic_ncols=True,
+            )
+        self.bar.set_postfix(position=self.position, ok=self.succeeded, failed=self.failed)
+        self.bar.update(1)
+
+    def refresh(self) -> None:
+        if self.bar is not None:
+            self.bar.refresh()
+
+    def close(self) -> None:
+        if self.bar is not None:
+            self.bar.close()
 
 
 class Progress(BaseProgress):

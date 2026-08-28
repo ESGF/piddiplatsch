@@ -21,14 +21,10 @@ class RetryCommand(Command):
 
     def execute(self) -> None:
         failure_dir = Path(config.get("consumer", {}).get("output_dir", "outputs")) / "failures"
+        progress = self.progress(title="retry files", unit="file")
 
         def show_progress(file, idx, total, result):
-            if self.verbose:
-                click.echo(f"[{idx}/{total}] {file.name}: ", nl=False)
-                if result.total > 0:
-                    click.echo(f"{result.succeeded}/{result.total} succeeded" + (f", {result.failed} failed" if result.failed > 0 else ""))
-                else:
-                    click.echo("(empty)")
+            progress.update(total=total, position=idx, ok=result.failed == 0)
 
         runner = RetryRunner(
             projects=configured_projects(),
@@ -36,11 +32,11 @@ class RetryCommand(Command):
             delete_after=self.delete_after,
             dry_run=self.dry_run,
         )
-        result = runner.run_batch(
-            self.paths,
-            verbose=self.verbose,
-            progress_callback=show_progress if self.verbose else None,
-        )
+        with progress:
+            result = runner.run_batch(
+                self.paths,
+                progress_callback=show_progress,
+            )
 
         if result.total == 0:
             click.echo("No retry files found.")

@@ -531,7 +531,7 @@ class TestPublishCommand:
         assert "Published 2/3 handles" in result.output
         assert "server unavailable" in result.output
 
-    @patch("piddiplatsch.commands.publish.tqdm")
+    @patch("piddiplatsch.monitoring.progress.tqdm")
     @patch("piddiplatsch.commands.publish.HandlePublisher")
     def test_publish_verbose_progress(self, publisher_cls, tqdm_cls, runner, tmp_path):
         source = tmp_path / "handles.jsonl"
@@ -577,7 +577,7 @@ class TestPublishCommand:
         progress_bar.update.assert_called_once_with(1)
         progress_bar.close.assert_called_once()
 
-    @patch("piddiplatsch.commands.publish.tqdm")
+    @patch("piddiplatsch.monitoring.progress.tqdm")
     @patch("piddiplatsch.commands.publish.HandlePublisher")
     def test_publish_without_verbose_skips_progress_bar(self, publisher_cls, tqdm_cls, runner, tmp_path):
         source = tmp_path / "handles.jsonl"

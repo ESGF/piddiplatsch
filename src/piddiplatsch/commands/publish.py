@@ -5,7 +5,6 @@ from datetime import datetime
 from pathlib import Path
 
 import click
-from tqdm import tqdm
 
 from piddiplatsch.commands.base import Command
 from piddiplatsch.commands.helper import resolve_dated_input
@@ -29,32 +28,17 @@ class PublishCommand(Command):
 
     def execute(self) -> None:
         paths = self._resolve_paths()
-        last_handle_position = self.offset
-        progress_bar = None
-        progress_succeeded = 0
-        progress_failed = 0
+        progress_label = f"publish {self.project} handles" if self.project else "publish handles"
+        progress = self.progress(title=progress_label, unit="handle", start=self.offset)
 
         def show_progress(index, total, handle, error):
-            nonlocal last_handle_position, progress_bar, progress_succeeded, progress_failed
-            last_handle_position = max(last_handle_position, self.offset + index)
-            if not self.verbose:
-                return
-            if progress_bar is None:
-                progress_label = f"publish {self.project} handles" if self.project else "publish handles"
-                progress_bar = tqdm(
-                    total=total,
-                    desc=f"{progress_label} {self.offset + 1}-{self.offset + total}",
-                    unit="handle",
-                    dynamic_ncols=True,
-                )
-            if error is None:
-                progress_succeeded += 1
-            else:
-                progress_failed += 1
-            progress_bar.set_postfix(position=last_handle_position, ok=progress_succeeded, failed=progress_failed)
-            progress_bar.update(1)
+            progress.update(
+                total=total,
+                position=self.offset + index,
+                ok=error is None,
+            )
 
-        try:
+        with progress:
             try:
                 result = HandlePublisher().run(
                     paths,
@@ -68,11 +52,8 @@ class PublishCommand(Command):
                 )
             except ValueError as exc:
                 raise click.ClickException(str(exc)) from exc
-        finally:
-            if progress_bar is not None:
-                progress_bar.close()
 
-        self._show_result(result, last_handle_position)
+        self._show_result(result, progress.position)
 
     def _resolve_paths(self) -> tuple[Path, ...]:
         if self.paths and self.input_date is not None:

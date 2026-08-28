@@ -3,6 +3,8 @@
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 
+from piddiplatsch.monitoring.progress import BoundedProgress
+
 
 @dataclass(kw_only=True)
 class Command(ABC):
@@ -14,6 +16,10 @@ class Command(ABC):
     """
 
     verbose: bool = False
+
+    def progress(self, *, title: str, unit: str, start: int = 0) -> BoundedProgress:
+        """Create bounded progress using this command's verbosity setting."""
+        return BoundedProgress(title=title, unit=unit, enabled=self.verbose, start=start)
 
     @abstractmethod
     def execute(self) -> None:
