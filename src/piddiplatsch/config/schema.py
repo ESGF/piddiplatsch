@@ -114,7 +114,7 @@ class LookupConfig(BaseModel):
     model_config = ConfigDict(extra="allow")
 
     backend: Literal["stac", "es"] | None = None
-    enabled: bool = True
+    enabled: bool = False
 
 
 class SchemaConfig(BaseModel):

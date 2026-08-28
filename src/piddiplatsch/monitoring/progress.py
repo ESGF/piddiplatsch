@@ -1,4 +1,5 @@
 import time
+from contextlib import AbstractContextManager
 from datetime import UTC, datetime
 
 import humanize
@@ -8,9 +9,21 @@ from tqdm import tqdm
 from piddiplatsch.helpers import utc_now
 from piddiplatsch.monitoring.stats import stats
 
+STREAM_PROGRESS_LEGEND = (
+    "Progress: msg/hdl messages/handles;"
+    + " E/F/W/D errors/filtered/warnings/retracted;"
+    + " replica, skip, patch; last_err age; ⏱ elapsed."
+)
 
-class BaseProgress:
+
+class BaseProgress(AbstractContextManager):
     """Base class for progress display."""
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_value, traceback):
+        self.close()
 
     def refresh(self):
         raise NotImplementedError
@@ -26,6 +39,51 @@ class NoOpProgress(BaseProgress):
         pass
 
 
+class BoundedProgress(BaseProgress):
+    """Track and optionally display progress for work with a known total."""
+
+    def __init__(self, *, title: str, unit: str, enabled: bool, start: int = 0) -> None:
+        self.title = title
+        self.unit = unit
+        self.enabled = enabled
+        self.start = start
+        self.position = start
+        self.succeeded = 0
+        self.failed = 0
+        self.bar = None
+
+    def update(self, *, total: int, position: int, ok: bool) -> None:
+        """Record one completed item and refresh the display when enabled."""
+        self.position = max(self.position, position)
+        if ok:
+            self.succeeded += 1
+        else:
+            self.failed += 1
+
+        if not self.enabled:
+            return
+        if self.bar is None:
+            self.bar = tqdm(
+                total=total,
+                desc=f"{self.title} {self.start + 1}-{self.start + total}",
+                unit=self.unit,
+                dynamic_ncols=True,
+            )
+        self.bar.set_postfix(
+            position=self.position, ok=self.succeeded, failed=self.failed
+        )
+        self.bar.update(1)
+
+    def refresh(self) -> None:
+        if self.bar is not None:
+            self.bar.refresh()
+
+    def close(self) -> None:
+        if self.bar is not None:
+            self.bar.close()
+            self.bar = None
+
+
 class Progress(BaseProgress):
     """Displays concise message stats in the console (tqdm-based) with timestamps and total runtime."""
 
@@ -33,6 +91,7 @@ class Progress(BaseProgress):
         self.title = title
         self.update_interval = update_interval
         self.last_update = time.time()
+        self.closed = False
 
         self.bar = tqdm(
             total=0,  # ticker mode, no total
@@ -89,23 +148,38 @@ class Progress(BaseProgress):
 
     def refresh(self):
         """Update the display from Stats."""
+        if self.closed:
+            return
         now = time.time()
         if now - self.last_update >= self.update_interval:
             self.bar.set_description(self._format_desc())
             self.last_update = now
 
     def close(self):
+        if self.closed:
+            return
         self.bar.set_description(self._format_desc())
         self.bar.close()
+        self.closed = True
 
 
-def get_progress(title="progress", use_tqdm=False, update_interval=5):
-    """
-    Factory to get a progress display.
-    - Returns Progress (tqdm-based) if use_tqdm=True
-    - Returns NoOpProgress if use_tqdm=False
-    """
+def get_progress(
+    title="progress",
+    use_tqdm=False,
+    update_interval=5,
+    *,
+    stream: bool = True,
+    unit: str = "item",
+    start: int = 0,
+) -> BaseProgress:
+    """Create streaming or bounded progress, optionally without rendering."""
+    if not stream:
+        return BoundedProgress(
+            title=title,
+            unit=unit,
+            enabled=use_tqdm,
+            start=start,
+        )
     if use_tqdm:
         return Progress(title=title, update_interval=update_interval)
-    else:
-        return NoOpProgress()
+    return NoOpProgress()

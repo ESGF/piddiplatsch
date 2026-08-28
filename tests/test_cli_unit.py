@@ -6,8 +6,19 @@ import pytest
 from click.testing import CliRunner
 
 from piddiplatsch.cli import cli
+from piddiplatsch.commands import (
+    Command,
+    ConfigShowCommand,
+    ConfigValidateCommand,
+    ConsumeCommand,
+    HarvestCommand,
+    MapCommand,
+    PublishCommand,
+    RetryCommand,
+)
 from piddiplatsch.config import config
 from piddiplatsch.consumer import HarvestProcessor
+from piddiplatsch.monitoring.progress import NoOpProgress, Progress
 from piddiplatsch.result import FeedResult, ProjectPublishResult, PublishResult
 
 
@@ -19,6 +30,19 @@ def runner():
 
 class TestCLIBasics:
     """Test basic CLI functionality."""
+
+    def test_commands_implement_common_api(self):
+        command_types = (
+            ConsumeCommand,
+            HarvestCommand,
+            MapCommand,
+            PublishCommand,
+            RetryCommand,
+            ConfigValidateCommand,
+            ConfigShowCommand,
+        )
+        assert all(issubclass(command_type, Command) for command_type in command_types)
+        assert all(callable(command_type.execute) for command_type in command_types)
 
     def test_cli_help(self, runner):
         """Test that CLI shows help message."""
@@ -54,6 +78,22 @@ class TestCLIBasics:
 class TestConsumeCommand:
     """Test consume command."""
 
+    @patch("piddiplatsch.cli.ConsumeCommand")
+    def test_cli_delegates_to_command(self, command_cls, runner):
+        result = runner.invoke(
+            cli, ["--verbose", "consume", "--publish", "--force", "--project", "cmip6"]
+        )
+
+        assert result.exit_code == 0
+        command_cls.assert_called_once_with(
+            verbose=True,
+            publish=True,
+            force=True,
+            projects=("cmip6",),
+            all_projects=False,
+        )
+        command_cls.return_value.execute.assert_called_once_with()
+
     def test_consume_help(self, runner):
         """Test consume command help."""
         result = runner.invoke(cli, ["consume", "--help"])
@@ -63,7 +103,7 @@ class TestConsumeCommand:
         assert "--project" in result.output
         assert "--all-projects" in result.output
 
-    @patch("piddiplatsch.cli.start_consumer")
+    @patch("piddiplatsch.commands.base.start_consumer")
     def test_consume_basic(self, mock_start_consumer, runner):
         """Test consume command calls start_consumer."""
         runner.invoke(cli, ["consume"])
@@ -72,7 +112,7 @@ class TestConsumeCommand:
         assert call_kwargs["dump_messages"] is True
         assert call_kwargs["dry_run"] is True
 
-    @patch("piddiplatsch.cli.start_consumer")
+    @patch("piddiplatsch.commands.base.start_consumer")
     def test_consume_with_publish(self, mock_start_consumer, runner):
         runner.invoke(cli, ["consume", "--publish"])
         assert mock_start_consumer.called
@@ -80,15 +120,18 @@ class TestConsumeCommand:
         assert call_kwargs["dump_messages"] is True
         assert call_kwargs["dry_run"] is False
 
-    @patch("piddiplatsch.cli.start_consumer")
+    @patch("piddiplatsch.commands.base.start_consumer")
     def test_consume_with_verbose(self, mock_start_consumer, runner):
         """Test consume command with --verbose flag."""
-        runner.invoke(cli, ["--verbose", "consume"])
+        result = runner.invoke(cli, ["--verbose", "consume"])
         assert mock_start_consumer.called
+        assert "msg/hdl messages/handles" in result.output
+        assert "E/F/W/D errors/filtered/warnings/retracted" in result.output
         call_kwargs = mock_start_consumer.call_args.kwargs
         assert call_kwargs.get("verbose") is True
+        assert isinstance(call_kwargs["progress"], Progress)
 
-    @patch("piddiplatsch.cli.start_consumer")
+    @patch("piddiplatsch.commands.base.start_consumer")
     def test_consume_with_several_projects(self, mock_start_consumer, runner):
         result = runner.invoke(
             cli,
@@ -97,13 +140,13 @@ class TestConsumeCommand:
         assert result.exit_code == 0
         assert mock_start_consumer.call_args.kwargs["projects"] == ("cmip6", "cmip7")
 
-    @patch("piddiplatsch.cli.start_consumer")
+    @patch("piddiplatsch.commands.base.start_consumer")
     def test_consume_with_all_projects(self, mock_start_consumer, runner):
         result = runner.invoke(cli, ["consume", "--all-projects"])
         assert result.exit_code == 0
         assert mock_start_consumer.call_args.kwargs["projects"] == "all"
 
-    @patch("piddiplatsch.cli.start_consumer")
+    @patch("piddiplatsch.commands.base.start_consumer")
     def test_consume_rejects_named_and_all_projects(self, mock_start_consumer, runner):
         result = runner.invoke(
             cli,
@@ -119,8 +162,9 @@ class TestHarvestCommand:
         result = runner.invoke(cli, ["harvest", "--help"])
         assert result.exit_code == 0
         assert "raw JSONL" in result.output
+        assert "--idle-timeout" in result.output
 
-    @patch("piddiplatsch.cli.start_consumer")
+    @patch("piddiplatsch.commands.base.start_consumer")
     def test_harvest_dumps_without_mapping(self, mock_start_consumer, runner):
         result = runner.invoke(cli, ["harvest"])
         assert result.exit_code == 0
@@ -128,6 +172,23 @@ class TestHarvestCommand:
         assert isinstance(kwargs["processor"], HarvestProcessor)
         assert kwargs["dump_messages"] is True
         assert kwargs["force"] is True
+        assert kwargs["idle_timeout"] == 5.0
+
+    @patch("piddiplatsch.commands.base.start_consumer")
+    def test_harvest_passes_idle_timeout(self, mock_start_consumer, runner):
+        result = runner.invoke(cli, ["harvest", "--idle-timeout", "2.5"])
+
+        assert result.exit_code == 0
+        assert mock_start_consumer.call_args.kwargs["idle_timeout"] == 2.5
+
+    @patch("piddiplatsch.commands.base.start_consumer")
+    def test_harvest_with_verbose_uses_stream_progress(
+        self, mock_start_consumer, runner
+    ):
+        result = runner.invoke(cli, ["--verbose", "harvest"])
+
+        assert result.exit_code == 0
+        assert isinstance(mock_start_consumer.call_args.kwargs["progress"], Progress)
 
 
 class TestMapCommand:
@@ -140,7 +201,7 @@ class TestMapCommand:
         assert "--project" in result.output
         assert "--date" in result.output
 
-    @patch("piddiplatsch.cli.map_dump_files")
+    @patch("piddiplatsch.commands.map.map_dump_files")
     def test_map_calls_mapper(self, mock_map_dump_files, runner, tmp_path):
         source = tmp_path / "dump.jsonl"
         source.write_text("{}\n")
@@ -165,6 +226,7 @@ class TestMapCommand:
         assert "Mapped 1/3" in result.output
         assert "Filtered by project selection: 2" in result.output
         kwargs = mock_map_dump_files.call_args.kwargs
+        assert isinstance(kwargs.pop("progress"), NoOpProgress)
         assert kwargs == {
             "projects": ("cmip6",),
             "limit": 3,
@@ -173,7 +235,7 @@ class TestMapCommand:
             "verbose": False,
         }
 
-    @patch("piddiplatsch.cli.map_dump_files")
+    @patch("piddiplatsch.commands.map.map_dump_files")
     def test_map_passes_global_verbose(self, mock_map_dump_files, runner, tmp_path):
         source = tmp_path / "dump.jsonl"
         source.write_text("{}\n")
@@ -183,8 +245,9 @@ class TestMapCommand:
 
         assert result.exit_code == 0
         assert mock_map_dump_files.call_args.kwargs["verbose"] is True
+        assert isinstance(mock_map_dump_files.call_args.kwargs["progress"], Progress)
 
-    @patch("piddiplatsch.cli.map_dump_files")
+    @patch("piddiplatsch.commands.map.map_dump_files")
     def test_map_resolves_date_from_output_dir(
         self, mock_map_dump_files, runner, tmp_path
     ):
@@ -204,7 +267,7 @@ class TestMapCommand:
         assert mock_map_dump_files.call_args.args[0] == (source,)
         assert mock_map_dump_files.call_args.kwargs["projects"] == ("cmip6",)
 
-    @patch("piddiplatsch.cli.map_dump_files")
+    @patch("piddiplatsch.commands.map.map_dump_files")
     def test_map_requires_path_or_date(self, mock_map_dump_files, runner):
         result = runner.invoke(cli, ["map", "--project", "cmip6"])
 
@@ -212,7 +275,7 @@ class TestMapCommand:
         assert "Provide PATH or --date" in result.output
         mock_map_dump_files.assert_not_called()
 
-    @patch("piddiplatsch.cli.map_dump_files")
+    @patch("piddiplatsch.commands.map.map_dump_files")
     def test_map_rejects_path_and_date(self, mock_map_dump_files, runner, tmp_path):
         source = tmp_path / "dump.jsonl"
         source.touch()
@@ -223,7 +286,7 @@ class TestMapCommand:
         assert "cannot be combined" in result.output
         mock_map_dump_files.assert_not_called()
 
-    @patch("piddiplatsch.cli.map_dump_files")
+    @patch("piddiplatsch.commands.map.map_dump_files")
     def test_map_rejects_named_and_all_projects(
         self, mock_map_dump_files, runner, tmp_path
     ):
@@ -261,7 +324,7 @@ class TestRetryCommand:
         assert result.exit_code == 2
         assert "does not exist" in result.output
 
-    @patch("piddiplatsch.cli.RetryRunner.run_batch")
+    @patch("piddiplatsch.commands.retry.RetryRunner.run_batch")
     def test_retry_calls_retry_batch(self, mock_run_batch, runner, tmp_path):
         """Test that retry command calls retry.retry_batch."""
         # Create a dummy file
@@ -278,7 +341,7 @@ class TestRetryCommand:
         assert mock_run_batch.called
         assert "No retry files found" in result.output
 
-    @patch("piddiplatsch.cli.RetryRunner.run_batch")
+    @patch("piddiplatsch.commands.retry.RetryRunner.run_batch")
     def test_retry_with_success(self, mock_run_batch, runner, tmp_path):
         """Test retry command with successful result."""
         test_file = tmp_path / "test.jsonl"
@@ -295,7 +358,7 @@ class TestRetryCommand:
         assert "5/5 succeeded" in result.output
         assert "All items processed successfully" in result.output
 
-    @patch("piddiplatsch.cli.RetryRunner.run_batch")
+    @patch("piddiplatsch.commands.retry.RetryRunner.run_batch")
     def test_retry_with_failures(self, mock_run_batch, runner, tmp_path):
         """Test retry command with some failures."""
         test_file = tmp_path / "test.jsonl"
@@ -313,7 +376,7 @@ class TestRetryCommand:
         assert "3 items failed again" in result.output
         assert "70.0% success rate" in result.output
 
-    @patch("piddiplatsch.cli.RetryRunner.run_batch")
+    @patch("piddiplatsch.commands.retry.RetryRunner.run_batch")
     def test_retry_with_new_failure_files(self, mock_run_batch, runner, tmp_path):
         """Test retry command shows new failure files."""
         test_file = tmp_path / "test.jsonl"
@@ -340,7 +403,7 @@ class TestRetryCommand:
         assert "New failures saved to:" in result.output
         assert "r1/failed_items_2026-01-16.jsonl" in result.output
 
-    @patch("piddiplatsch.cli.RetryRunner")
+    @patch("piddiplatsch.commands.retry.RetryRunner")
     def test_retry_passes_delete_after(self, mock_runner_cls, runner, tmp_path):
         """Test retry command passes --delete-after flag."""
         test_file = tmp_path / "test.jsonl"
@@ -358,7 +421,7 @@ class TestRetryCommand:
         init_kwargs = mock_runner_cls.call_args.kwargs
         assert init_kwargs.get("delete_after") is True
 
-    @patch("piddiplatsch.cli.RetryRunner")
+    @patch("piddiplatsch.commands.retry.RetryRunner")
     def test_retry_passes_dry_run(self, mock_runner_cls, runner, tmp_path):
         """Test retry command passes --dry-run flag."""
         test_file = tmp_path / "test.jsonl"
@@ -374,7 +437,7 @@ class TestRetryCommand:
         init_kwargs = mock_runner_cls.call_args.kwargs
         assert init_kwargs.get("dry_run") is True
 
-    @patch("piddiplatsch.cli.RetryRunner")
+    @patch("piddiplatsch.commands.retry.RetryRunner")
     def test_retry_multiple_paths(self, mock_runner_cls, runner, tmp_path):
         """Test retry command with multiple file paths."""
         file1 = tmp_path / "test1.jsonl"
@@ -409,7 +472,7 @@ class TestPublishCommand:
         assert "--project" in result.output
         assert "--date" in result.output
 
-    @patch("piddiplatsch.cli.HandlePublisher")
+    @patch("piddiplatsch.commands.publish.HandlePublisher")
     def test_publish_reports_success(self, publisher_cls, runner, tmp_path):
         source = tmp_path / "handles.jsonl"
         source.touch()
@@ -432,7 +495,7 @@ class TestPublishCommand:
         assert publisher_cls.return_value.run.call_args.kwargs["retry_delay"] == 1.0
         assert publisher_cls.return_value.run.call_args.kwargs["workers"] == 1
 
-    @patch("piddiplatsch.cli.HandlePublisher")
+    @patch("piddiplatsch.commands.publish.HandlePublisher")
     def test_publish_resolves_project_date_from_output_dir(
         self, publisher_cls, runner, tmp_path
     ):
@@ -454,7 +517,7 @@ class TestPublishCommand:
         assert publisher_cls.return_value.run.call_args.args[0] == (source,)
         assert publisher_cls.return_value.run.call_args.kwargs["project"] == "CMIP6"
 
-    @patch("piddiplatsch.cli.HandlePublisher")
+    @patch("piddiplatsch.commands.publish.HandlePublisher")
     def test_publish_date_requires_project(self, publisher_cls, runner):
         result = runner.invoke(cli, ["publish", "--date", "2026-08-27"])
 
@@ -462,7 +525,7 @@ class TestPublishCommand:
         assert "--date requires --project" in result.output
         publisher_cls.assert_not_called()
 
-    @patch("piddiplatsch.cli.HandlePublisher")
+    @patch("piddiplatsch.commands.publish.HandlePublisher")
     def test_publish_requires_path_or_date(self, publisher_cls, runner):
         result = runner.invoke(cli, ["publish", "--project", "cmip6"])
 
@@ -470,7 +533,7 @@ class TestPublishCommand:
         assert "Provide PATH or --date" in result.output
         publisher_cls.assert_not_called()
 
-    @patch("piddiplatsch.cli.HandlePublisher")
+    @patch("piddiplatsch.commands.publish.HandlePublisher")
     def test_publish_rejects_path_and_date(self, publisher_cls, runner, tmp_path):
         source = tmp_path / "handles.jsonl"
         source.touch()
@@ -491,7 +554,7 @@ class TestPublishCommand:
         assert "cannot be combined" in result.output
         publisher_cls.assert_not_called()
 
-    @patch("piddiplatsch.cli.HandlePublisher")
+    @patch("piddiplatsch.commands.publish.HandlePublisher")
     def test_publish_exits_nonzero_after_failures(
         self, publisher_cls, runner, tmp_path
     ):
@@ -510,8 +573,8 @@ class TestPublishCommand:
         assert "Published 2/3 handles" in result.output
         assert "server unavailable" in result.output
 
-    @patch("piddiplatsch.cli.tqdm")
-    @patch("piddiplatsch.cli.HandlePublisher")
+    @patch("piddiplatsch.monitoring.progress.tqdm")
+    @patch("piddiplatsch.commands.publish.HandlePublisher")
     def test_publish_verbose_progress(self, publisher_cls, tqdm_cls, runner, tmp_path):
         source = tmp_path / "handles.jsonl"
         source.touch()
@@ -556,8 +619,8 @@ class TestPublishCommand:
         progress_bar.update.assert_called_once_with(1)
         progress_bar.close.assert_called_once()
 
-    @patch("piddiplatsch.cli.tqdm")
-    @patch("piddiplatsch.cli.HandlePublisher")
+    @patch("piddiplatsch.monitoring.progress.tqdm")
+    @patch("piddiplatsch.commands.publish.HandlePublisher")
     def test_publish_without_verbose_skips_progress_bar(
         self, publisher_cls, tqdm_cls, runner, tmp_path
     ):
@@ -585,7 +648,7 @@ class TestPublishCommand:
         assert "Published 1/1 handles" in result.output
         tqdm_cls.assert_not_called()
 
-    @patch("piddiplatsch.cli.HandlePublisher")
+    @patch("piddiplatsch.commands.publish.HandlePublisher")
     def test_publish_passes_project_and_prints_project_summary(
         self, publisher_cls, runner, tmp_path
     ):
@@ -604,7 +667,7 @@ class TestPublishCommand:
         assert publisher_cls.return_value.run.call_args.kwargs["project"] == "cmip6"
         assert "cmip6: 2/3 published, 1 failed" in result.output
 
-    @patch("piddiplatsch.cli.HandlePublisher")
+    @patch("piddiplatsch.commands.publish.HandlePublisher")
     def test_publish_reports_project_mismatch_cleanly(
         self, publisher_cls, runner, tmp_path
     ):
@@ -620,7 +683,7 @@ class TestPublishCommand:
         assert "does not match project" in result.output
         assert result.exception.__class__.__name__ != "ValueError"
 
-    @patch("piddiplatsch.cli.HandlePublisher")
+    @patch("piddiplatsch.commands.publish.HandlePublisher")
     def test_publish_passes_limit(self, publisher_cls, runner, tmp_path):
         source = tmp_path / "handles.jsonl"
         source.touch()
@@ -634,7 +697,7 @@ class TestPublishCommand:
         assert publisher_cls.return_value.run.call_args.kwargs["limit"] == 1000
         assert "Stopped after reaching the limit of 1000 handles" in result.output
 
-    @patch("piddiplatsch.cli.HandlePublisher")
+    @patch("piddiplatsch.commands.publish.HandlePublisher")
     def test_publish_passes_offset(self, publisher_cls, runner, tmp_path):
         source = tmp_path / "handles.jsonl"
         source.touch()
@@ -657,7 +720,7 @@ class TestPublishCommand:
         assert result.exit_code == 0
         assert publisher_cls.return_value.run.call_args.kwargs["offset"] == 1000
 
-    @patch("piddiplatsch.cli.HandlePublisher")
+    @patch("piddiplatsch.commands.publish.HandlePublisher")
     def test_publish_passes_retry_options(self, publisher_cls, runner, tmp_path):
         source = tmp_path / "handles.jsonl"
         source.touch()
@@ -683,7 +746,7 @@ class TestPublishCommand:
         assert kwargs["retry_delay"] == 0.25
         assert "Retry attempts: 2" in result.output
 
-    @patch("piddiplatsch.cli.HandlePublisher")
+    @patch("piddiplatsch.commands.publish.HandlePublisher")
     def test_publish_passes_workers(self, publisher_cls, runner, tmp_path):
         source = tmp_path / "handles.jsonl"
         source.touch()
@@ -700,21 +763,21 @@ class TestPublishCommand:
 class TestCLIOptions:
     """Test global CLI options."""
 
-    @patch("piddiplatsch.cli.start_consumer")
+    @patch("piddiplatsch.commands.base.start_consumer")
     def test_debug_flag(self, mock_start_consumer, runner):
         """Test --debug flag."""
         runner.invoke(cli, ["--debug", "consume"])
         # Debug should configure logging but not affect command execution
         assert mock_start_consumer.called
 
-    @patch("piddiplatsch.cli.start_consumer")
+    @patch("piddiplatsch.commands.base.start_consumer")
     def test_log_file_option(self, mock_start_consumer, runner, tmp_path):
         """Test --log option."""
         log_file = tmp_path / "test.log"
         runner.invoke(cli, ["--log", str(log_file), "consume"])
         assert mock_start_consumer.called
 
-    @patch("piddiplatsch.cli.start_consumer")
+    @patch("piddiplatsch.commands.base.start_consumer")
     def test_config_file_option(self, mock_start_consumer, runner, tmp_path):
         """Test --config option."""
         config_file = tmp_path / "custom.toml"
@@ -722,3 +785,11 @@ class TestCLIOptions:
 
         runner.invoke(cli, ["--config", str(config_file), "consume"])
         assert mock_start_consumer.called
+
+
+class TestConfigCommand:
+    def test_show_key_requires_section(self, runner):
+        result = runner.invoke(cli, ["config", "show", "--key", "topic"])
+
+        assert result.exit_code == 2
+        assert "--key requires --section" in result.output
