@@ -80,7 +80,9 @@ class TestConsumeCommand:
 
     @patch("piddiplatsch.cli.ConsumeCommand")
     def test_cli_delegates_to_command(self, command_cls, runner):
-        result = runner.invoke(cli, ["--verbose", "consume", "--publish", "--force", "--project", "cmip6"])
+        result = runner.invoke(
+            cli, ["--verbose", "consume", "--publish", "--force", "--project", "cmip6"]
+        )
 
         assert result.exit_code == 0
         command_cls.assert_called_once_with(
@@ -180,7 +182,9 @@ class TestHarvestCommand:
         assert mock_start_consumer.call_args.kwargs["idle_timeout"] == 2.5
 
     @patch("piddiplatsch.commands.base.start_consumer")
-    def test_harvest_with_verbose_uses_stream_progress(self, mock_start_consumer, runner):
+    def test_harvest_with_verbose_uses_stream_progress(
+        self, mock_start_consumer, runner
+    ):
         result = runner.invoke(cli, ["--verbose", "harvest"])
 
         assert result.exit_code == 0
@@ -244,7 +248,9 @@ class TestMapCommand:
         assert isinstance(mock_map_dump_files.call_args.kwargs["progress"], Progress)
 
     @patch("piddiplatsch.commands.map.map_dump_files")
-    def test_map_resolves_date_from_output_dir(self, mock_map_dump_files, runner, tmp_path):
+    def test_map_resolves_date_from_output_dir(
+        self, mock_map_dump_files, runner, tmp_path
+    ):
         output_dir = tmp_path / "outputs"
         source = output_dir / "dump" / "dump_messages_2026-08-27.jsonl"
         source.parent.mkdir(parents=True)
@@ -281,7 +287,9 @@ class TestMapCommand:
         mock_map_dump_files.assert_not_called()
 
     @patch("piddiplatsch.commands.map.map_dump_files")
-    def test_map_rejects_named_and_all_projects(self, mock_map_dump_files, runner, tmp_path):
+    def test_map_rejects_named_and_all_projects(
+        self, mock_map_dump_files, runner, tmp_path
+    ):
         source = tmp_path / "dump.jsonl"
         source.write_text("{}\n")
         result = runner.invoke(
@@ -341,7 +349,9 @@ class TestRetryCommand:
 
         from piddiplatsch.result import RetryResult
 
-        mock_run_batch.return_value = RetryResult(total=5, succeeded=5, failed=0, failure_files=set())
+        mock_run_batch.return_value = RetryResult(
+            total=5, succeeded=5, failed=0, failure_files=set()
+        )
 
         result = runner.invoke(cli, ["retry", str(test_file)])
         assert result.exit_code == 0
@@ -356,7 +366,9 @@ class TestRetryCommand:
 
         from piddiplatsch.result import RetryResult
 
-        mock_run_batch.return_value = RetryResult(total=10, succeeded=7, failed=3, failure_files=set())
+        mock_run_batch.return_value = RetryResult(
+            total=10, succeeded=7, failed=3, failure_files=set()
+        )
 
         result = runner.invoke(cli, ["retry", str(test_file)])
         assert result.exit_code == 0
@@ -378,7 +390,9 @@ class TestRetryCommand:
 
         from piddiplatsch.result import RetryResult
 
-        mock_run_batch.return_value = RetryResult(total=5, succeeded=3, failed=2, failure_files={new_failure})
+        mock_run_batch.return_value = RetryResult(
+            total=5, succeeded=3, failed=2, failure_files={new_failure}
+        )
 
         from piddiplatsch.config import config
 
@@ -482,13 +496,17 @@ class TestPublishCommand:
         assert publisher_cls.return_value.run.call_args.kwargs["workers"] == 1
 
     @patch("piddiplatsch.commands.publish.HandlePublisher")
-    def test_publish_resolves_project_date_from_output_dir(self, publisher_cls, runner, tmp_path):
+    def test_publish_resolves_project_date_from_output_dir(
+        self, publisher_cls, runner, tmp_path
+    ):
         output_dir = tmp_path / "outputs"
         source = output_dir / "cmip6" / "handles" / "handles_2026-08-27.jsonl"
         source.parent.mkdir(parents=True)
         source.touch()
         config._set("consumer", "output_dir", str(output_dir))
-        publisher_cls.return_value.run.return_value = PublishResult(total=1, succeeded=1)
+        publisher_cls.return_value.run.return_value = PublishResult(
+            total=1, succeeded=1
+        )
 
         result = runner.invoke(
             cli,
@@ -537,7 +555,9 @@ class TestPublishCommand:
         publisher_cls.assert_not_called()
 
     @patch("piddiplatsch.commands.publish.HandlePublisher")
-    def test_publish_exits_nonzero_after_failures(self, publisher_cls, runner, tmp_path):
+    def test_publish_exits_nonzero_after_failures(
+        self, publisher_cls, runner, tmp_path
+    ):
         source = tmp_path / "handles.jsonl"
         source.touch()
         publisher_cls.return_value.run.return_value = PublishResult(
@@ -601,7 +621,9 @@ class TestPublishCommand:
 
     @patch("piddiplatsch.monitoring.progress.tqdm")
     @patch("piddiplatsch.commands.publish.HandlePublisher")
-    def test_publish_without_verbose_skips_progress_bar(self, publisher_cls, tqdm_cls, runner, tmp_path):
+    def test_publish_without_verbose_skips_progress_bar(
+        self, publisher_cls, tqdm_cls, runner, tmp_path
+    ):
         source = tmp_path / "handles.jsonl"
         source.touch()
 
@@ -627,7 +649,9 @@ class TestPublishCommand:
         tqdm_cls.assert_not_called()
 
     @patch("piddiplatsch.commands.publish.HandlePublisher")
-    def test_publish_passes_project_and_prints_project_summary(self, publisher_cls, runner, tmp_path):
+    def test_publish_passes_project_and_prints_project_summary(
+        self, publisher_cls, runner, tmp_path
+    ):
         source = tmp_path / "handles.jsonl"
         source.touch()
         publisher_cls.return_value.run.return_value = PublishResult(
@@ -644,10 +668,14 @@ class TestPublishCommand:
         assert "cmip6: 2/3 published, 1 failed" in result.output
 
     @patch("piddiplatsch.commands.publish.HandlePublisher")
-    def test_publish_reports_project_mismatch_cleanly(self, publisher_cls, runner, tmp_path):
+    def test_publish_reports_project_mismatch_cleanly(
+        self, publisher_cls, runner, tmp_path
+    ):
         source = tmp_path / "handles.jsonl"
         source.touch()
-        publisher_cls.return_value.run.side_effect = ValueError("Handle batch does not match project 'cmip6'")
+        publisher_cls.return_value.run.side_effect = ValueError(
+            "Handle batch does not match project 'cmip6'"
+        )
 
         result = runner.invoke(cli, ["publish", "--project", "cmip6", str(source)])
 
@@ -659,7 +687,9 @@ class TestPublishCommand:
     def test_publish_passes_limit(self, publisher_cls, runner, tmp_path):
         source = tmp_path / "handles.jsonl"
         source.touch()
-        publisher_cls.return_value.run.return_value = PublishResult(total=1000, succeeded=1000)
+        publisher_cls.return_value.run.return_value = PublishResult(
+            total=1000, succeeded=1000
+        )
 
         result = runner.invoke(cli, ["publish", "--limit", "1000", str(source)])
 
@@ -671,7 +701,9 @@ class TestPublishCommand:
     def test_publish_passes_offset(self, publisher_cls, runner, tmp_path):
         source = tmp_path / "handles.jsonl"
         source.touch()
-        publisher_cls.return_value.run.return_value = PublishResult(total=1000, succeeded=1000)
+        publisher_cls.return_value.run.return_value = PublishResult(
+            total=1000, succeeded=1000
+        )
 
         result = runner.invoke(
             cli,
@@ -692,7 +724,9 @@ class TestPublishCommand:
     def test_publish_passes_retry_options(self, publisher_cls, runner, tmp_path):
         source = tmp_path / "handles.jsonl"
         source.touch()
-        publisher_cls.return_value.run.return_value = PublishResult(total=1, succeeded=1, retry_attempts=2)
+        publisher_cls.return_value.run.return_value = PublishResult(
+            total=1, succeeded=1, retry_attempts=2
+        )
 
         result = runner.invoke(
             cli,
@@ -716,7 +750,9 @@ class TestPublishCommand:
     def test_publish_passes_workers(self, publisher_cls, runner, tmp_path):
         source = tmp_path / "handles.jsonl"
         source.touch()
-        publisher_cls.return_value.run.return_value = PublishResult(total=1, succeeded=1)
+        publisher_cls.return_value.run.return_value = PublishResult(
+            total=1, succeeded=1
+        )
 
         result = runner.invoke(cli, ["publish", "--workers", "4", str(source)])
 

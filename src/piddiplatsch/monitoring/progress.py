@@ -10,7 +10,9 @@ from piddiplatsch.helpers import utc_now
 from piddiplatsch.monitoring.stats import stats
 
 STREAM_PROGRESS_LEGEND = (
-    "Progress: msg/hdl messages/handles; E/F/W/D errors/filtered/warnings/retracted; replica, skip, patch; last_err age; ⏱ elapsed."
+    "Progress: msg/hdl messages/handles;"
+    + " E/F/W/D errors/filtered/warnings/retracted;"
+    + " replica, skip, patch; last_err age; ⏱ elapsed."
 )
 
 
@@ -67,7 +69,9 @@ class BoundedProgress(BaseProgress):
                 unit=self.unit,
                 dynamic_ncols=True,
             )
-        self.bar.set_postfix(position=self.position, ok=self.succeeded, failed=self.failed)
+        self.bar.set_postfix(
+            position=self.position, ok=self.succeeded, failed=self.failed
+        )
         self.bar.update(1)
 
     def refresh(self) -> None:

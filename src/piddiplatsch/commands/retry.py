@@ -20,7 +20,9 @@ class RetryCommand(Command):
     dry_run: bool = False
 
     def execute(self) -> None:
-        failure_dir = Path(config.get("consumer", {}).get("output_dir", "outputs")) / "failures"
+        failure_dir = (
+            Path(config.get("consumer", {}).get("output_dir", "outputs")) / "failures"
+        )
         progress = self.progress(title="retry files", unit="file")
 
         def show_progress(file, idx, total, result):
@@ -44,11 +46,17 @@ class RetryCommand(Command):
 
         click.echo(f"\nTotal: {result.succeeded}/{result.total} succeeded")
         if result.failed > 0:
-            click.echo(f"  ⚠️  {result.failed} items failed again ({result.success_rate:.1f}% success rate)")
+            click.echo(
+                f"  ⚠️  {result.failed} items failed again ({result.success_rate:.1f}% success rate)"
+            )
             if result.skipped:
-                click.echo(f"  {result.skipped} item(s) were skipped and remain retryable")
+                click.echo(
+                    f"  {result.skipped} item(s) were skipped and remain retryable"
+                )
             if result.filtered:
-                click.echo(f"  {result.filtered} item(s) did not match a selected project plugin")
+                click.echo(
+                    f"  {result.filtered} item(s) did not match a selected project plugin"
+                )
             for error in result.errors:
                 click.echo(f"  - {error}")
             if result.failure_files:

@@ -43,7 +43,9 @@ def build_processing_target(
         raise ValueError("Specify either processor or projects, not both")
     if processor is not None:
         if isinstance(processor, str):
-            raise TypeError("String processor selection is not supported; use projects or a processing object")
+            raise TypeError(
+                "String processor selection is not supported; use projects or a processing object"
+            )
         return processor
     selection = configured_projects() if projects is None else projects
     return ProjectRouter(selection, dry_run=dry_run)
@@ -241,7 +243,9 @@ class ConsumerPipeline:
                 if result.transient_skip:
                     self.stats.external_fail(message=f"message={key}")
                     if self.stop_on_transient_skip and not self.force:
-                        raise StopOnTransientSkipError(f"Transient external failure encountered (key={key}); stopping as per policy")
+                        raise StopOnTransientSkipError(
+                            f"Transient external failure encountered (key={key}); stopping as per policy"
+                        )
             if result.patched:
                 self.stats.patch(message=f"message={key}")
 
@@ -252,7 +256,9 @@ class ConsumerPipeline:
 
     def _check_success(self):
         if self.max_errors >= 0 and self.stats.errors >= self.max_errors:
-            raise MaxErrorsExceededError(f"Max error limit reached ({self.stats.errors}/{self.max_errors})")
+            raise MaxErrorsExceededError(
+                f"Max error limit reached ({self.stats.errors}/{self.max_errors})"
+            )
 
     def _safe_process_message(self, key, value):
         try:
@@ -265,7 +271,9 @@ class ConsumerPipeline:
             infos = value.get("__infos__", {}) or {}
             retries = infos.get("retries", value.get("retries", 0))
             reason = str(e)
-            FailureRecorder(root_dir=self.failure_dir).record(key, value, retries=retries, reason=reason)
+            FailureRecorder(root_dir=self.failure_dir).record(
+                key, value, retries=retries, reason=reason
+            )
             return ProcessingResult(key=key, success=False, error=reason)
 
     def stop(self, cause: StopCause = StopCause.MANUAL):
@@ -375,7 +383,10 @@ def map_dump_files(
                 continue
 
         records = read_jsonl(path, limit=remaining, offset=file_offset)
-        messages.extend((f"{path}:{file_offset + index}", record) for index, record in enumerate(records, start=1))
+        messages.extend(
+            (f"{path}:{file_offset + index}", record)
+            for index, record in enumerate(records, start=1)
+        )
 
     if not messages:
         return FeedResult()
@@ -430,7 +441,9 @@ def start_consumer(
     # Initialize stats from the fully loaded configuration for this run.
     stats_config = config.get("stats", {})
     stats.configure_for_run(
-        enable_db=(stats_config.get("enable_db", False) if enable_db is None else enable_db),
+        enable_db=(
+            stats_config.get("enable_db", False) if enable_db is None else enable_db
+        ),
         db_path=db_path or stats_config.get("db_path"),
         log_interval_seconds=stats_config.get("interval_seconds"),
         log_interval_messages=stats_config.get("summary_interval"),

@@ -26,7 +26,9 @@ def test_progress_factory_selects_streaming_or_bounded_progress():
 
 @patch("piddiplatsch.monitoring.progress.tqdm")
 def test_bounded_progress_tracks_and_renders_items(tqdm_cls):
-    progress = BoundedProgress(title="publish handles", unit="handle", enabled=True, start=10)
+    progress = BoundedProgress(
+        title="publish handles", unit="handle", enabled=True, start=10
+    )
 
     with progress:
         progress.update(total=2, position=11, ok=True)

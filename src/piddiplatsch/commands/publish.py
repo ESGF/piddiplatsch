@@ -22,7 +22,9 @@ class PublishCommand(FileBatchCommand):
 
     def execute(self) -> None:
         paths = self._resolve_paths()
-        progress_label = f"publish {self.project} handles" if self.project else "publish handles"
+        progress_label = (
+            f"publish {self.project} handles" if self.project else "publish handles"
+        )
         progress = self.progress(title=progress_label, unit="handle", start=self.offset)
 
         def show_progress(index, total, handle, error):
@@ -55,7 +57,9 @@ class PublishCommand(FileBatchCommand):
         if self.input_date is not None and not project_name:
             raise click.UsageError("--date requires --project")
         return self.resolve_paths(
-            relative_path=lambda date: Path(project_name) / "handles" / f"handles_{date}.jsonl",
+            relative_path=lambda date: Path(project_name)
+            / "handles"
+            / f"handles_{date}.jsonl",
             missing_label="Handle file",
         )
 
@@ -86,4 +90,6 @@ class PublishCommand(FileBatchCommand):
             return
         click.echo("Projects:")
         for project_name, project_result in sorted(result.projects.items()):
-            click.echo(f"  {project_name}: {project_result.succeeded}/{project_result.total} published, {project_result.failed} failed")
+            click.echo(
+                f"  {project_name}: {project_result.succeeded}/{project_result.total} published, {project_result.failed} failed"
+            )

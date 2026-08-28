@@ -21,7 +21,13 @@ CONTEXT_SETTINGS = {"help_option_names": ["-h", "--help"]}
 
 @click.group(context_settings=CONTEXT_SETTINGS)
 @click.version_option()
-@click.option("-c", "--config", "config_file", type=click.Path(), help="Path to custom config TOML file.")
+@click.option(
+    "-c",
+    "--config",
+    "config_file",
+    type=click.Path(),
+    help="Path to custom config TOML file.",
+)
 @click.option("--debug", is_flag=True, help="Enable debug logging.")
 @click.option("-v", "--verbose", is_flag=True, help="Show progress information.")
 @click.option(
@@ -33,7 +39,9 @@ CONTEXT_SETTINGS = {"help_option_names": ["-h", "--help"]}
     help="Log file path.",
 )
 @click.pass_context
-def cli(ctx: click.Context, config_file: str | None, debug: bool, verbose: bool, log: str) -> None:
+def cli(
+    ctx: click.Context, config_file: str | None, debug: bool, verbose: bool, log: str
+) -> None:
     """CLI to interact with Kafka and Handle Service."""
     ctx.ensure_object(dict)
     ctx.obj["verbose"] = verbose
@@ -45,17 +53,35 @@ def cli(ctx: click.Context, config_file: str | None, debug: bool, verbose: bool,
 
 
 @cli.command()
-@click.option("--publish", is_flag=True, help="Also publish mapped Handles immediately; JSONL is always written first.")
+@click.option(
+    "--publish",
+    is_flag=True,
+    help="Also publish mapped Handles immediately; JSONL is always written first.",
+)
 @click.option(
     "--project",
     "projects",
     multiple=True,
     help="Project plugin to run; repeat to select several (overrides config).",
 )
-@click.option("--all-projects", is_flag=True, help="Run all registered project plugins (overrides config).")
-@click.option("--force", is_flag=True, help="Continue on transient external failures (e.g., STAC down).")
+@click.option(
+    "--all-projects",
+    is_flag=True,
+    help="Run all registered project plugins (overrides config).",
+)
+@click.option(
+    "--force",
+    is_flag=True,
+    help="Continue on transient external failures (e.g., STAC down).",
+)
 @click.pass_context
-def consume(ctx: click.Context, publish: bool, force: bool, projects: tuple[str, ...], all_projects: bool) -> None:
+def consume(
+    ctx: click.Context,
+    publish: bool,
+    force: bool,
+    projects: tuple[str, ...],
+    all_projects: bool,
+) -> None:
     """Harvest and map Kafka messages, deferring publication by default."""
     ConsumeCommand(
         verbose=ctx.obj["verbose"],
@@ -87,7 +113,9 @@ def harvest(ctx: click.Context, idle_timeout: float) -> None:
 
 
 @cli.command("map")
-@click.argument("path", type=click.Path(exists=True, path_type=Path), nargs=-1, required=False)
+@click.argument(
+    "path", type=click.Path(exists=True, path_type=Path), nargs=-1, required=False
+)
 @click.option(
     "--date",
     "input_date",
@@ -100,8 +128,16 @@ def harvest(ctx: click.Context, idle_timeout: float) -> None:
     multiple=True,
     help="Project plugin to run; repeat to select several (overrides config).",
 )
-@click.option("--all-projects", is_flag=True, help="Run all registered project plugins (overrides config).")
-@click.option("--limit", type=click.IntRange(min=1), help="Stop after mapping this many dumped messages in total.")
+@click.option(
+    "--all-projects",
+    is_flag=True,
+    help="Run all registered project plugins (overrides config).",
+)
+@click.option(
+    "--limit",
+    type=click.IntRange(min=1),
+    help="Stop after mapping this many dumped messages in total.",
+)
 @click.option(
     "--offset",
     type=click.IntRange(min=0),
@@ -109,7 +145,11 @@ def harvest(ctx: click.Context, idle_timeout: float) -> None:
     show_default=True,
     help="Skip this many dumped messages before mapping.",
 )
-@click.option("--force", is_flag=True, help="Continue on transient external failures (e.g., STAC down).")
+@click.option(
+    "--force",
+    is_flag=True,
+    help="Continue on transient external failures (e.g., STAC down).",
+)
 @click.pass_context
 def map_messages(
     ctx: click.Context,
@@ -138,15 +178,23 @@ def map_messages(
 
 
 @cli.command("publish")
-@click.argument("path", type=click.Path(exists=True, path_type=Path), nargs=-1, required=False)
+@click.argument(
+    "path", type=click.Path(exists=True, path_type=Path), nargs=-1, required=False
+)
 @click.option(
     "--date",
     "input_date",
     type=click.DateTime(formats=["%Y-%m-%d"]),
     help="Publish this project's Handle file for the given date.",
 )
-@click.option("--project", help="Validate that every selected Handle belongs to this project.")
-@click.option("--limit", type=click.IntRange(min=1), help="Stop after attempting this many handles in total.")
+@click.option(
+    "--project", help="Validate that every selected Handle belongs to this project."
+)
+@click.option(
+    "--limit",
+    type=click.IntRange(min=1),
+    help="Stop after attempting this many handles in total.",
+)
 @click.option(
     "--offset",
     type=click.IntRange(min=0),
@@ -209,11 +257,21 @@ def publish(
 
 
 @cli.command("retry")
-@click.argument("path", type=click.Path(exists=True, path_type=Path), nargs=-1, required=True)
-@click.option("--delete-after", is_flag=True, help="Delete files after successful retry.")
-@click.option("--dry-run", is_flag=True, help="Write handles to JSONL without contacting Handle Service.")
+@click.argument(
+    "path", type=click.Path(exists=True, path_type=Path), nargs=-1, required=True
+)
+@click.option(
+    "--delete-after", is_flag=True, help="Delete files after successful retry."
+)
+@click.option(
+    "--dry-run",
+    is_flag=True,
+    help="Write handles to JSONL without contacting Handle Service.",
+)
 @click.pass_context
-def retry(ctx: click.Context, path: tuple[Path, ...], delete_after: bool, dry_run: bool) -> None:
+def retry(
+    ctx: click.Context, path: tuple[Path, ...], delete_after: bool, dry_run: bool
+) -> None:
     """Retry failed items from failure .jsonl file(s) or directory.
 
     Accepts multiple arguments:

@@ -8,7 +8,9 @@ import click
 from piddiplatsch.config import config
 
 
-def select_projects(projects: tuple[str, ...], all_projects: bool) -> str | tuple[str, ...] | None:
+def select_projects(
+    projects: tuple[str, ...], all_projects: bool
+) -> str | tuple[str, ...] | None:
     """Translate project options to the selection expected by the pipeline."""
     if projects and all_projects:
         raise click.UsageError("--project cannot be combined with --all-projects")

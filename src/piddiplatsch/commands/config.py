@@ -52,5 +52,9 @@ class ConfigShowCommand(Command):
         else:
             data = config.config_data
 
-        output = json.dumps(data, indent=2, sort_keys=True) if self.fmt.lower() == "json" else toml.dumps(data)
+        output = (
+            json.dumps(data, indent=2, sort_keys=True)
+            if self.fmt.lower() == "json"
+            else toml.dumps(data)
+        )
         click.echo(output)
