@@ -7,7 +7,7 @@ from click.testing import CliRunner
 
 from piddiplatsch.cli import cli
 from piddiplatsch.consumer import HarvestProcessor
-from piddiplatsch.result import FeedResult, PublishResult
+from piddiplatsch.result import FeedResult, ProjectPublishResult, PublishResult
 
 
 @pytest.fixture
@@ -365,6 +365,7 @@ class TestPublishCommand:
         assert "--retries" in result.output
         assert "--retry-delay" in result.output
         assert "--workers" in result.output
+        assert "--project" in result.output
 
     @patch("piddiplatsch.cli.HandlePublisher")
     def test_publish_reports_success(self, publisher_cls, runner, tmp_path):
@@ -414,21 +415,39 @@ class TestPublishCommand:
         source = tmp_path / "handles.jsonl"
         source.touch()
 
-        def run(paths, limit, offset, retries, retry_delay, workers, progress_callback):
+        def run(
+            paths,
+            limit,
+            offset,
+            retries,
+            retry_delay,
+            workers,
+            progress_callback,
+            project,
+        ):
             progress_callback(1, 1, "21.TEST/abc", None)
             return PublishResult(total=1, succeeded=1)
 
         publisher_cls.return_value.run.side_effect = run
 
         result = runner.invoke(
-            cli, ["--verbose", "publish", "--offset", "1000", str(source)]
+            cli,
+            [
+                "--verbose",
+                "publish",
+                "--project",
+                "cmip6",
+                "--offset",
+                "1000",
+                str(source),
+            ],
         )
 
         assert result.exit_code == 0
         assert "Processed handles: 1001-1001" in result.output
         tqdm_cls.assert_called_once_with(
             total=1,
-            desc="publish handles 1001-1001",
+            desc="publish cmip6 handles 1001-1001",
             unit="handle",
             dynamic_ncols=True,
         )
@@ -444,7 +463,16 @@ class TestPublishCommand:
         source = tmp_path / "handles.jsonl"
         source.touch()
 
-        def run(paths, limit, offset, retries, retry_delay, workers, progress_callback):
+        def run(
+            paths,
+            limit,
+            offset,
+            retries,
+            retry_delay,
+            workers,
+            progress_callback,
+            project,
+        ):
             progress_callback(1, 1, "21.TEST/abc", None)
             return PublishResult(total=1, succeeded=1)
 
@@ -455,6 +483,41 @@ class TestPublishCommand:
         assert result.exit_code == 0
         assert "Published 1/1 handles" in result.output
         tqdm_cls.assert_not_called()
+
+    @patch("piddiplatsch.cli.HandlePublisher")
+    def test_publish_passes_project_and_prints_project_summary(
+        self, publisher_cls, runner, tmp_path
+    ):
+        source = tmp_path / "handles.jsonl"
+        source.touch()
+        publisher_cls.return_value.run.return_value = PublishResult(
+            total=3,
+            succeeded=2,
+            failed=1,
+            projects={"cmip6": ProjectPublishResult(total=3, succeeded=2, failed=1)},
+        )
+
+        result = runner.invoke(cli, ["publish", "--project", "cmip6", str(source)])
+
+        assert result.exit_code == 1
+        assert publisher_cls.return_value.run.call_args.kwargs["project"] == "cmip6"
+        assert "cmip6: 2/3 published, 1 failed" in result.output
+
+    @patch("piddiplatsch.cli.HandlePublisher")
+    def test_publish_reports_project_mismatch_cleanly(
+        self, publisher_cls, runner, tmp_path
+    ):
+        source = tmp_path / "handles.jsonl"
+        source.touch()
+        publisher_cls.return_value.run.side_effect = ValueError(
+            "Handle batch does not match project 'cmip6'"
+        )
+
+        result = runner.invoke(cli, ["publish", "--project", "cmip6", str(source)])
+
+        assert result.exit_code == 1
+        assert "does not match project" in result.output
+        assert result.exception.__class__.__name__ != "ValueError"
 
     @patch("piddiplatsch.cli.HandlePublisher")
     def test_publish_passes_limit(self, publisher_cls, runner, tmp_path):

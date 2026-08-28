@@ -130,9 +130,13 @@ REST server and credentials in the same local configuration file.
 For example, publish all project files from yesterday:
 
 ```bash
-piddi --config custom.toml --verbose publish \
-  outputs/*/handles/handles_2026-08-24.jsonl
+piddi --config custom.toml --verbose publish --project cmip6 \
+  outputs/cmip6/handles/handles_2026-08-24.jsonl
 ```
+
+`--project` validates the complete selected batch before the first request. It
+does not filter mismatches. Omit it to retain the generic publisher, including
+support for intentionally mixed-project inputs.
 
 For a limited trial against the current file, cap the total number of attempted
 Handles:
@@ -163,6 +167,11 @@ the run finishes. Each line includes the outcome, action, PID, full URL,
 project, dataset, asset, source location, batch position, retries, and error.
 Pass the existing global `--verbose` option to enable the terminal progress
 bar; without it, only the final summary is printed.
+
+Single-project batches are inferred automatically. Their receipt uses a name
+such as `published_cmip6_handles_2026-08-28_10-15-00.jsonl`; mixed or unknown
+batches retain the generic `published_handles_...jsonl` name. The final summary
+shows totals for every project present.
 
 You can also pass one file, several files, or a directory. `publish` never
 changes or deletes its inputs. Publication uses Handle overwrite semantics, so

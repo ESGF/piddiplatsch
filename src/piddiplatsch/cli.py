@@ -15,6 +15,7 @@ from piddiplatsch.consumer import (
 from piddiplatsch.exceptions import JsonlReadError
 from piddiplatsch.handles.publish import HandlePublisher
 from piddiplatsch.persist.retry import RetryRunner
+from piddiplatsch.result import PublishResult
 
 CONTEXT_SETTINGS = dict(help_option_names=["-h", "--help"])
 
@@ -222,6 +223,10 @@ def map_messages(
     show_default=True,
     help="Publish different handles concurrently; updates to one handle stay ordered.",
 )
+@click.option(
+    "--project",
+    help="Validate that every selected Handle belongs to this project.",
+)
 @click.pass_context
 def publish(
     ctx,
@@ -231,6 +236,7 @@ def publish(
     retries: int,
     retry_delay: float,
     workers: int,
+    project: str | None,
 ):
     """Publish prepared handles from immutable JSONL FILE_OR_DIRECTORY inputs.
 
@@ -249,9 +255,12 @@ def publish(
         if not verbose:
             return
         if progress_bar is None:
+            progress_label = (
+                f"publish {project} handles" if project else "publish handles"
+            )
             progress_bar = tqdm(
                 total=total,
-                desc=f"publish handles {offset + 1}-{offset + total}",
+                desc=f"{progress_label} {offset + 1}-{offset + total}",
                 unit="handle",
                 dynamic_ncols=True,
             )
@@ -267,15 +276,19 @@ def publish(
         progress_bar.update(1)
 
     try:
-        result = HandlePublisher().run(
-            path,
-            limit=limit,
-            offset=offset,
-            retries=retries,
-            retry_delay=retry_delay,
-            workers=workers,
-            progress_callback=show_progress,
-        )
+        try:
+            result = HandlePublisher().run(
+                path,
+                limit=limit,
+                offset=offset,
+                retries=retries,
+                retry_delay=retry_delay,
+                workers=workers,
+                progress_callback=show_progress,
+                project=project,
+            )
+        except ValueError as exc:
+            raise click.ClickException(str(exc)) from exc
     finally:
         if progress_bar is not None:
             progress_bar.close()
@@ -285,6 +298,7 @@ def publish(
         return
 
     click.echo(f"Published {result.succeeded}/{result.total} handles.")
+    _show_publish_projects(result)
     if result.result_file is not None:
         click.echo(f"Publication results: {result.result_file}")
     if last_handle_position > offset:
@@ -297,8 +311,18 @@ def publish(
         click.echo(f"Failed: {result.failed}")
         for error in result.errors:
             click.echo(f"  - {error}")
-    if result.failed:
         raise click.exceptions.Exit(1)
+
+
+def _show_publish_projects(result: PublishResult) -> None:
+    if not result.projects:
+        return
+    click.echo("Projects:")
+    for project_name, project_result in sorted(result.projects.items()):
+        click.echo(
+            f"  {project_name}: {project_result.succeeded}/{project_result.total} "
+            f"published, {project_result.failed} failed"
+        )
 
 
 # retry command

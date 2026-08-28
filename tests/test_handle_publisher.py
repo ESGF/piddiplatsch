@@ -227,9 +227,58 @@ def test_default_result_jsonl_has_readable_unique_name(tmp_path, monkeypatch):
     assert first.result_file is not None
     assert second.result_file is not None
     assert first.result_file.parent == tmp_path / "outputs" / "published"
-    assert first.result_file.name == "published_handles_2026-08-27_15-33-53.jsonl"
-    assert second.result_file.name == "published_handles_2026-08-27_15-33-53_2.jsonl"
+    assert first.result_file.name == "published_cmip6_handles_2026-08-27_15-33-53.jsonl"
+    assert (
+        second.result_file.name == "published_cmip6_handles_2026-08-27_15-33-53_2.jsonl"
+    )
     assert first.result_file.read_text().count("\n") == 1
+
+
+def test_project_selection_validates_whole_batch_before_publication(tmp_path):
+    source = tmp_path / "handles.jsonl"
+    write_jsonl(
+        source,
+        [handle_record("cmip6"), handle_record("cmip7", project="cmip7")],
+    )
+    backend = FakeBackend()
+
+    with pytest.raises(
+        ValueError, match=r"does not match project 'cmip6'.*handles.jsonl:2"
+    ):
+        HandlePublisher(backend).run([source], project="CMIP6")
+
+    assert backend.published == []
+    assert not (tmp_path / "outputs" / "published").exists()
+
+
+def test_project_selection_does_not_publish_when_input_cannot_be_validated(tmp_path):
+    good = tmp_path / "good.jsonl"
+    malformed = tmp_path / "malformed.jsonl"
+    write_jsonl(good, [handle_record("good")])
+    malformed.write_text("not-json\n", encoding="utf-8")
+    backend = FakeBackend()
+
+    with pytest.raises(ValueError, match="Cannot validate project 'cmip6'"):
+        HandlePublisher(backend).run([good, malformed], project="cmip6")
+
+    assert backend.published == []
+
+
+def test_generic_publication_keeps_mixed_projects_and_reports_each(tmp_path):
+    config._set("consumer", "output_dir", str(tmp_path / "outputs"))
+    source = tmp_path / "handles.jsonl"
+    write_jsonl(
+        source,
+        [handle_record("cmip6"), handle_record("cmip7", project="cmip7")],
+    )
+
+    result = HandlePublisher(FakeBackend()).run([source])
+
+    assert result.project is None
+    assert result.result_file is not None
+    assert result.result_file.name.startswith("published_handles_")
+    assert result.projects["cmip6"].succeeded == 1
+    assert result.projects["cmip7"].succeeded == 1
 
 
 def test_continues_after_invalid_record_and_backend_failure(tmp_path):

@@ -13,6 +13,8 @@ All notable changes to this project are documented here.
   raw-JSONL-to-Handle-JSONL processing.
 - Added a run-scoped structured JSONL receipt containing every successful or
   failed deferred Handle publication outcome.
+- Added optional project validation and per-project summaries to `publish`,
+  while retaining generic mixed-project publication when no project is given.
 
 ### Changed
 - Handle publication selects `rest` or legacy `pyhandle`; both always write the

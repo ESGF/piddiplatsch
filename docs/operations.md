@@ -22,11 +22,12 @@ server-side failure leaves the JSONL record available for inspection or later
 publication.
 
 Deferred publication writes each outcome immediately to a readable, unique
-`published/published_handles_YYYY-MM-DD_HH-MM-SS.jsonl` file using UTC and
-prints its path in the final CLI summary. If another run starts during the same
-second, `_2`, `_3`, and so on are appended. Parallel completion order may
-differ from input order; `position`, `batch_index`, `source_file`, and
-`source_line` provide stable ordering and provenance.
+`published/published_<project>_handles_YYYY-MM-DD_HH-MM-SS.jsonl` file using UTC
+and prints its path in the final CLI summary. Generic mixed-project batches use
+`published_handles_...jsonl`. If another run starts during the same second,
+`_2`, `_3`, and so on are appended. Parallel completion order may differ from
+input order; `position`, `batch_index`, `source_file`, and `source_line` provide
+stable ordering and provenance.
 
 ## Staged commands
 
@@ -38,7 +39,8 @@ piddi --config custom.toml harvest
 piddi --config custom.toml map outputs/dump/dump_messages_2026-08-27.jsonl
 
 # Handle JSONL -> REST Handle Service
-piddi --config custom.toml publish outputs/cmip6/handles/handles_2026-08-27.jsonl
+piddi --config custom.toml publish --project cmip6 \
+  outputs/cmip6/handles/handles_2026-08-27.jsonl
 
 # Kafka -> raw JSONL -> Handle JSONL (default production ingestion)
 piddi --config custom.toml consume
@@ -50,6 +52,11 @@ piddi --config custom.toml consume --publish
 `map` accepts files or directories plus `--project`, `--all-projects`,
 `--limit`, `--offset`, and `--force`. It never contacts Kafka or a Handle
 Service and does not modify its input dumps.
+
+`publish --project NAME` validates every selected Handle before publishing and
+stops without sending anything if a project is missing or different. Plain
+`publish` remains the generic mode and permits mixed-project batches. The final
+summary always provides per-project counts when project metadata is available.
 
 ## Real Handle service contract test
 
