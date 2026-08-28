@@ -2,6 +2,7 @@ import json
 import logging
 import threading
 import time
+from datetime import UTC, datetime
 
 import pytest
 import requests
@@ -211,17 +212,24 @@ def test_writes_structured_result_jsonl_for_successes_and_failures(tmp_path):
     assert failure["error"] == "server unavailable"
 
 
-def test_default_result_jsonl_is_run_scoped_under_output_dir(tmp_path):
+def test_default_result_jsonl_has_readable_unique_name(tmp_path, monkeypatch):
     config._set("consumer", "output_dir", str(tmp_path / "outputs"))
+    monkeypatch.setattr(
+        "piddiplatsch.handles.publish.utc_now",
+        lambda: datetime(2026, 8, 27, 15, 33, 53, tzinfo=UTC),
+    )
     source = tmp_path / "handles.jsonl"
     write_jsonl(source, [handle_record("abc")])
 
-    result = HandlePublisher(FakeBackend()).run([source])
+    first = HandlePublisher(FakeBackend()).run([source])
+    second = HandlePublisher(FakeBackend()).run([source])
 
-    assert result.result_file is not None
-    assert result.result_file.parent == tmp_path / "outputs" / "published"
-    assert result.result_file.name.startswith("publication_results_")
-    assert result.result_file.read_text().count("\n") == 1
+    assert first.result_file is not None
+    assert second.result_file is not None
+    assert first.result_file.parent == tmp_path / "outputs" / "published"
+    assert first.result_file.name == "published_handles_2026-08-27_15-33-53.jsonl"
+    assert second.result_file.name == "published_handles_2026-08-27_15-33-53_2.jsonl"
+    assert first.result_file.read_text().count("\n") == 1
 
 
 def test_continues_after_invalid_record_and_backend_failure(tmp_path):

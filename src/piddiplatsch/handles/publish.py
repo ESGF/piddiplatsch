@@ -11,7 +11,6 @@ from dataclasses import dataclass
 from pathlib import Path
 from queue import Queue
 from typing import Any, Protocol
-from uuid import uuid4
 
 import requests
 
@@ -344,12 +343,22 @@ class HandlePublisher:
     @staticmethod
     def _new_result_file() -> Path:
         output_dir = Path(config.get("consumer", {}).get("output_dir", "outputs"))
-        timestamp = utc_now().strftime("%Y%m%dT%H%M%S%fZ")
-        return (
-            output_dir
-            / "published"
-            / f"publication_results_{timestamp}_{uuid4().hex[:8]}.jsonl"
-        )
+        result_dir = output_dir / "published"
+        result_dir.mkdir(parents=True, exist_ok=True)
+        timestamp = utc_now().strftime("%Y-%m-%d_%H-%M-%S")
+        stem = f"published_handles_{timestamp}"
+        counter = 1
+        while True:
+            suffix = "" if counter == 1 else f"_{counter}"
+            candidate = result_dir / f"{stem}{suffix}.jsonl"
+            try:
+                # Reserve the name atomically so concurrent runs cannot select
+                # the same human-readable filename.
+                candidate.touch(exist_ok=False)
+            except FileExistsError:
+                counter += 1
+                continue
+            return candidate
 
     def _publish_chain(
         self,
