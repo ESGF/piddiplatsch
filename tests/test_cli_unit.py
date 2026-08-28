@@ -18,6 +18,7 @@ from piddiplatsch.commands import (
 )
 from piddiplatsch.config import config
 from piddiplatsch.consumer import HarvestProcessor
+from piddiplatsch.monitoring.progress import NoOpProgress, Progress
 from piddiplatsch.result import FeedResult, ProjectPublishResult, PublishResult
 
 
@@ -124,6 +125,7 @@ class TestConsumeCommand:
         assert mock_start_consumer.called
         call_kwargs = mock_start_consumer.call_args.kwargs
         assert call_kwargs.get("verbose") is True
+        assert isinstance(call_kwargs["progress"], Progress)
 
     @patch("piddiplatsch.commands.consume.start_consumer")
     def test_consume_with_several_projects(self, mock_start_consumer, runner):
@@ -166,6 +168,13 @@ class TestHarvestCommand:
         assert kwargs["dump_messages"] is True
         assert kwargs["force"] is True
 
+    @patch("piddiplatsch.commands.harvest.start_consumer")
+    def test_harvest_with_verbose_uses_stream_progress(self, mock_start_consumer, runner):
+        result = runner.invoke(cli, ["--verbose", "harvest"])
+
+        assert result.exit_code == 0
+        assert isinstance(mock_start_consumer.call_args.kwargs["progress"], Progress)
+
 
 class TestMapCommand:
     def test_map_help(self, runner):
@@ -202,6 +211,7 @@ class TestMapCommand:
         assert "Mapped 1/3" in result.output
         assert "Filtered by project selection: 2" in result.output
         kwargs = mock_map_dump_files.call_args.kwargs
+        assert isinstance(kwargs.pop("progress"), NoOpProgress)
         assert kwargs == {
             "projects": ("cmip6",),
             "limit": 3,
@@ -220,6 +230,7 @@ class TestMapCommand:
 
         assert result.exit_code == 0
         assert mock_map_dump_files.call_args.kwargs["verbose"] is True
+        assert isinstance(mock_map_dump_files.call_args.kwargs["progress"], Progress)
 
     @patch("piddiplatsch.commands.map.map_dump_files")
     def test_map_resolves_date_from_output_dir(self, mock_map_dump_files, runner, tmp_path):

@@ -12,6 +12,7 @@ from piddiplatsch.config import config
 from piddiplatsch.core.routing import ProjectRouter
 from piddiplatsch.exceptions import MaxErrorsExceededError, StopOnTransientSkipError
 from piddiplatsch.helpers import find_jsonl, read_jsonl
+from piddiplatsch.monitoring.progress import BaseProgress, get_progress
 from piddiplatsch.monitoring.stats import CounterKey, stats
 from piddiplatsch.persist.dump import DumpRecorder
 from piddiplatsch.persist.recovery import FailureRecorder
@@ -41,9 +42,7 @@ def build_processing_target(
         raise ValueError("Specify either processor or projects, not both")
     if processor is not None:
         if isinstance(processor, str):
-            raise TypeError(
-                "String processor selection is not supported; use projects or a processing object"
-            )
+            raise TypeError("String processor selection is not supported; use projects or a processing object")
         return processor
     selection = configured_projects() if projects is None else projects
     return ProjectRouter(selection, dry_run=dry_run)
@@ -153,6 +152,7 @@ class ConsumerPipeline:
         *,
         dump_messages=False,
         verbose=False,
+        progress: BaseProgress | None = None,
         max_errors=-1,
         dry_run: bool = False,
         force: bool = False,
@@ -186,13 +186,8 @@ class ConsumerPipeline:
             )
         )
         self.stats = stats
-        self.progress = None
-        try:
-            from piddiplatsch.monitoring import get_progress
-
-            self.progress = get_progress(f"{self.processor}", use_tqdm=verbose)
-        except ImportError:
-            pass
+        self._owns_progress = progress is None
+        self.progress = progress or get_progress(f"{self.processor}", use_tqdm=verbose)
 
     def run(self):
         logger.info("Starting consumer pipeline...")
@@ -225,9 +220,7 @@ class ConsumerPipeline:
                 if result.transient_skip:
                     self.stats.external_fail(message=f"message={key}")
                     if self.stop_on_transient_skip and not self.force:
-                        raise StopOnTransientSkipError(
-                            f"Transient external failure encountered (key={key}); stopping as per policy"
-                        )
+                        raise StopOnTransientSkipError(f"Transient external failure encountered (key={key}); stopping as per policy")
             if result.patched:
                 self.stats.patch(message=f"message={key}")
 
@@ -238,9 +231,7 @@ class ConsumerPipeline:
 
     def _check_success(self):
         if self.max_errors >= 0 and self.stats.errors >= self.max_errors:
-            raise MaxErrorsExceededError(
-                f"Max error limit reached ({self.stats.errors}/{self.max_errors})"
-            )
+            raise MaxErrorsExceededError(f"Max error limit reached ({self.stats.errors}/{self.max_errors})")
 
     def _safe_process_message(self, key, value):
         try:
@@ -253,22 +244,24 @@ class ConsumerPipeline:
             infos = value.get("__infos__", {}) or {}
             retries = infos.get("retries", value.get("retries", 0))
             reason = str(e)
-            FailureRecorder(root_dir=self.failure_dir).record(
-                key, value, retries=retries, reason=reason
-            )
+            FailureRecorder(root_dir=self.failure_dir).record(key, value, retries=retries, reason=reason)
             return ProcessingResult(key=key, success=False, error=reason)
 
     def stop(self, cause: StopCause = StopCause.MANUAL):
         logger.warning(f"Stopping consumer (cause: {cause.value})...")
         self.stats._log_stats()
-        if self.progress:
-            self.progress.close()
+        self.close_progress()
         logger.info(
             f"Total messages: {self.stats.messages}, total errors: {self.stats.errors}, "
             f"handles: {self.stats[CounterKey.HANDLES]}, skipped: {self.stats.skipped_messages}, "
             f"filtered: {self.stats.filtered_messages}"
         )
         self.stats.close()
+
+    def close_progress(self) -> None:
+        """Close progress created by this pipeline, leaving injected progress to its owner."""
+        if self._owns_progress:
+            self.progress.close()
 
 
 # ----------------------------
@@ -284,6 +277,7 @@ def feed_messages_direct(
     failure_dir: Path | None = None,
     force: bool = False,
     verbose: bool = False,
+    progress: BaseProgress | None = None,
 ) -> FeedResult:
     consumer = DirectConsumer(messages)
     target = build_processing_target(
@@ -298,6 +292,7 @@ def feed_messages_direct(
         failure_dir=failure_dir,
         force=force,
         verbose=verbose,
+        progress=progress,
     )
 
     # Track stats before run
@@ -309,8 +304,7 @@ def feed_messages_direct(
     try:
         pipeline.run()
     finally:
-        if verbose and pipeline.progress:
-            pipeline.progress.close()
+        pipeline.close_progress()
 
     # Calculate delta from pipeline stats
     processed = pipeline.stats.messages - messages_before
@@ -336,6 +330,7 @@ def map_dump_files(
     offset: int = 0,
     force: bool = False,
     verbose: bool = False,
+    progress: BaseProgress | None = None,
 ) -> FeedResult:
     """Map saved raw-message JSONL through project plugins without Kafka."""
     if limit is not None and limit < 1:
@@ -359,10 +354,7 @@ def map_dump_files(
                 continue
 
         records = read_jsonl(path, limit=remaining, offset=file_offset)
-        messages.extend(
-            (f"{path}:{file_offset + index}", record)
-            for index, record in enumerate(records, start=1)
-        )
+        messages.extend((f"{path}:{file_offset + index}", record) for index, record in enumerate(records, start=1))
 
     if not messages:
         return FeedResult()
@@ -376,6 +368,7 @@ def map_dump_files(
         dry_run=True,
         force=force,
         verbose=verbose,
+        progress=progress,
     )
 
 
@@ -410,13 +403,12 @@ def start_consumer(
     direct_messages=None,
     dry_run: bool = False,
     force: bool = False,
+    progress: BaseProgress | None = None,
 ):
     # Initialize stats from the fully loaded configuration for this run.
     stats_config = config.get("stats", {})
     stats.configure_for_run(
-        enable_db=(
-            stats_config.get("enable_db", False) if enable_db is None else enable_db
-        ),
+        enable_db=(stats_config.get("enable_db", False) if enable_db is None else enable_db),
         db_path=db_path or stats_config.get("db_path"),
         log_interval_seconds=stats_config.get("interval_seconds"),
         log_interval_messages=stats_config.get("summary_interval"),
@@ -463,6 +455,7 @@ def start_consumer(
         proc_instance,
         dump_messages=dump_messages,
         verbose=verbose,
+        progress=progress,
         max_errors=max_errors,
         dry_run=dry_run,
         force=force,
@@ -489,3 +482,5 @@ def start_consumer(
         logger.warning("Consumer interrupted.")
         pipeline.stop(cause=StopCause.KEYBOARD_INTERRUPT)
         sys.exit(0)
+    else:
+        pipeline.close_progress()

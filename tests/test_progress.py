@@ -1,6 +1,27 @@
 from unittest.mock import patch
 
-from piddiplatsch.monitoring.progress import BoundedProgress
+from piddiplatsch.monitoring.progress import (
+    BoundedProgress,
+    NoOpProgress,
+    Progress,
+    get_progress,
+)
+
+
+def test_progress_factory_selects_streaming_or_bounded_progress():
+    stream = get_progress(title="consume", use_tqdm=False, stream=True)
+    bounded = get_progress(
+        title="publish handles",
+        use_tqdm=False,
+        stream=False,
+        unit="handle",
+        start=10,
+    )
+
+    assert isinstance(stream, NoOpProgress)
+    assert isinstance(bounded, BoundedProgress)
+    assert bounded.unit == "handle"
+    assert bounded.start == 10
 
 
 @patch("piddiplatsch.monitoring.progress.tqdm")
@@ -34,3 +55,13 @@ def test_disabled_bounded_progress_tracks_without_rendering(tqdm_cls):
     assert progress.position == 1
     assert progress.succeeded == 1
     tqdm_cls.assert_not_called()
+
+
+@patch("piddiplatsch.monitoring.progress.tqdm")
+def test_stream_progress_close_is_idempotent(tqdm_cls):
+    progress = Progress(title="consume")
+
+    progress.close()
+    progress.close()
+
+    tqdm_cls.return_value.close.assert_called_once_with()

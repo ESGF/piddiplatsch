@@ -18,12 +18,15 @@ class ConsumeCommand(Command):
     all_projects: bool = False
 
     def execute(self) -> None:
-        start_consumer(
-            config.get("consumer", "topic"),
-            config.get("kafka"),
-            projects=select_projects(self.projects, self.all_projects),
-            dump_messages=True,
-            verbose=self.verbose,
-            dry_run=not self.publish,
-            force=self.force,
-        )
+        progress = self.progress(title="consume", stream=True)
+        with progress:
+            start_consumer(
+                config.get("consumer", "topic"),
+                config.get("kafka"),
+                projects=select_projects(self.projects, self.all_projects),
+                dump_messages=True,
+                verbose=self.verbose,
+                progress=progress,
+                dry_run=not self.publish,
+                force=self.force,
+            )

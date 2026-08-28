@@ -2,8 +2,9 @@
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
+from typing import Literal, overload
 
-from piddiplatsch.monitoring.progress import BoundedProgress
+from piddiplatsch.monitoring.progress import BaseProgress, BoundedProgress, get_progress
 
 
 @dataclass(kw_only=True)
@@ -17,9 +18,42 @@ class Command(ABC):
 
     verbose: bool = False
 
-    def progress(self, *, title: str, unit: str, start: int = 0) -> BoundedProgress:
-        """Create bounded progress using this command's verbosity setting."""
-        return BoundedProgress(title=title, unit=unit, enabled=self.verbose, start=start)
+    @overload
+    def progress(
+        self,
+        *,
+        title: str,
+        stream: Literal[False] = False,
+        unit: str = "item",
+        start: int = 0,
+    ) -> BoundedProgress: ...
+
+    @overload
+    def progress(
+        self,
+        *,
+        title: str,
+        stream: Literal[True],
+        unit: str = "item",
+        start: int = 0,
+    ) -> BaseProgress: ...
+
+    def progress(
+        self,
+        *,
+        title: str,
+        stream: bool = False,
+        unit: str = "item",
+        start: int = 0,
+    ) -> BaseProgress:
+        """Create the requested progress style using this command's verbosity."""
+        return get_progress(
+            title=title,
+            use_tqdm=self.verbose,
+            stream=stream,
+            unit=unit,
+            start=start,
+        )
 
     @abstractmethod
     def execute(self) -> None:

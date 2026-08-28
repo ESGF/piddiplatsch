@@ -73,6 +73,7 @@ class BoundedProgress(BaseProgress):
     def close(self) -> None:
         if self.bar is not None:
             self.bar.close()
+            self.bar = None
 
 
 class Progress(BaseProgress):
@@ -82,6 +83,7 @@ class Progress(BaseProgress):
         self.title = title
         self.update_interval = update_interval
         self.last_update = time.time()
+        self.closed = False
 
         self.bar = tqdm(
             total=0,  # ticker mode, no total
@@ -138,23 +140,38 @@ class Progress(BaseProgress):
 
     def refresh(self):
         """Update the display from Stats."""
+        if self.closed:
+            return
         now = time.time()
         if now - self.last_update >= self.update_interval:
             self.bar.set_description(self._format_desc())
             self.last_update = now
 
     def close(self):
+        if self.closed:
+            return
         self.bar.set_description(self._format_desc())
         self.bar.close()
+        self.closed = True
 
 
-def get_progress(title="progress", use_tqdm=False, update_interval=5):
-    """
-    Factory to get a progress display.
-    - Returns Progress (tqdm-based) if use_tqdm=True
-    - Returns NoOpProgress if use_tqdm=False
-    """
+def get_progress(
+    title="progress",
+    use_tqdm=False,
+    update_interval=5,
+    *,
+    stream: bool = True,
+    unit: str = "item",
+    start: int = 0,
+) -> BaseProgress:
+    """Create streaming or bounded progress, optionally without rendering."""
+    if not stream:
+        return BoundedProgress(
+            title=title,
+            unit=unit,
+            enabled=use_tqdm,
+            start=start,
+        )
     if use_tqdm:
         return Progress(title=title, update_interval=update_interval)
-    else:
-        return NoOpProgress()
+    return NoOpProgress()

@@ -12,11 +12,14 @@ class HarvestCommand(Command):
     """Harvest Kafka messages without mapping them."""
 
     def execute(self) -> None:
-        start_consumer(
-            config.get("consumer", "topic"),
-            config.get("kafka"),
-            processor=HarvestProcessor(),
-            dump_messages=True,
-            verbose=self.verbose,
-            force=True,
-        )
+        progress = self.progress(title="harvest", stream=True)
+        with progress:
+            start_consumer(
+                config.get("consumer", "topic"),
+                config.get("kafka"),
+                processor=HarvestProcessor(),
+                dump_messages=True,
+                verbose=self.verbose,
+                progress=progress,
+                force=True,
+            )

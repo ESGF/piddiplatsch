@@ -25,6 +25,7 @@ class MapCommand(Command):
     force: bool = False
 
     def execute(self) -> None:
+        progress = self.progress(title="map", stream=True)
         selection = select_projects(self.projects, self.all_projects)
         date = self.input_date.date().isoformat() if self.input_date is not None else ""
         paths = resolve_dated_input(
@@ -34,14 +35,16 @@ class MapCommand(Command):
             missing_label="Raw dump",
         )
         try:
-            result = map_dump_files(
-                paths,
-                projects=selection,
-                limit=self.limit,
-                offset=self.offset,
-                force=self.force,
-                verbose=self.verbose,
-            )
+            with progress:
+                result = map_dump_files(
+                    paths,
+                    projects=selection,
+                    limit=self.limit,
+                    offset=self.offset,
+                    force=self.force,
+                    verbose=self.verbose,
+                    progress=progress,
+                )
         except (JsonlReadError, OSError, ValueError) as exc:
             raise click.ClickException(str(exc)) from exc
 
