@@ -9,8 +9,9 @@ Piddiplatsch writes daily JSONL files beneath `consumer.output_dir`:
 | `dump/` | Original Kafka messages written by every `harvest` or `consume` run. |
 | `<plugin>/handles/` | Handle records produced by that plugin. Direct REST/pyhandle publication writes the JSONL record before contacting the server; each line also includes `project`. |
 | `published/` | One run-scoped JSONL receipt per `publish` run, containing every successful or failed Handle outcome. |
-| `skipped/` | Records deferred after transient external failures. |
-| `failures/r<N>/` | Records that failed processing, grouped by retry count. |
+| `<plugin>/skipped/` | Records deferred after transient external failures. |
+| `<plugin>/failures/r<N>/` | Records that failed processing, grouped by retry count. |
+| `skipped/`, `failures/r<N>/` | Legacy or unresolved-project recovery records. |
 
 The raw dump is intentionally global and always written before routing. It preserves
 the consumed Kafka order and remains suitable for replay or investigation;
@@ -107,12 +108,15 @@ creates and prints a distinct project-scoped
 normal daily mapping output:
 
 ```bash
-piddi --config custom.toml -v retry outputs/failures/r0
+piddi --config custom.toml -v retry outputs/cmip6/failures/r0
 piddi --config custom.toml publish --project cmip6 \
   outputs/cmip6/handles/retry_handles_<timestamp>.jsonl
 ```
 
 Use `retry --publish` only for intentional immediate publication.
+Recovery records store the canonical project in `__infos__.project`; `retry`
+uses it instead of the current configured project selection. Older records
+without this metadata still use the configured selection.
 
 `--delete-after` removes an input file only when all records succeed. Malformed
 JSONL and skipped records are failures for this decision, so the source remains

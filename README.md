@@ -311,14 +311,18 @@ Piddiplatsch persists problematic records for later inspection or retry.
 Failure records are written to:
 
 ```
-outputs/failures/r<N>/failed_items_<date>.jsonl
+outputs/<project>/failures/r<N>/failed_items_<date>.jsonl
 ```
 
 Skipped (transient) records are written to:
 
 ```
-outputs/skipped/skipped_items_<date>.jsonl
+outputs/<project>/skipped/skipped_items_<date>.jsonl
 ```
+
+Each record stores the canonical project in `__infos__.project`. Events whose
+project cannot be resolved remain in the legacy global `failures/` or
+`skipped/` directory.
 
 Dumped messages are written to:
 

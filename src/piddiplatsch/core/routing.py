@@ -103,6 +103,12 @@ class ProjectRouter:
             if callable(preflight):
                 preflight(stop_on_transient_skip=stop_on_transient_skip)
 
+    def plugin_name_for(self, message: dict[str, Any]) -> str | None:
+        """Return the selected canonical plugin name for an event, if resolvable."""
+        project_id = extract_project_id(message)
+        plugin = self._plugins_by_project.get(normalize_project_id(project_id or ""))
+        return plugin.name if plugin else None
+
     def process(self, key: str, value: dict[str, Any]) -> ProcessingResult:
         project_id = extract_project_id(value)
         normalized = normalize_project_id(project_id or "")

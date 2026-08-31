@@ -154,3 +154,34 @@ def test_retry_uses_one_run_scoped_handle_filename(monkeypatch, tmp_path: Path):
     result = runner.run_file(source)
 
     assert result.handle_files == {output_file}
+
+
+def test_retry_prefers_persisted_project_over_configured_selection(
+    monkeypatch, tmp_path: Path
+):
+    from piddiplatsch import consumer
+    from piddiplatsch.persist import retry as retry_mod
+
+    source = tmp_path / "source.jsonl"
+    source.write_text("{}\n", encoding="utf-8")
+    failure_dir = tmp_path / "failures"
+    failure_dir.mkdir()
+    messages = [
+        ("known", {"__infos__": {"project": "cmip6"}}),
+        ("legacy", {}),
+    ]
+    monkeypatch.setattr(retry_mod, "load_failed_messages", lambda _path: messages)
+    selections = []
+
+    def feed(project_messages, *args, **kwargs):
+        selections.append((kwargs["projects"], [key for key, _ in project_messages]))
+        return FeedResult(total=len(project_messages), succeeded=len(project_messages))
+
+    monkeypatch.setattr(consumer, "feed_messages_direct", feed)
+    runner = RetryRunner(projects=["cmip7"], failure_dir=failure_dir)
+    runner.output_dir = tmp_path
+
+    result = runner.run_file(source)
+
+    assert result.succeeded == 2
+    assert selections == [(["cmip6"], ["known"]), (["cmip7"], ["legacy"])]

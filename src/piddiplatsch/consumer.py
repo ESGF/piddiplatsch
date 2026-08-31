@@ -243,7 +243,9 @@ class ConsumerPipeline:
             if result.skipped:
                 self.stats.skip(message=f"message={key}")
                 try:
-                    SkipRecorder().record(key, value, reason=result.skip_reason)
+                    SkipRecorder(project=result.plugin).record(
+                        key, value, reason=result.skip_reason
+                    )
                 except Exception:
                     logger.exception(f"Failed to persist skipped message {key}")
 
@@ -278,10 +280,27 @@ class ConsumerPipeline:
             infos = value.get("__infos__", {}) or {}
             retries = infos.get("retries", value.get("retries", 0))
             reason = str(e)
-            FailureRecorder(root_dir=self.failure_dir).record(
+            project = self._project_for_message(value)
+            FailureRecorder(root_dir=self.failure_dir, project=project).record(
                 key, value, retries=retries, reason=reason
             )
-            return ProcessingResult(key=key, success=False, error=reason)
+            return ProcessingResult(
+                key=key,
+                success=False,
+                error=reason,
+                project=project,
+                plugin=project,
+            )
+
+    def _project_for_message(self, value: dict) -> str | None:
+        resolver = getattr(self.processor, "plugin_name_for", None)
+        if not callable(resolver):
+            return None
+        try:
+            return resolver(value)
+        except Exception:
+            logger.debug("Could not resolve project for failed message", exc_info=True)
+            return None
 
     def stop(self, cause: StopCause = StopCause.MANUAL):
         logger.warning(f"Stopping consumer (cause: {cause.value})...")

@@ -21,9 +21,8 @@ class RetryCommand(Command):
     handle_profile: str | None = None
 
     def execute(self) -> None:
-        failure_dir = (
-            Path(config.get("consumer", {}).get("output_dir", "outputs")) / "failures"
-        )
+        output_dir = Path(config.get("consumer", {}).get("output_dir", "outputs"))
+        failure_dir = output_dir / "failures"
         progress = self.progress(title="retry files", unit="file")
 
         def show_progress(file, idx, total, result):
@@ -68,6 +67,10 @@ class RetryCommand(Command):
             if result.failure_files:
                 click.echo("  New failures saved to:")
                 for failure_file in sorted(result.failure_files):
-                    click.echo(f"    - {failure_file.relative_to(failure_dir)}")
+                    try:
+                        shown_path = failure_file.relative_to(output_dir)
+                    except ValueError:
+                        shown_path = failure_file
+                    click.echo(f"    - {shown_path}")
         else:
             click.echo("  ✓ All items processed successfully!")

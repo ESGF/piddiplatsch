@@ -24,8 +24,6 @@
 
 ## Recovery and Kafka
 
-- [ ] Store project/plugin identity in failure and skipped records; make their
-  paths and retries project-scoped.
 - [ ] Add per-project consumed, routed, filtered, succeeded, skipped, and failed
   counters.
 - [ ] Define and test Kafka acknowledgement behavior across persistence errors,
