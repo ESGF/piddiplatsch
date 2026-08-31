@@ -64,7 +64,7 @@ def _create_failure_jsonl(failure_file: Path, num_items: int = 3) -> None:
 
 def test_retry_loads_and_processes_failed_messages(tmp_path: Path):
     """Test that retry() loads failed messages and processes them through the pipeline."""
-    # Configure to use temp directory and dry-run mode
+    # Configure deferred JSONL output in a temporary directory.
     config._set("consumer", "output_dir", str(tmp_path))
     config._set("lookup", "enabled", False)
 
@@ -83,7 +83,7 @@ def test_retry_loads_and_processes_failed_messages(tmp_path: Path):
         projects=["cmip6"],
         failure_dir=tmp_path / "failures",
         delete_after=False,
-        dry_run=True,
+        publish=False,
     )
     result = runner.run_file(failure_file)
 
@@ -95,12 +95,13 @@ def test_retry_loads_and_processes_failed_messages(tmp_path: Path):
     # File should still exist (delete_after=False)
     assert failure_file.exists()
 
-    # Verify handles were created in dry-run mode
+    # Verify the recovered Handle batch was created.
     handles_dir = tmp_path / "cmip6" / "handles"
     assert handles_dir.exists()
 
-    files = list(handles_dir.glob("handles_*.jsonl"))
+    files = list(handles_dir.glob("retry_handles_*.jsonl"))
     assert files, "No handles jsonl file created after retry"
+    assert result.handle_files == {files[0]}
 
     # Should have at least 3 lines (one per dataset, possibly more with assets)
     with files[0].open("r", encoding="utf-8") as f:
@@ -142,7 +143,7 @@ def test_retry_deletes_file_when_delete_after_true(tmp_path: Path):
         projects=["cmip6"],
         failure_dir=tmp_path / "failures",
         delete_after=True,
-        dry_run=True,
+        publish=False,
     )
     result = runner.run_file(failure_file)
 

@@ -31,9 +31,16 @@ class DailyJsonlWriter:
         wrapped = {**data, "__infos__": infos}
         return wrapped
 
-    def write(self, prefix: str, data: dict, subdir: Path | None = None) -> Path:
+    def write(
+        self,
+        prefix: str,
+        data: dict,
+        subdir: Path | None = None,
+        *,
+        filename: str | None = None,
+    ) -> Path:
         now = utc_now()
-        dated_filename = f"{prefix}_{now.date()}.jsonl"
+        dated_filename = filename or f"{prefix}_{now.date()}.jsonl"
         target_dir = Path(subdir) if subdir else self.root_dir
         target_dir.mkdir(parents=True, exist_ok=True)
         target_path = target_dir / dated_filename

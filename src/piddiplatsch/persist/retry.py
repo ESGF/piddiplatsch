@@ -2,9 +2,10 @@ import logging
 from collections.abc import Callable
 from pathlib import Path
 
+from piddiplatsch.config import config
 from piddiplatsch.exceptions import JsonlReadError
-from piddiplatsch.helpers import find_jsonl, read_jsonl
-from piddiplatsch.result import RetryResult
+from piddiplatsch.helpers import find_jsonl, read_jsonl, utc_now
+from piddiplatsch.result import FeedResult, RetryResult
 
 
 def load_failed_messages(jsonl_path: Path) -> list[tuple[str, dict]]:
@@ -49,14 +50,16 @@ class RetryRunner:
 
         runner = RetryRunner(
             projects=["cmip6"],
-            failure_dir=Path("outputs/failures"),
+            failure_dir=Path("outputs/failures"),  # legacy/unresolved records
             delete_after=False,
-            dry_run=True,
+            publish=False,
         )
         # Single file
-        result = runner.run_file(Path("outputs/failures/r0/failed_items.jsonl"))
+        result = runner.run_file(
+            Path("outputs/cmip6/failures/r0/failed_items.jsonl")
+        )
         # Batch
-        overall = runner.run_batch((Path("outputs/failures/r0"),))
+        overall = runner.run_batch((Path("outputs/cmip6/failures/r0"),))
     """
 
     def __init__(
@@ -65,15 +68,20 @@ class RetryRunner:
         projects: list[str] | tuple[str, ...] | str,
         failure_dir: Path,
         delete_after: bool = False,
-        dry_run: bool = False,
+        publish: bool = False,
         handle_profile: str | None = None,
+        handle_output_filename: str | None = None,
         logger: logging.Logger | None = None,
     ) -> None:
         self.projects = projects
         self.failure_dir = failure_dir
         self.delete_after = delete_after
-        self.dry_run = dry_run
+        self.publish = publish
         self.handle_profile = handle_profile
+        self.handle_output_filename = handle_output_filename or (
+            f"retry_handles_{utc_now():%Y-%m-%d_%H-%M-%S-%f}.jsonl"
+        )
+        self.output_dir = Path(config.get("consumer", {}).get("output_dir", "outputs"))
         self.logger = logger or logging.getLogger(__name__)
 
     def run_file(self, jsonl_path: Path) -> RetryResult:
@@ -97,27 +105,39 @@ class RetryRunner:
 
         # Track failure files before retry
         failure_files_before = {
-            path: path.stat().st_size for path in self.failure_dir.rglob("*.jsonl")
+            path: path.stat().st_size for path in self._failure_files()
         }
 
-        # Process messages through pipeline
-        feed_result = feed_messages_direct(
-            messages,
-            projects=self.projects,
-            dry_run=self.dry_run,
-            failure_dir=self.failure_dir,
-            handle_profile=self.handle_profile,
-            force=True,
-        )
+        # Records with persisted provenance are retried through exactly that
+        # plugin. Legacy records without it retain the configured selection.
+        feed_result = FeedResult()
+        for project, project_messages in self._group_messages(messages).items():
+            selection = [project] if project else self.projects
+            partial = feed_messages_direct(
+                project_messages,
+                projects=selection,
+                publish=self.publish,
+                handle_profile=self.handle_profile,
+                handle_output_filename=self.handle_output_filename,
+                force=True,
+            )
+            feed_result.total += partial.total
+            feed_result.succeeded += partial.succeeded
+            feed_result.failed += partial.failed
+            feed_result.skipped += partial.skipped
+            feed_result.filtered += partial.filtered
 
         # Find new failure files created during retry
-        failure_files_after = set(self.failure_dir.rglob("*.jsonl"))
+        failure_files_after = self._failure_files()
         result.failure_files = {
             path
             for path in failure_files_after
             if path not in failure_files_before
             or path.stat().st_size != failure_files_before[path]
         }
+        result.handle_files = set(
+            self.output_dir.glob(f"*/handles/{self.handle_output_filename}")
+        )
 
         # Use stats from feed_result
         result.succeeded = feed_result.succeeded
@@ -139,6 +159,24 @@ class RetryRunner:
             )
 
         return result
+
+    def _failure_files(self) -> set[Path]:
+        files = set(self.failure_dir.rglob("*.jsonl"))
+        files.update(self.output_dir.rglob("failed_items_*.jsonl"))
+        return files
+
+    @staticmethod
+    def _group_messages(
+        messages: list[tuple[str, dict]],
+    ) -> dict[str | None, list[tuple[str, dict]]]:
+        groups: dict[str | None, list[tuple[str, dict]]] = {}
+        for key, record in messages:
+            infos = record.get("__infos__", {}) or {}
+            project = infos.get("project")
+            if not isinstance(project, str) or not project.strip():
+                project = None
+            groups.setdefault(project, []).append((key, record))
+        return groups
 
     def run_batch(
         self,
@@ -167,6 +205,7 @@ class RetryRunner:
             overall.skipped += result.skipped
             overall.filtered += result.filtered
             overall.failure_files.update(result.failure_files)
+            overall.handle_files.update(result.handle_files)
             overall.errors.extend(result.errors)
 
             if progress_callback:

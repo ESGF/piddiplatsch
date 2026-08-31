@@ -74,7 +74,7 @@ def test_cmip6plus_real_asset_shape_maps_to_shared_output(cmip6plus_item):
 
 
 def test_cmip6plus_processor_handles_publication_envelope(cmip6plus_item):
-    processor = CMIP6PlusProcessor(dry_run=True)
+    processor = CMIP6PlusProcessor(publish=False)
     message = {
         "metadata": {"time": "2026-08-13T03:02:53Z"},
         "data": {

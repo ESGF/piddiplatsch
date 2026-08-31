@@ -34,7 +34,7 @@ def test_cmip6_processor_available():
 
 def test_get_cmip6_processor():
     """Test getting the CMIP6 processor."""
-    processor = make_processor("cmip6", dry_run=True)
+    processor = make_processor("cmip6", publish=False)
     assert isinstance(processor, BaseProcessor)
 
 
@@ -62,7 +62,7 @@ def test_register_custom_processor():
     assert "test_processor" in list_plugins()
 
     # Get and use it
-    processor = make_processor("test_processor", dry_run=True)
+    processor = make_processor("test_processor", publish=False)
     assert isinstance(processor, TestProcessor)
 
     result = processor.process("test-key", {"data": "test"})
@@ -83,7 +83,7 @@ def test_processor_receives_kwargs():
 
     register_test_plugin("configurable", ConfigurableProcessor)
 
-    processor = make_processor("configurable", custom_param="test_value", dry_run=True)
+    processor = make_processor("configurable", custom_param="test_value", publish=False)
     assert processor.custom_param == "test_value"
 
 
@@ -112,14 +112,14 @@ def test_register_requires_explicit_replace():
 
     # Register first version
     register_test_plugin("overwrite_test", FirstProcessor)
-    processor1 = make_processor("overwrite_test", dry_run=True)
+    processor1 = make_processor("overwrite_test", publish=False)
     assert processor1.processor_version == "v1"
 
     with pytest.raises(ValueError, match="already registered"):
         register_test_plugin("overwrite_test", SecondProcessor)
 
     register_test_plugin("overwrite_test", SecondProcessor, replace=True)
-    processor2 = make_processor("overwrite_test", dry_run=True)
+    processor2 = make_processor("overwrite_test", publish=False)
     assert processor2.processor_version == "v2"
 
 
@@ -147,19 +147,18 @@ def test_multiple_processors_coexist():
     assert "proc_b" in plugins
 
     # Both should be independently accessible
-    proc_a = make_processor("proc_a", dry_run=True)
-    proc_b = make_processor("proc_b", dry_run=True)
+    proc_a = make_processor("proc_a", publish=False)
+    proc_b = make_processor("proc_b", publish=False)
 
     assert proc_a.name == "A"
     assert proc_b.name == "B"
 
 
-def test_processor_dry_run_flag():
-    """Test that dry_run flag is properly passed to processor."""
+def test_processor_publish_flag():
+    """Test that disabling publication selects the JSONL backend."""
     from piddiplatsch.handles.jsonl_backend import JsonlHandleBackend
 
-    # Get processor with dry_run=True
-    processor = make_processor("cmip6", dry_run=True)
+    processor = make_processor("cmip6", publish=False)
 
     # Should be using JSONL backend
     assert isinstance(

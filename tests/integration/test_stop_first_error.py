@@ -33,9 +33,9 @@ def test_stop_on_first_error(tmp_path):
     config._set("consumer", None, consumer_cfg)
     with pytest.raises(SystemExit) as exc:
         start_consumer(
-            processor=BoomProcessor(dry_run=True),
+            processor=BoomProcessor(publish=False),
             direct_messages=[("bad1", {"retries": 0}), ("good1", {"ok": True})],
-            dry_run=True,
+            publish=False,
             verbose=False,
         )
     assert exc.value.code == 1
@@ -48,8 +48,8 @@ def test_stop_on_first_error(tmp_path):
 def test_proceed_after_fix(tmp_path):
     # After fixing, consumer should process both messages successfully
     start_consumer(
-        processor=OKProcessor(dry_run=True),
+        processor=OKProcessor(publish=False),
         direct_messages=[("bad1", {"fixed": True}), ("good2", {"ok": True})],
-        dry_run=True,
+        publish=False,
         verbose=False,
     )

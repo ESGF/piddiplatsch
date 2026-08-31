@@ -78,7 +78,7 @@ def test_cmip7_real_asset_shape_maps_to_shared_output(cmip7_item):
 
 def test_cmip7_processor_handles_publication_envelope(cmip7_item):
     config._set("lookup", "enabled", False)
-    processor = CMIP7Processor(dry_run=True)
+    processor = CMIP7Processor(publish=False)
     message = {
         "metadata": {"time": "2026-08-06T17:22:58Z"},
         "data": {
@@ -97,13 +97,13 @@ def test_cmip7_processor_handles_publication_envelope(cmip7_item):
 
 
 def test_cmip7_rejects_only_malformed_consumed_input_shape():
-    processor = CMIP7Processor(dry_run=True)
+    processor = CMIP7Processor(publish=False)
     with pytest.raises(ValueError, match="MISSING payload object"):
         processor.process("bad-event", {"data": {"payload": []}})
 
 
 def test_cmip7_accepts_real_publisher_patch_shape(cmip7_item):
-    processor = CMIP7Processor(dry_run=True)
+    processor = CMIP7Processor(publish=False)
 
     class StacClient:
         def get_item(self, collection_id, item_id):

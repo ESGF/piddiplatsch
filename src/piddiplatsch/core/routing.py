@@ -70,13 +70,13 @@ class ProjectRouter:
         self,
         projects: Iterable[str] | str,
         *,
-        dry_run: bool = False,
+        publish: bool = False,
         handle_profile: str | None = None,
         processor_kwargs: dict[str, Any] | None = None,
     ) -> None:
         self.plugins = get_plugins(projects)
         kwargs = dict(processor_kwargs or {})
-        kwargs.setdefault("dry_run", dry_run)
+        kwargs.setdefault("publish", publish)
         kwargs.setdefault("handle_profile", handle_profile)
         self.processors = {
             plugin.name: plugin.make_processor(**kwargs) for plugin in self.plugins
@@ -102,6 +102,12 @@ class ProjectRouter:
             preflight = getattr(processor, "preflight_check", None)
             if callable(preflight):
                 preflight(stop_on_transient_skip=stop_on_transient_skip)
+
+    def plugin_name_for(self, message: dict[str, Any]) -> str | None:
+        """Return the selected canonical plugin name for an event, if resolvable."""
+        project_id = extract_project_id(message)
+        plugin = self._plugins_by_project.get(normalize_project_id(project_id or ""))
+        return plugin.name if plugin else None
 
     def process(self, key: str, value: dict[str, Any]) -> ProcessingResult:
         project_id = extract_project_id(value)

@@ -19,6 +19,14 @@ All notable changes to this project are documented here.
   `publish`, while retaining generic file and directory inputs.
 
 ### Changed
+- Failure and skipped records now store their canonical project, use
+  project-scoped paths, and retry through the persisted project. Unresolved and
+  legacy records retain the global recovery path and configured selection.
+- Removed the obsolete `retry --dry-run` option. Internal processing now uses
+  explicit `publish=False` semantics; Handle JSONL is always written.
+- `piddi retry` now defers Handle publication by default and writes each retry
+  invocation to distinct `retry_handles_<timestamp>.jsonl` files; immediate
+  publication requires `--publish`.
 - Handle publication selects `rest` or legacy `pyhandle`; both always write the
   JSONL audit record first.
 - `consume` now always dumps raw messages before plugin filtering and defers

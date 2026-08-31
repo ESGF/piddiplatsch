@@ -19,12 +19,23 @@ class FailingProcessor(BaseProcessor):
         raise RuntimeError("still broken")
 
 
+class ProjectAwareFailingProcessor(FailingProcessor):
+    def plugin_name_for(self, value):
+        return "cmip6"
+
+
 class SkippingProcessor(BaseProcessor):
     def __init__(self):
         pass
 
     def process(self, key, value):
-        return ProcessingResult(key=key, skipped=True, skip_reason="try later")
+        return ProcessingResult(
+            key=key,
+            skipped=True,
+            skip_reason="try later",
+            project="cmip6",
+            plugin="cmip6",
+        )
 
 
 def test_recorders_resolve_output_dir_when_instantiated(tmp_path):
@@ -33,6 +44,22 @@ def test_recorders_resolve_output_dir_when_instantiated(tmp_path):
     assert DumpRecorder().root_dir == tmp_path / "dump"
     assert SkipRecorder().root_dir == tmp_path / "skipped"
     assert FailureRecorder().root_dir == tmp_path / "failures"
+
+
+def test_recovery_recorders_store_project_and_use_project_paths(tmp_path):
+    config._set("consumer", "output_dir", str(tmp_path))
+
+    failure_path = FailureRecorder(project="cmip6").record(
+        "key", {"data": {}}, reason="broken"
+    )
+    skipped_path = SkipRecorder(project="cmip7").record(
+        "key", {"data": {}}, reason="later"
+    )
+
+    assert failure_path.parent == tmp_path / "cmip6" / "failures" / "r0"
+    assert skipped_path.parent == tmp_path / "cmip7" / "skipped"
+    assert json.loads(failure_path.read_text())["__infos__"]["project"] == "cmip6"
+    assert json.loads(skipped_path.read_text())["__infos__"]["project"] == "cmip7"
 
 
 def test_nested_retry_count_selects_failure_subdirectory(tmp_path):
@@ -49,7 +76,21 @@ def test_nested_retry_count_selects_failure_subdirectory(tmp_path):
     assert len(failure_files) == 1
 
 
+def test_pipeline_persists_resolved_project_on_failure(tmp_path):
+    config._set("consumer", "output_dir", str(tmp_path))
+    pipeline = ConsumerPipeline(
+        DirectConsumer([("key", {"data": {}})]),
+        ProjectAwareFailingProcessor(),
+    )
+
+    pipeline.run()
+
+    failure_file = next((tmp_path / "cmip6" / "failures" / "r0").glob("*.jsonl"))
+    assert json.loads(failure_file.read_text())["__infos__"]["project"] == "cmip6"
+
+
 def test_skipped_message_is_not_reported_as_success(tmp_path):
+    config._set("consumer", "output_dir", str(tmp_path))
     result = feed_messages_direct(
         [("key", {})],
         processor=SkippingProcessor(),
@@ -61,6 +102,8 @@ def test_skipped_message_is_not_reported_as_success(tmp_path):
     assert result.succeeded == 0
     assert result.failed == 0
     assert result.skipped == 1
+    skipped_file = next((tmp_path / "cmip6" / "skipped").glob("*.jsonl"))
+    assert json.loads(skipped_file.read_text())["__infos__"]["project"] == "cmip6"
 
 
 def test_malformed_retry_input_is_retained(tmp_path):
@@ -70,7 +113,7 @@ def test_malformed_retry_input_is_retained(tmp_path):
         projects=["cmip6"],
         failure_dir=tmp_path / "failures",
         delete_after=True,
-        dry_run=True,
+        publish=False,
     )
 
     result = runner.run_file(source)

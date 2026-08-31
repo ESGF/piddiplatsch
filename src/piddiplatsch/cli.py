@@ -282,9 +282,9 @@ def publish(
     "--delete-after", is_flag=True, help="Delete files after successful retry."
 )
 @click.option(
-    "--dry-run",
+    "--publish",
     is_flag=True,
-    help="Write handles to JSONL without contacting Handle Service.",
+    help="Publish successfully remapped Handles immediately.",
 )
 @click.option(
     "--handle-profile",
@@ -295,7 +295,7 @@ def retry(
     ctx: click.Context,
     path: tuple[Path, ...],
     delete_after: bool,
-    dry_run: bool,
+    publish: bool,
     handle_profile: str | None,
 ) -> None:
     """Retry failed items from failure .jsonl file(s) or directory.
@@ -315,7 +315,7 @@ def retry(
         verbose=ctx.obj["verbose"],
         paths=path,
         delete_after=delete_after,
-        dry_run=dry_run,
+        publish=publish,
         handle_profile=handle_profile,
     ).execute()
 

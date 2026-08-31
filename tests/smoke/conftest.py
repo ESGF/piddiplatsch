@@ -27,7 +27,7 @@ def handle_client():
     Returns the configured REST backend connected to the mock Handle Service.
     Requires Docker services to be running.
     """
-    return get_handle_backend()
+    return get_handle_backend(publish=True)
 
 
 @pytest.fixture(scope="session", autouse=True)

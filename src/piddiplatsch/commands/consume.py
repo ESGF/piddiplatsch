@@ -20,7 +20,7 @@ class ConsumeCommand(KafkaCommand):
         self.run_consumer(
             title="consume",
             projects=select_projects(self.projects, self.all_projects),
-            dry_run=not self.publish,
+            publish=self.publish,
             force=self.force,
             handle_profile=self.handle_profile,
         )

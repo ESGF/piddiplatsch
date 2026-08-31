@@ -25,7 +25,7 @@ def test_run_batch_progress_callback(monkeypatch, tmp_path: Path, caplog):
         projects=["cmip6"],
         failure_dir=failures_dir,
         delete_after=False,
-        dry_run=True,
+        publish=False,
     )
 
     # Prepare different results for each file
@@ -123,3 +123,65 @@ def test_filtered_retry_is_not_deleted_as_success(monkeypatch, tmp_path: Path):
     assert result.filtered == 1
     assert result.failed == 1
     assert source.exists()
+
+
+def test_retry_uses_one_run_scoped_handle_filename(monkeypatch, tmp_path: Path):
+    from piddiplatsch import consumer
+    from piddiplatsch.persist import retry as retry_mod
+
+    source = tmp_path / "source.jsonl"
+    source.write_text("{}\n", encoding="utf-8")
+    failure_dir = tmp_path / "failures"
+    failure_dir.mkdir()
+    output_file = tmp_path / "cmip6" / "handles" / "retry-batch.jsonl"
+    output_file.parent.mkdir(parents=True)
+
+    monkeypatch.setattr(retry_mod, "load_failed_messages", lambda _path: [("key", {})])
+
+    def feed(*args, **kwargs):
+        assert kwargs["handle_output_filename"] == "retry-batch.jsonl"
+        output_file.write_text("{}\n", encoding="utf-8")
+        return FeedResult(total=1, succeeded=1)
+
+    monkeypatch.setattr(consumer, "feed_messages_direct", feed)
+    runner = RetryRunner(
+        projects=["cmip6"],
+        failure_dir=failure_dir,
+        handle_output_filename="retry-batch.jsonl",
+    )
+    runner.output_dir = tmp_path
+
+    result = runner.run_file(source)
+
+    assert result.handle_files == {output_file}
+
+
+def test_retry_prefers_persisted_project_over_configured_selection(
+    monkeypatch, tmp_path: Path
+):
+    from piddiplatsch import consumer
+    from piddiplatsch.persist import retry as retry_mod
+
+    source = tmp_path / "source.jsonl"
+    source.write_text("{}\n", encoding="utf-8")
+    failure_dir = tmp_path / "failures"
+    failure_dir.mkdir()
+    messages = [
+        ("known", {"__infos__": {"project": "cmip6"}}),
+        ("legacy", {}),
+    ]
+    monkeypatch.setattr(retry_mod, "load_failed_messages", lambda _path: messages)
+    selections = []
+
+    def feed(project_messages, *args, **kwargs):
+        selections.append((kwargs["projects"], [key for key, _ in project_messages]))
+        return FeedResult(total=len(project_messages), succeeded=len(project_messages))
+
+    monkeypatch.setattr(consumer, "feed_messages_direct", feed)
+    runner = RetryRunner(projects=["cmip7"], failure_dir=failure_dir)
+    runner.output_dir = tmp_path
+
+    result = runner.run_file(source)
+
+    assert result.succeeded == 2
+    assert selections == [(["cmip6"], ["known"]), (["cmip7"], ["legacy"])]

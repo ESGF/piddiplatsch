@@ -17,13 +17,12 @@ class RetryCommand(Command):
 
     paths: tuple[Path, ...]
     delete_after: bool = False
-    dry_run: bool = False
+    publish: bool = False
     handle_profile: str | None = None
 
     def execute(self) -> None:
-        failure_dir = (
-            Path(config.get("consumer", {}).get("output_dir", "outputs")) / "failures"
-        )
+        output_dir = Path(config.get("consumer", {}).get("output_dir", "outputs"))
+        failure_dir = output_dir / "failures"
         progress = self.progress(title="retry files", unit="file")
 
         def show_progress(file, idx, total, result):
@@ -33,7 +32,7 @@ class RetryCommand(Command):
             projects=configured_projects(),
             failure_dir=failure_dir,
             delete_after=self.delete_after,
-            dry_run=self.dry_run,
+            publish=self.publish,
             handle_profile=self.handle_profile,
         )
         with progress:
@@ -47,6 +46,10 @@ class RetryCommand(Command):
             return
 
         click.echo(f"\nTotal: {result.succeeded}/{result.total} succeeded")
+        if result.handle_files:
+            click.echo("  Retry Handle output:")
+            for handle_file in sorted(result.handle_files):
+                click.echo(f"    - {handle_file}")
         if result.failed > 0:
             click.echo(
                 f"  ⚠️  {result.failed} items failed again ({result.success_rate:.1f}% success rate)"
@@ -64,6 +67,10 @@ class RetryCommand(Command):
             if result.failure_files:
                 click.echo("  New failures saved to:")
                 for failure_file in sorted(result.failure_files):
-                    click.echo(f"    - {failure_file.relative_to(failure_dir)}")
+                    try:
+                        shown_path = failure_file.relative_to(output_dir)
+                    except ValueError:
+                        shown_path = failure_file
+                    click.echo(f"    - {shown_path}")
         else:
             click.echo("  ✓ All items processed successfully!")

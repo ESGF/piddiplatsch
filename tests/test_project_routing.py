@@ -78,7 +78,7 @@ def test_extract_project_id_rejects_conflicting_fields():
 
 def test_router_filters_unselected_projects(isolated_registry, caplog):
     calls = []
-    router = ProjectRouter(["cmip6"], dry_run=True)
+    router = ProjectRouter(["cmip6"], publish=False)
 
     with caplog.at_level("INFO"):
         result = router.process("cordex-key", publication("CORDEX-CMIP6"))
@@ -101,7 +101,7 @@ def test_router_dispatches_to_one_of_several_plugins(isolated_registry):
     calls = []
     register_recording_plugin("cmip7-test", "CMIP7-TEST", calls)
     register_recording_plugin("cordex-test", "CORDEX-TEST", calls)
-    router = ProjectRouter(["cmip7-test", "cordex-test"], dry_run=True)
+    router = ProjectRouter(["cmip7-test", "cordex-test"], publish=False)
 
     result = router.process("cordex-key", publication("cordex-test"))
 
@@ -115,7 +115,7 @@ def test_router_dispatches_to_one_of_several_plugins(isolated_registry):
 def test_router_all_selects_every_registered_plugin(isolated_registry):
     calls = []
     register_recording_plugin("cmip7-all-test", "CMIP7-ALL-TEST", calls)
-    router = ProjectRouter("all", dry_run=True)
+    router = ProjectRouter("all", publish=False)
 
     result = router.process("cmip7-key", publication("CMIP7-ALL-TEST"))
 
@@ -126,7 +126,7 @@ def test_router_preflights_only_selected_plugins(isolated_registry):
     calls = []
     register_recording_plugin("selected-test", "SELECTED-TEST", calls)
     register_recording_plugin("disabled-test", "DISABLED-TEST", calls)
-    router = ProjectRouter(["selected-test"], dry_run=True)
+    router = ProjectRouter(["selected-test"], publish=False)
 
     router.preflight_check(stop_on_transient_skip=False)
 
@@ -142,12 +142,12 @@ def test_registry_rejects_overlapping_project_identifiers(isolated_registry):
 
 
 def test_filtered_result_is_counted_without_failure(isolated_registry):
-    router = ProjectRouter(["cmip6"], dry_run=True)
+    router = ProjectRouter(["cmip6"], publish=False)
 
     result = feed_messages_direct(
         [("other-key", publication("CMIP7"))],
         processor=router,
-        dry_run=True,
+        publish=False,
     )
 
     assert result.total == 1
