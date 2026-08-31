@@ -70,7 +70,7 @@ def test_malformed_retry_input_is_retained(tmp_path):
         projects=["cmip6"],
         failure_dir=tmp_path / "failures",
         delete_after=True,
-        dry_run=True,
+        publish=False,
     )
 
     result = runner.run_file(source)

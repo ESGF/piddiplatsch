@@ -33,7 +33,7 @@ def test_pipeline_records_skipped_on_patch_failure(tmp_path, monkeypatch):
 
     consumer = DirectConsumer([(key, value)])
     pipeline = ConsumerPipeline(
-        consumer, processor=FailingPatchProcessor(dry_run=True), force=True
+        consumer, processor=FailingPatchProcessor(publish=False), force=True
     )
 
     pipeline.run()

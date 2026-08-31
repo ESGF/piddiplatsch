@@ -82,7 +82,7 @@ def test_cordex_real_asset_shape_maps_to_shared_output(cordex_item):
 
 
 def test_cordex_processor_excludes_non_file_assets(cordex_item):
-    processor = CordexCMIP6Processor(dry_run=True)
+    processor = CordexCMIP6Processor(publish=False)
     message = {
         "metadata": {"time": "2026-07-21T10:48:14Z"},
         "data": {

@@ -126,7 +126,7 @@ class TestConsumeCommand:
         assert mock_start_consumer.called
         call_kwargs = mock_start_consumer.call_args.kwargs
         assert call_kwargs["dump_messages"] is True
-        assert call_kwargs["dry_run"] is True
+        assert call_kwargs["publish"] is False
 
     @patch("piddiplatsch.commands.base.start_consumer")
     def test_consume_with_publish(self, mock_start_consumer, runner):
@@ -134,7 +134,7 @@ class TestConsumeCommand:
         assert mock_start_consumer.called
         call_kwargs = mock_start_consumer.call_args.kwargs
         assert call_kwargs["dump_messages"] is True
-        assert call_kwargs["dry_run"] is False
+        assert call_kwargs["publish"] is True
 
     @patch("piddiplatsch.commands.base.start_consumer")
     def test_consume_with_verbose(self, mock_start_consumer, runner):
@@ -329,7 +329,6 @@ class TestRetryCommand:
         assert result.exit_code == 0
         assert "Retry failed items" in result.output
         assert "--delete-after" in result.output
-        assert "--dry-run" in result.output
         assert "--publish" in result.output
         assert "--handle-profile" in result.output
 
@@ -443,22 +442,6 @@ class TestRetryCommand:
         assert init_kwargs.get("delete_after") is True
 
     @patch("piddiplatsch.commands.retry.RetryRunner")
-    def test_retry_passes_dry_run(self, mock_runner_cls, runner, tmp_path):
-        """Test retry command passes --dry-run flag."""
-        test_file = tmp_path / "test.jsonl"
-        test_file.write_text("{}\n")
-
-        from piddiplatsch.result import RetryResult
-
-        instance = mock_runner_cls.return_value
-        instance.run_batch.return_value = RetryResult(total=0)
-
-        result = runner.invoke(cli, ["retry", str(test_file), "--dry-run"])
-        assert result.exit_code == 0
-        init_kwargs = mock_runner_cls.call_args.kwargs
-        assert init_kwargs.get("dry_run") is True
-
-    @patch("piddiplatsch.commands.retry.RetryRunner")
     def test_retry_defers_publication_by_default(
         self, mock_runner_cls, runner, tmp_path
     ):
@@ -469,7 +452,7 @@ class TestRetryCommand:
         result = runner.invoke(cli, ["retry", str(test_file)])
 
         assert result.exit_code == 0
-        assert mock_runner_cls.call_args.kwargs["dry_run"] is True
+        assert mock_runner_cls.call_args.kwargs["publish"] is False
 
     @patch("piddiplatsch.commands.retry.RetryRunner")
     def test_retry_publish_is_explicit(self, mock_runner_cls, runner, tmp_path):
@@ -480,16 +463,7 @@ class TestRetryCommand:
         result = runner.invoke(cli, ["retry", str(test_file), "--publish"])
 
         assert result.exit_code == 0
-        assert mock_runner_cls.call_args.kwargs["dry_run"] is False
-
-    def test_retry_rejects_dry_run_with_publish(self, runner, tmp_path):
-        test_file = tmp_path / "test.jsonl"
-        test_file.write_text("{}\n")
-
-        result = runner.invoke(cli, ["retry", str(test_file), "--dry-run", "--publish"])
-
-        assert result.exit_code == 2
-        assert "cannot be combined" in result.output
+        assert mock_runner_cls.call_args.kwargs["publish"] is True
 
     @patch("piddiplatsch.commands.retry.RetryRunner")
     def test_retry_multiple_paths(self, mock_runner_cls, runner, tmp_path):

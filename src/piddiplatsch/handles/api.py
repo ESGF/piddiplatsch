@@ -25,13 +25,13 @@ class HandleAPI(HandleAPIProtocol):
         self,
         backend: HandleBackend | None = None,
         *,
-        dry_run: bool = False,
+        publish: bool = False,
         project: str | None = None,
         handle_profile: str | None = None,
         output_filename: str | None = None,
     ):
         self.backend: HandleAPIProtocol = backend or get_handle_backend(
-            dry_run=dry_run,
+            publish=publish,
             project=project,
             handle_profile=handle_profile,
             output_filename=output_filename,
@@ -46,7 +46,7 @@ class HandleAPI(HandleAPIProtocol):
 
 # --- Factory Function ---
 def get_handle_backend(
-    dry_run: bool = False,
+    publish: bool = False,
     project: str | None = None,
     handle_profile: str | None = None,
     output_filename: str | None = None,
@@ -58,10 +58,10 @@ def get_handle_backend(
       backend = "rest" | "pyhandle"
 
     Both publication backends are wrapped by the immutable JSONL audit
-    recorder. JSONL-only operation is selected explicitly with dry_run.
+    recorder. When publication is disabled, only that JSONL output is written.
     """
-    if dry_run:
-        logging.warning("Dry-run enabled: using JSONL handle backend")
+    if not publish:
+        logging.info("Handle publication disabled: using JSONL backend")
         return JsonlHandleBackend(
             project=project,
             handle_profile=handle_profile,

@@ -52,8 +52,8 @@ def test_consumer_pipeline_writes_handles_jsonl(tmp_path: Path):
 
     pipeline = ConsumerPipeline(
         consumer=DirectConsumer([msg]),
-        processor=ProjectRouter(["cmip6"], dry_run=True),
-        dry_run=True,
+        processor=ProjectRouter(["cmip6"], publish=False),
+        publish=False,
         verbose=False,
     )
 
@@ -63,7 +63,7 @@ def test_consumer_pipeline_writes_handles_jsonl(tmp_path: Path):
     assert handles_dir.exists() and handles_dir.is_dir()
 
     files = list(handles_dir.glob("handles_*.jsonl"))
-    assert files, "No handles jsonl file created in dry-run mode"
+    assert files, "No handles JSONL file created in deferred mode"
 
     # Expect at least one handle line written (dataset; may include assets)
     content_lines = sum(1 for _ in files[0].open("r", encoding="utf-8"))

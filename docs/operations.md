@@ -96,8 +96,8 @@ pool. GET requests and requests rejected before storage are not delayed.
 
 These files, `pid.log`, and `stats.db` are ignored by Git and preserved by the
 project's cleanup targets. There is no automatic retention policy. Dump and
-dry-run files can grow quickly, so monitor disk usage and archive or remove old
-files according to the site's operational policy.
+Handle JSONL files can grow quickly, so monitor disk usage and archive or remove
+old files according to the site's operational policy.
 
 ## Safe inspection and retry
 
@@ -112,8 +112,7 @@ piddi --config custom.toml publish --project cmip6 \
   outputs/cmip6/handles/retry_handles_<timestamp>.jsonl
 ```
 
-Use `retry --publish` only for intentional immediate publication. The existing
-`--dry-run` spelling remains as an explicit form of the default deferred mode.
+Use `retry --publish` only for intentional immediate publication.
 
 `--delete-after` removes an input file only when all records succeed. Malformed
 JSONL and skipped records are failures for this decision, so the source remains

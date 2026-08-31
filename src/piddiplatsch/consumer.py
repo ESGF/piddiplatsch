@@ -36,7 +36,7 @@ def build_processing_target(
     *,
     processor=None,
     projects: list[str] | tuple[str, ...] | str | None = None,
-    dry_run: bool = False,
+    publish: bool = False,
     handle_profile: str | None = None,
     handle_output_filename: str | None = None,
 ):
@@ -52,7 +52,7 @@ def build_processing_target(
     selection = configured_projects() if projects is None else projects
     return ProjectRouter(
         selection,
-        dry_run=dry_run,
+        publish=publish,
         handle_profile=handle_profile,
         processor_kwargs={"handle_output_filename": handle_output_filename},
     )
@@ -184,7 +184,7 @@ class ConsumerPipeline:
         verbose=False,
         progress: BaseProgress | None = None,
         max_errors=-1,
-        dry_run: bool = False,
+        publish: bool = False,
         force: bool = False,
         failure_dir: Path | None = None,
     ):
@@ -197,7 +197,7 @@ class ConsumerPipeline:
         # ingestion passes a ProjectRouter or another processing object.
         self.processor = build_processing_target(
             processor=processor,
-            dry_run=dry_run,
+            publish=publish,
         )
         self.dump_messages = dump_messages
         self.max_errors = int(max_errors)
@@ -309,7 +309,7 @@ def feed_messages_direct(
     messages,
     processor=None,
     projects: list[str] | tuple[str, ...] | str | None = None,
-    dry_run=False,
+    publish=False,
     failure_dir: Path | None = None,
     force: bool = False,
     verbose: bool = False,
@@ -321,14 +321,14 @@ def feed_messages_direct(
     target = build_processing_target(
         processor=processor,
         projects=projects,
-        dry_run=dry_run,
+        publish=publish,
         handle_profile=handle_profile,
         handle_output_filename=handle_output_filename,
     )
     pipeline = ConsumerPipeline(
         consumer,
         processor=target,
-        dry_run=dry_run,
+        publish=publish,
         failure_dir=failure_dir,
         force=force,
         verbose=verbose,
@@ -405,7 +405,6 @@ def map_dump_files(
 
     target = build_processing_target(
         projects=projects,
-        dry_run=True,
         handle_profile=handle_profile,
     )
     if not force:
@@ -413,7 +412,6 @@ def map_dump_files(
     return feed_messages_direct(
         messages,
         processor=target,
-        dry_run=True,
         force=force,
         verbose=verbose,
         progress=progress,
@@ -450,7 +448,7 @@ def start_consumer(
     enable_db: bool | None = None,
     db_path: str | None = None,
     direct_messages=None,
-    dry_run: bool = False,
+    publish: bool = False,
     force: bool = False,
     progress: BaseProgress | None = None,
     idle_timeout: float | None = None,
@@ -472,7 +470,7 @@ def start_consumer(
     proc_instance = build_processing_target(
         processor=processor,
         projects=projects,
-        dry_run=dry_run,
+        publish=publish,
         handle_profile=handle_profile,
     )
     # Optional STAC preflight
@@ -511,7 +509,7 @@ def start_consumer(
         verbose=verbose,
         progress=progress,
         max_errors=max_errors,
-        dry_run=dry_run,
+        publish=publish,
         force=force,
     )
 

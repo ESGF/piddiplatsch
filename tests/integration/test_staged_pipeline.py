@@ -30,9 +30,9 @@ def test_consume_dumps_every_raw_message_before_project_filtering(
     ]
     pipeline = ConsumerPipeline(
         consumer=DirectConsumer(messages),
-        processor=ProjectRouter(["cmip6"], dry_run=True),
+        processor=ProjectRouter(["cmip6"], publish=False),
         dump_messages=True,
-        dry_run=True,
+        publish=False,
     )
 
     pipeline.run()

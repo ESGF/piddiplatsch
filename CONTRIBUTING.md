@@ -293,7 +293,7 @@ import pytest
 
 pytestmark = pytest.mark.integration
 
-def test_pipeline_with_dry_run_output():
+def test_pipeline_with_deferred_output():
     # Test component interactions
     pass
 ```

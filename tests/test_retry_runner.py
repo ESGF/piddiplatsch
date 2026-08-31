@@ -25,7 +25,7 @@ def test_run_batch_progress_callback(monkeypatch, tmp_path: Path, caplog):
         projects=["cmip6"],
         failure_dir=failures_dir,
         delete_after=False,
-        dry_run=True,
+        publish=False,
     )
 
     # Prepare different results for each file

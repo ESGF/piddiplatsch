@@ -15,4 +15,6 @@ How to use (via Makefile):
 
 Notes:
 - These scripts are wired through `docker-compose.yml` and the `Makefile` targets above.
-- For non-Docker ESGF Kafka setups, use `etc/esgf-example.toml` and run the consumer with `--dry-run` for safe testing.
+- For non-Docker ESGF Kafka setups, use `etc/esgf-example.toml`. Plain
+  `consume` writes raw and Handle JSONL without publishing; add `--publish`
+  only when Handle-service writes are intentional.

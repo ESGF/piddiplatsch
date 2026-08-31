@@ -35,7 +35,7 @@ def test_real_publications_route_and_write_valid_handle_jsonl(
     config._set("lookup", "enabled", False)
     messages = _load_publications(testdata_path / "publication_samples")
 
-    result = feed_messages_direct(messages, projects="all", dry_run=True)
+    result = feed_messages_direct(messages, projects="all", publish=False)
 
     assert result.total == 4
     assert result.succeeded == 4

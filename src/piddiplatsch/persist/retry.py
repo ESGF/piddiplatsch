@@ -52,7 +52,7 @@ class RetryRunner:
             projects=["cmip6"],
             failure_dir=Path("outputs/failures"),
             delete_after=False,
-            dry_run=True,
+            publish=False,
         )
         # Single file
         result = runner.run_file(Path("outputs/failures/r0/failed_items.jsonl"))
@@ -66,7 +66,7 @@ class RetryRunner:
         projects: list[str] | tuple[str, ...] | str,
         failure_dir: Path,
         delete_after: bool = False,
-        dry_run: bool = True,
+        publish: bool = False,
         handle_profile: str | None = None,
         handle_output_filename: str | None = None,
         logger: logging.Logger | None = None,
@@ -74,7 +74,7 @@ class RetryRunner:
         self.projects = projects
         self.failure_dir = failure_dir
         self.delete_after = delete_after
-        self.dry_run = dry_run
+        self.publish = publish
         self.handle_profile = handle_profile
         self.handle_output_filename = handle_output_filename or (
             f"retry_handles_{utc_now():%Y-%m-%d_%H-%M-%S-%f}.jsonl"
@@ -110,7 +110,7 @@ class RetryRunner:
         feed_result = feed_messages_direct(
             messages,
             projects=self.projects,
-            dry_run=self.dry_run,
+            publish=self.publish,
             failure_dir=self.failure_dir,
             handle_profile=self.handle_profile,
             handle_output_filename=self.handle_output_filename,

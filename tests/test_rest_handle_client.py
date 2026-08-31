@@ -6,6 +6,7 @@ import urllib3
 
 from piddiplatsch.config import config
 from piddiplatsch.handles.api import get_handle_backend
+from piddiplatsch.handles.jsonl_backend import JsonlHandleBackend
 from piddiplatsch.handles.pyhandle_backend import HandleClient
 from piddiplatsch.handles.recording_backend import RecordingHandleBackend
 from piddiplatsch.handles.rest_backend import RestHandleClient
@@ -158,6 +159,10 @@ def test_rest_client_rejects_unsuccessful_handle_response():
         client.add("abc", {"URL": "https://example.test/abc"})
 
 
+def test_handle_backend_factory_defers_publication_by_default():
+    assert isinstance(get_handle_backend(), JsonlHandleBackend)
+
+
 def test_handle_backend_factory_selects_rest(monkeypatch):
     sentinel = object()
     config._set("handle", "backend", "rest")
@@ -166,7 +171,7 @@ def test_handle_backend_factory_selects_rest(monkeypatch):
         lambda **_kwargs: sentinel,
     )
 
-    backend = get_handle_backend()
+    backend = get_handle_backend(publish=True)
     assert isinstance(backend, RecordingHandleBackend)
     assert backend.backend is sentinel
 
@@ -179,7 +184,7 @@ def test_handle_backend_factory_defaults_to_rest(monkeypatch):
         lambda **_kwargs: sentinel,
     )
 
-    backend = get_handle_backend()
+    backend = get_handle_backend(publish=True)
     assert isinstance(backend, RecordingHandleBackend)
     assert backend.backend is sentinel
 
@@ -192,7 +197,7 @@ def test_handle_backend_factory_keeps_pyhandle(monkeypatch):
         lambda **_kwargs: sentinel,
     )
 
-    backend = get_handle_backend()
+    backend = get_handle_backend(publish=True)
     assert isinstance(backend, RecordingHandleBackend)
     assert backend.backend is sentinel
     assert HandleClient is not RestHandleClient

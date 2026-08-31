@@ -17,7 +17,7 @@ class RetryCommand(Command):
 
     paths: tuple[Path, ...]
     delete_after: bool = False
-    dry_run: bool = True
+    publish: bool = False
     handle_profile: str | None = None
 
     def execute(self) -> None:
@@ -33,7 +33,7 @@ class RetryCommand(Command):
             projects=configured_projects(),
             failure_dir=failure_dir,
             delete_after=self.delete_after,
-            dry_run=self.dry_run,
+            publish=self.publish,
             handle_profile=self.handle_profile,
         )
         with progress:

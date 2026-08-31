@@ -9,8 +9,8 @@ from piddiplatsch.config import config
 pytestmark = pytest.mark.integration
 
 
-def test_retry_with_dry_run(runner, tmp_path):
-    """Test that retry command works with --dry-run flag."""
+def test_retry_defers_publication_by_default(runner, tmp_path):
+    """Test that retry writes a recovery batch without an explicit flag."""
     config._set("consumer", "output_dir", str(tmp_path))
     config._set("lookup", "enabled", False)
 
@@ -44,14 +44,13 @@ def test_retry_with_dry_run(runner, tmp_path):
         json.dump(data, f)
         f.write("\n")
 
-    # Run retry with --dry-run
-    result = runner.invoke(cli, ["retry", str(failure_file), "--dry-run"])
+    result = runner.invoke(cli, ["retry", str(failure_file)])
 
     assert result.exit_code == 0
     assert "1/1 succeeded" in result.output
     assert "All items processed successfully!" in result.output
 
-    # Verify handles were created in dry-run mode
+    # Verify the recovered Handle batch was created.
     handles_dir = tmp_path / "cmip6" / "handles"
     assert handles_dir.exists()
     handle_files = list(handles_dir.glob("retry_handles_*.jsonl"))
@@ -102,7 +101,7 @@ def test_retry_with_directory(runner, tmp_path):
     create_failure_file("file3.jsonl", "3")
 
     # Run retry with directory
-    result = runner.invoke(cli, ["retry", str(failures_dir), "--dry-run"])
+    result = runner.invoke(cli, ["retry", str(failures_dir)])
 
     assert result.exit_code == 0
     assert "3/3 succeeded" in result.output
@@ -145,7 +144,7 @@ def test_retry_with_multiple_files(runner, tmp_path):
             f.write("\n")
 
     # Run retry with multiple files
-    result = runner.invoke(cli, ["retry", str(file1), str(file2), "--dry-run"])
+    result = runner.invoke(cli, ["retry", str(file1), str(file2)])
 
     assert result.exit_code == 0
     assert "2/2 succeeded" in result.output

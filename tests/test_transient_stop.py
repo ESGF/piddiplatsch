@@ -28,7 +28,7 @@ def test_stop_on_transient_skip(monkeypatch):
     consumer = DirectConsumer([(key, value)])
     pipeline = ConsumerPipeline(
         consumer,
-        processor=AlwaysTransientProcessor(dry_run=True),
+        processor=AlwaysTransientProcessor(publish=False),
         force=False,
     )
 

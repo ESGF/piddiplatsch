@@ -14,20 +14,20 @@ def test_cmip6_plugin_discovered():
 
 
 def test_cmip6_plugin_instantiation():
-    proc = get_plugin("cmip6").make_processor(dry_run=True)
+    proc = get_plugin("cmip6").make_processor(publish=False)
     assert isinstance(proc, BaseProcessor)
 
 
 def test_cmip7_plugin_instantiation():
-    proc = get_plugin("cmip7").make_processor(dry_run=True)
+    proc = get_plugin("cmip7").make_processor(publish=False)
     assert isinstance(proc, BaseProcessor)
 
 
 def test_cmip6plus_plugin_instantiation():
-    proc = get_plugin("cmip6plus").make_processor(dry_run=True)
+    proc = get_plugin("cmip6plus").make_processor(publish=False)
     assert isinstance(proc, BaseProcessor)
 
 
 def test_cordex_cmip6_plugin_instantiation():
-    proc = get_plugin("cordex-cmip6").make_processor(dry_run=True)
+    proc = get_plugin("cordex-cmip6").make_processor(publish=False)
     assert isinstance(proc, BaseProcessor)

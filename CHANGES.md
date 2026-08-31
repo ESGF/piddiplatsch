@@ -19,6 +19,8 @@ All notable changes to this project are documented here.
   `publish`, while retaining generic file and directory inputs.
 
 ### Changed
+- Removed the obsolete `retry --dry-run` option. Internal processing now uses
+  explicit `publish=False` semantics; Handle JSONL is always written.
 - `piddi retry` now defers Handle publication by default and writes each retry
   invocation to distinct `retry_handles_<timestamp>.jsonl` files; immediate
   publication requires `--publish`.
