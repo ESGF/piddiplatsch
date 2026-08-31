@@ -17,7 +17,7 @@ class RetryCommand(Command):
 
     paths: tuple[Path, ...]
     delete_after: bool = False
-    dry_run: bool = False
+    dry_run: bool = True
     handle_profile: str | None = None
 
     def execute(self) -> None:
@@ -47,6 +47,10 @@ class RetryCommand(Command):
             return
 
         click.echo(f"\nTotal: {result.succeeded}/{result.total} succeeded")
+        if result.handle_files:
+            click.echo("  Retry Handle output:")
+            for handle_file in sorted(result.handle_files):
+                click.echo(f"    - {handle_file}")
         if result.failed > 0:
             click.echo(
                 f"  ⚠️  {result.failed} items failed again ({result.success_rate:.1f}% success rate)"

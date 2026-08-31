@@ -38,6 +38,7 @@ def build_processing_target(
     projects: list[str] | tuple[str, ...] | str | None = None,
     dry_run: bool = False,
     handle_profile: str | None = None,
+    handle_output_filename: str | None = None,
 ):
     """Build a project router or use an explicitly supplied processing object."""
     if processor is not None and projects is not None:
@@ -53,6 +54,7 @@ def build_processing_target(
         selection,
         dry_run=dry_run,
         handle_profile=handle_profile,
+        processor_kwargs={"handle_output_filename": handle_output_filename},
     )
 
 
@@ -313,6 +315,7 @@ def feed_messages_direct(
     verbose: bool = False,
     progress: BaseProgress | None = None,
     handle_profile: str | None = None,
+    handle_output_filename: str | None = None,
 ) -> FeedResult:
     consumer = DirectConsumer(messages)
     target = build_processing_target(
@@ -320,6 +323,7 @@ def feed_messages_direct(
         projects=projects,
         dry_run=dry_run,
         handle_profile=handle_profile,
+        handle_output_filename=handle_output_filename,
     )
     pipeline = ConsumerPipeline(
         consumer,

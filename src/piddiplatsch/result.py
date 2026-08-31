@@ -43,6 +43,7 @@ class RetryResult:
     skipped: int = 0
     filtered: int = 0
     failure_files: set[Path] = field(default_factory=set)
+    handle_files: set[Path] = field(default_factory=set)
     errors: list[str] = field(default_factory=list)
 
     @property

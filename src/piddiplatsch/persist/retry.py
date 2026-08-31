@@ -2,8 +2,9 @@ import logging
 from collections.abc import Callable
 from pathlib import Path
 
+from piddiplatsch.config import config
 from piddiplatsch.exceptions import JsonlReadError
-from piddiplatsch.helpers import find_jsonl, read_jsonl
+from piddiplatsch.helpers import find_jsonl, read_jsonl, utc_now
 from piddiplatsch.result import RetryResult
 
 
@@ -65,8 +66,9 @@ class RetryRunner:
         projects: list[str] | tuple[str, ...] | str,
         failure_dir: Path,
         delete_after: bool = False,
-        dry_run: bool = False,
+        dry_run: bool = True,
         handle_profile: str | None = None,
+        handle_output_filename: str | None = None,
         logger: logging.Logger | None = None,
     ) -> None:
         self.projects = projects
@@ -74,6 +76,10 @@ class RetryRunner:
         self.delete_after = delete_after
         self.dry_run = dry_run
         self.handle_profile = handle_profile
+        self.handle_output_filename = handle_output_filename or (
+            f"retry_handles_{utc_now():%Y-%m-%d_%H-%M-%S-%f}.jsonl"
+        )
+        self.output_dir = Path(config.get("consumer", {}).get("output_dir", "outputs"))
         self.logger = logger or logging.getLogger(__name__)
 
     def run_file(self, jsonl_path: Path) -> RetryResult:
@@ -107,6 +113,7 @@ class RetryRunner:
             dry_run=self.dry_run,
             failure_dir=self.failure_dir,
             handle_profile=self.handle_profile,
+            handle_output_filename=self.handle_output_filename,
             force=True,
         )
 
@@ -118,6 +125,9 @@ class RetryRunner:
             if path not in failure_files_before
             or path.stat().st_size != failure_files_before[path]
         }
+        result.handle_files = set(
+            self.output_dir.glob(f"*/handles/{self.handle_output_filename}")
+        )
 
         # Use stats from feed_result
         result.succeeded = feed_result.succeeded
@@ -167,6 +177,7 @@ class RetryRunner:
             overall.skipped += result.skipped
             overall.filtered += result.filtered
             overall.failure_files.update(result.failure_files)
+            overall.handle_files.update(result.handle_files)
             overall.errors.extend(result.errors)
 
             if progress_callback:

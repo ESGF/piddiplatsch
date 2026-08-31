@@ -101,12 +101,19 @@ files according to the site's operational policy.
 
 ## Safe inspection and retry
 
-Inspect retry input before processing it and keep the original until the result
-is verified:
+Retry remaps failed events without contacting the Handle Service. Each command
+creates and prints a distinct project-scoped
+`retry_handles_<timestamp>.jsonl`, keeping late recovery work separate from
+normal daily mapping output:
 
 ```bash
-piddi --config custom.toml -v retry outputs/failures/r0 --dry-run
+piddi --config custom.toml -v retry outputs/failures/r0
+piddi --config custom.toml publish --project cmip6 \
+  outputs/cmip6/handles/retry_handles_<timestamp>.jsonl
 ```
+
+Use `retry --publish` only for intentional immediate publication. The existing
+`--dry-run` spelling remains as an explicit form of the default deferred mode.
 
 `--delete-after` removes an input file only when all records succeed. Malformed
 JSONL and skipped records are failures for this decision, so the source remains

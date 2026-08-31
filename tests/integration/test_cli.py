@@ -54,8 +54,9 @@ def test_retry_with_dry_run(runner, tmp_path):
     # Verify handles were created in dry-run mode
     handles_dir = tmp_path / "cmip6" / "handles"
     assert handles_dir.exists()
-    handle_files = list(handles_dir.glob("handles_*.jsonl"))
-    assert len(handle_files) > 0
+    handle_files = list(handles_dir.glob("retry_handles_*.jsonl"))
+    assert len(handle_files) == 1
+    assert str(handle_files[0]) in result.output
 
 
 def test_retry_with_directory(runner, tmp_path):

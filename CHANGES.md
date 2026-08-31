@@ -19,6 +19,9 @@ All notable changes to this project are documented here.
   `publish`, while retaining generic file and directory inputs.
 
 ### Changed
+- `piddi retry` now defers Handle publication by default and writes each retry
+  invocation to distinct `retry_handles_<timestamp>.jsonl` files; immediate
+  publication requires `--publish`.
 - Handle publication selects `rest` or legacy `pyhandle`; both always write the
   JSONL audit record first.
 - `consume` now always dumps raw messages before plugin filtering and defers

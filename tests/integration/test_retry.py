@@ -99,8 +99,9 @@ def test_retry_loads_and_processes_failed_messages(tmp_path: Path):
     handles_dir = tmp_path / "cmip6" / "handles"
     assert handles_dir.exists()
 
-    files = list(handles_dir.glob("handles_*.jsonl"))
+    files = list(handles_dir.glob("retry_handles_*.jsonl"))
     assert files, "No handles jsonl file created after retry"
+    assert result.handle_files == {files[0]}
 
     # Should have at least 3 lines (one per dataset, possibly more with assets)
     with files[0].open("r", encoding="utf-8") as f:

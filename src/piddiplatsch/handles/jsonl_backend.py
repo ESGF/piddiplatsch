@@ -22,10 +22,12 @@ class JsonlHandleBackend(HandleBackend):
         self,
         project: str | None = None,
         handle_profile: str | None = None,
+        output_filename: str | None = None,
     ):
         # Read output_dir from [consumer] section, fallback to outputs
         base_dir = config.get("consumer", {}).get("output_dir", "outputs")
         self.project = project
+        self.output_filename = output_filename
         self.prefix = config.get_handle(project=project, profile=handle_profile).get(
             "prefix", ""
         )
@@ -46,7 +48,7 @@ class JsonlHandleBackend(HandleBackend):
         }
         if self.project:
             record["project"] = self.project
-        path = self.writer.write("handles", record)
+        path = self.writer.write("handles", record, filename=self.output_filename)
         logging.debug(f"Wrote handle {handle} to {path}")
 
     def _retrieve(self, handle: str) -> dict[str, Any] | None:

@@ -123,3 +123,34 @@ def test_filtered_retry_is_not_deleted_as_success(monkeypatch, tmp_path: Path):
     assert result.filtered == 1
     assert result.failed == 1
     assert source.exists()
+
+
+def test_retry_uses_one_run_scoped_handle_filename(monkeypatch, tmp_path: Path):
+    from piddiplatsch import consumer
+    from piddiplatsch.persist import retry as retry_mod
+
+    source = tmp_path / "source.jsonl"
+    source.write_text("{}\n", encoding="utf-8")
+    failure_dir = tmp_path / "failures"
+    failure_dir.mkdir()
+    output_file = tmp_path / "cmip6" / "handles" / "retry-batch.jsonl"
+    output_file.parent.mkdir(parents=True)
+
+    monkeypatch.setattr(retry_mod, "load_failed_messages", lambda _path: [("key", {})])
+
+    def feed(*args, **kwargs):
+        assert kwargs["handle_output_filename"] == "retry-batch.jsonl"
+        output_file.write_text("{}\n", encoding="utf-8")
+        return FeedResult(total=1, succeeded=1)
+
+    monkeypatch.setattr(consumer, "feed_messages_direct", feed)
+    runner = RetryRunner(
+        projects=["cmip6"],
+        failure_dir=failure_dir,
+        handle_output_filename="retry-batch.jsonl",
+    )
+    runner.output_dir = tmp_path
+
+    result = runner.run_file(source)
+
+    assert result.handle_files == {output_file}

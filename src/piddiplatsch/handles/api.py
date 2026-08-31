@@ -28,11 +28,13 @@ class HandleAPI(HandleAPIProtocol):
         dry_run: bool = False,
         project: str | None = None,
         handle_profile: str | None = None,
+        output_filename: str | None = None,
     ):
         self.backend: HandleAPIProtocol = backend or get_handle_backend(
             dry_run=dry_run,
             project=project,
             handle_profile=handle_profile,
+            output_filename=output_filename,
         )
 
     def add(self, pid: str, record: dict[str, Any]) -> None:
@@ -47,6 +49,7 @@ def get_handle_backend(
     dry_run: bool = False,
     project: str | None = None,
     handle_profile: str | None = None,
+    output_filename: str | None = None,
 ) -> HandleAPIProtocol:
     """
     Return a HandleBackend based on configuration.
@@ -59,7 +62,11 @@ def get_handle_backend(
     """
     if dry_run:
         logging.warning("Dry-run enabled: using JSONL handle backend")
-        return JsonlHandleBackend(project=project, handle_profile=handle_profile)
+        return JsonlHandleBackend(
+            project=project,
+            handle_profile=handle_profile,
+            output_filename=output_filename,
+        )
 
     handle_config = config.get_handle(project=project, profile=handle_profile)
     backend_type: Literal["rest", "pyhandle"] = handle_config.get("backend", "rest")
@@ -76,6 +83,7 @@ def get_handle_backend(
             RestHandleClient.from_config(project=project, profile=handle_profile),
             project=project,
             handle_profile=handle_profile,
+            output_filename=output_filename,
         )
 
     if backend_type == "pyhandle":
@@ -83,6 +91,7 @@ def get_handle_backend(
             HandleClient.from_config(project=project, profile=handle_profile),
             project=project,
             handle_profile=handle_profile,
+            output_filename=output_filename,
         )
 
     raise ValueError(f"Unknown handle backend type: {backend_type}")

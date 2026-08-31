@@ -15,12 +15,14 @@ class RecordingHandleBackend:
         *,
         project: str | None = None,
         handle_profile: str | None = None,
+        output_filename: str | None = None,
         recorder: JsonlHandleBackend | None = None,
     ) -> None:
         self.backend = backend
         self.recorder = recorder or JsonlHandleBackend(
             project=project,
             handle_profile=handle_profile,
+            output_filename=output_filename,
         )
         self.prefix = getattr(backend, "prefix", None)
 

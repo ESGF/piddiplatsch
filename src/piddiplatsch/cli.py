@@ -284,7 +284,12 @@ def publish(
 @click.option(
     "--dry-run",
     is_flag=True,
-    help="Write handles to JSONL without contacting Handle Service.",
+    help="Explicitly defer publication (the default; retained for compatibility).",
+)
+@click.option(
+    "--publish",
+    is_flag=True,
+    help="Publish successfully remapped Handles immediately.",
 )
 @click.option(
     "--handle-profile",
@@ -296,6 +301,7 @@ def retry(
     path: tuple[Path, ...],
     delete_after: bool,
     dry_run: bool,
+    publish: bool,
     handle_profile: str | None,
 ) -> None:
     """Retry failed items from failure .jsonl file(s) or directory.
@@ -311,11 +317,14 @@ def retry(
     inputs, invoke the processing pipeline, and optionally remove source files
     when `--delete-after` is set and all items succeed.
     """
+    if dry_run and publish:
+        raise click.UsageError("--dry-run cannot be combined with --publish")
+
     RetryCommand(
         verbose=ctx.obj["verbose"],
         paths=path,
         delete_after=delete_after,
-        dry_run=dry_run,
+        dry_run=not publish,
         handle_profile=handle_profile,
     ).execute()
 
