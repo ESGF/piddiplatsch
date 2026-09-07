@@ -23,7 +23,6 @@ class BaseHandleModel(BaseModel):
     """Fields and validation shared by all project Handle records."""
 
     _PID: str | None = PrivateAttr(default=None)
-    ESGF: str = "ESGF2 TEST"
     URL: HttpUrl
 
     @field_serializer("URL")
