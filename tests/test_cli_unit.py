@@ -320,9 +320,10 @@ class TestMapCommand:
         assert result.exit_code == 0
         assert mock_map_dump_files.call_args.args[0] == (source,)
 
+    @pytest.mark.parametrize("date_args", ((), ("--date", "last")))
     @patch("piddiplatsch.commands.map.map_dump_files")
-    def test_map_last_resolves_latest_dated_dump(
-        self, mock_map_dump_files, runner, tmp_path
+    def test_map_defaults_to_latest_dated_dump(
+        self, mock_map_dump_files, runner, tmp_path, date_args
     ):
         dump_dir = tmp_path / "outputs" / "dump"
         dump_dir.mkdir(parents=True)
@@ -334,7 +335,7 @@ class TestMapCommand:
         config._set("consumer", "output_dir", str(tmp_path / "outputs"))
         mock_map_dump_files.return_value = FeedResult(total=1, succeeded=1)
 
-        result = runner.invoke(cli, ["map", "--date", "last"])
+        result = runner.invoke(cli, ["map", *date_args])
 
         assert result.exit_code == 0
         assert mock_map_dump_files.call_args.args[0] == (latest,)
@@ -356,18 +357,10 @@ class TestMapCommand:
     ):
         config._set("consumer", "output_dir", str(tmp_path / "outputs"))
 
-        result = runner.invoke(cli, ["map", "--date", "last"])
+        result = runner.invoke(cli, ["map"])
 
         assert result.exit_code == 1
-        assert "No dated raw dumps found" in result.output
-        mock_map_dump_files.assert_not_called()
-
-    @patch("piddiplatsch.commands.map.map_dump_files")
-    def test_map_requires_path_or_date(self, mock_map_dump_files, runner):
-        result = runner.invoke(cli, ["map", "--project", "cmip6"])
-
-        assert result.exit_code == 2
-        assert "Provide PATH or --date" in result.output
+        assert "No dated raw dump files found" in result.output
         mock_map_dump_files.assert_not_called()
 
     @patch("piddiplatsch.commands.map.map_dump_files")
@@ -622,6 +615,53 @@ class TestPublishCommand:
         assert publisher_cls.return_value.run.call_args.args[0] == (source,)
         assert publisher_cls.return_value.run.call_args.kwargs["project"] == "CMIP6"
 
+    @pytest.mark.parametrize("date_args", ((), ("--date", "last")))
+    @patch("piddiplatsch.commands.publish.HandlePublisher")
+    def test_publish_defaults_to_latest_project_file(
+        self, publisher_cls, runner, tmp_path, date_args
+    ):
+        handles_dir = tmp_path / "outputs" / "cmip6" / "handles"
+        handles_dir.mkdir(parents=True)
+        older = handles_dir / "handles_2026-08-26.jsonl"
+        latest = handles_dir / "handles_2026-08-28.jsonl"
+        malformed = handles_dir / "handles_latest.jsonl"
+        for source in (older, latest, malformed):
+            source.touch()
+        config._set("consumer", "output_dir", str(tmp_path / "outputs"))
+        publisher_cls.return_value.run.return_value = PublishResult(
+            total=1, succeeded=1
+        )
+
+        result = runner.invoke(cli, ["publish", "--project", "CMIP6", *date_args])
+
+        assert result.exit_code == 0
+        assert publisher_cls.return_value.run.call_args.args[0] == (latest,)
+
+    @patch("piddiplatsch.commands.publish.HandlePublisher")
+    def test_publish_resolves_relative_date(self, publisher_cls, runner, tmp_path):
+        output_dir = tmp_path / "outputs"
+        selected_date = date.today() - timedelta(days=1)
+        source = (
+            output_dir
+            / "cmip6"
+            / "handles"
+            / f"handles_{selected_date.isoformat()}.jsonl"
+        )
+        source.parent.mkdir(parents=True)
+        source.touch()
+        config._set("consumer", "output_dir", str(output_dir))
+        publisher_cls.return_value.run.return_value = PublishResult(
+            total=1, succeeded=1
+        )
+
+        result = runner.invoke(
+            cli,
+            ["publish", "--project", "cmip6", "--date", "yesterday"],
+        )
+
+        assert result.exit_code == 0
+        assert publisher_cls.return_value.run.call_args.args[0] == (source,)
+
     @patch("piddiplatsch.commands.publish.HandlePublisher")
     def test_publish_date_requires_project(self, publisher_cls, runner):
         result = runner.invoke(cli, ["publish", "--date", "2026-08-27"])
@@ -631,11 +671,22 @@ class TestPublishCommand:
         publisher_cls.assert_not_called()
 
     @patch("piddiplatsch.commands.publish.HandlePublisher")
-    def test_publish_requires_path_or_date(self, publisher_cls, runner):
+    def test_publish_latest_requires_a_dated_handle_file(
+        self, publisher_cls, runner, tmp_path
+    ):
+        config._set("consumer", "output_dir", str(tmp_path / "outputs"))
         result = runner.invoke(cli, ["publish", "--project", "cmip6"])
 
+        assert result.exit_code == 1
+        assert "No dated cmip6 Handle files found" in result.output
+        publisher_cls.assert_not_called()
+
+    @patch("piddiplatsch.commands.publish.HandlePublisher")
+    def test_publish_without_path_or_project_is_rejected(self, publisher_cls, runner):
+        result = runner.invoke(cli, ["publish"])
+
         assert result.exit_code == 2
-        assert "Provide PATH or --date" in result.output
+        assert "Provide PATH or --project" in result.output
         publisher_cls.assert_not_called()
 
     @patch("piddiplatsch.commands.publish.HandlePublisher")

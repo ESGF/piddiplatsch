@@ -6,6 +6,7 @@ from pathlib import Path
 import click
 
 from piddiplatsch.commands.base import FileBatchCommand
+from piddiplatsch.commands.helper import resolve_latest_dated_input
 from piddiplatsch.core.plugin import normalize_project_id
 from piddiplatsch.handles.publish import HandlePublisher
 from piddiplatsch.result import PublishResult
@@ -56,8 +57,16 @@ class PublishCommand(FileBatchCommand):
     def _resolve_paths(self) -> tuple[Path, ...]:
         self.validate_input()
         project_name = normalize_project_id(self.project or "")
-        if self.input_date is not None and not project_name:
+        if not self.paths and not project_name:
+            if self.input_date is None:
+                raise click.UsageError("Provide PATH or --project")
             raise click.UsageError("--date requires --project")
+        if not self.paths and self.input_date in (None, "last"):
+            return resolve_latest_dated_input(
+                relative_dir=Path(project_name) / "handles",
+                filename_prefix="handles_",
+                missing_label=f"{project_name} Handle",
+            )
         return self.resolve_paths(
             relative_path=lambda date: Path(project_name)
             / "handles"

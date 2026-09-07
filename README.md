@@ -124,10 +124,10 @@ support for intentionally mixed-project inputs.
 
 The date form resolves files beneath the configured `consumer.output_dir`.
 `map --date DATE` selects the global raw dump. `DATE` may be an ISO date,
-`today`, `yesterday`, `today-N`, or `last`; `last` selects the greatest valid
-date found in the dump filenames. `publish --project NAME --date YYYY-MM-DD`
-selects that project's Handle file. A path and `--date` cannot be combined,
-and neither command guesses a date when both are omitted.
+`today`, `yesterday`, `today-N`, or `last`; omitting both the path and date
+defaults to `last`, the greatest valid date found in the dump filenames.
+`publish --project NAME` supports the same selectors and also defaults to that
+project's last dated Handle file. A path and `--date` cannot be combined.
 
 For a limited trial against the current file, cap the total number of attempted
 Handles:

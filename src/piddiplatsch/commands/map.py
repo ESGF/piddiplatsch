@@ -1,14 +1,12 @@
 """Map command implementation."""
 
 from dataclasses import dataclass
-from datetime import date
 from pathlib import Path
 
 import click
 
 from piddiplatsch.commands.base import FileBatchCommand
-from piddiplatsch.commands.helper import select_projects
-from piddiplatsch.config import config
+from piddiplatsch.commands.helper import resolve_latest_dated_input, select_projects
 from piddiplatsch.consumer import map_dump_files
 from piddiplatsch.exceptions import JsonlReadError
 
@@ -54,30 +52,14 @@ class MapCommand(FileBatchCommand):
             raise click.exceptions.Exit(1)
 
     def _resolve_paths(self) -> tuple[Path, ...]:
-        if self.input_date == "last":
+        if not self.paths and self.input_date in (None, "last"):
             self.validate_input()
-            return (self._latest_dump(),)
+            return resolve_latest_dated_input(
+                relative_dir=Path("dump"),
+                filename_prefix="dump_messages_",
+                missing_label="raw dump",
+            )
         return self.resolve_paths(
             relative_path=lambda date: Path("dump") / f"dump_messages_{date}.jsonl",
             missing_label="Raw dump",
         )
-
-    @staticmethod
-    def _latest_dump() -> Path:
-        output_dir = Path(config.get("consumer", {}).get("output_dir", "outputs"))
-        dump_dir = output_dir / "dump"
-        candidates: list[tuple[str, Path]] = []
-        prefix = "dump_messages_"
-        suffix = ".jsonl"
-        for path in dump_dir.glob(f"{prefix}*{suffix}"):
-            date_text = path.name[len(prefix) : -len(suffix)]
-            try:
-                parsed_date = date.fromisoformat(date_text)
-            except ValueError:
-                continue
-            if path.is_file() and parsed_date.isoformat() == date_text:
-                candidates.append((date_text, path))
-
-        if not candidates:
-            raise click.ClickException(f"No dated raw dumps found in: {dump_dir}")
-        return max(candidates)[1]

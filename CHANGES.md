@@ -15,10 +15,11 @@ All notable changes to this project are documented here.
   failed deferred Handle publication outcome.
 - Added optional project validation and per-project summaries to `publish`,
   while retaining generic mixed-project publication when no project is given.
-- Added date-based input selection to `map`, including `YYYY-MM-DD`, `today`,
-  `yesterday`, `today-N`, and the latest available dated dump via `last`.
-  Project-aware `publish` accepts `--date YYYY-MM-DD`; both commands retain
-  generic file and directory inputs.
+- Added date-based input selection to `map` and project-aware `publish`,
+  including `YYYY-MM-DD`, `today`, `yesterday`, `today-N`, and the latest
+  available dated input via `last`. Both commands default to `last` when no
+  explicit path or date is supplied and retain generic file and directory
+  inputs.
 
 ### Changed
 - Failure and skipped records now store their canonical project, use

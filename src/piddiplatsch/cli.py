@@ -14,20 +14,20 @@ from piddiplatsch.commands import (
     PublishCommand,
     RetryCommand,
 )
-from piddiplatsch.commands.helper import MAP_DATE_FORMATS, parse_map_date
+from piddiplatsch.commands.helper import DATE_FORMATS, parse_date_selector
 from piddiplatsch.config import config
 
 CONTEXT_SETTINGS = {"help_option_names": ["-h", "--help"]}
 DEFAULT_USER_CONFIG = "custom.toml"
 
 
-def _parse_map_date(
+def _parse_date_selector(
     _ctx: click.Context, _param: click.Parameter, value: str | None
 ) -> datetime | str | None:
     if value is None:
         return None
     try:
-        return parse_map_date(value)
+        return parse_date_selector(value)
     except ValueError as exc:
         raise click.BadParameter(str(exc)) from exc
 
@@ -146,8 +146,8 @@ def harvest(ctx: click.Context, idle_timeout: float) -> None:
     "--date",
     "input_date",
     metavar="DATE",
-    callback=_parse_map_date,
-    help=f"Map a dated raw dump ({MAP_DATE_FORMATS}).",
+    callback=_parse_date_selector,
+    help=f"Select a dated raw dump ({DATE_FORMATS}; default: last).",
 )
 @click.option(
     "--project",
@@ -217,8 +217,9 @@ def map_messages(
 @click.option(
     "--date",
     "input_date",
-    type=click.DateTime(formats=["%Y-%m-%d"]),
-    help="Publish this project's Handle file for the given date.",
+    metavar="DATE",
+    callback=_parse_date_selector,
+    help=f"Select a dated Handle file ({DATE_FORMATS}; default: last).",
 )
 @click.option(
     "--project", help="Validate that every selected Handle belongs to this project."
@@ -264,7 +265,7 @@ def map_messages(
 def publish(
     ctx: click.Context,
     path: tuple[Path, ...],
-    input_date: datetime | None,
+    input_date: datetime | str | None,
     limit: int | None,
     offset: int,
     retries: int,
