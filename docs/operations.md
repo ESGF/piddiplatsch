@@ -53,12 +53,14 @@ piddi consume --publish
 `--limit`, `--offset`, and `--force`. It never contacts Kafka or a Handle
 Service and does not modify its input dumps.
 
-The `--date YYYY-MM-DD` convenience resolves the standard configured file:
-`map` uses `dump/dump_messages_<date>.jsonl`, while `publish` requires a project
-and uses `<project>/handles/handles_<date>.jsonl`. Explicit paths remain
-available for both commands. A path and `--date` are mutually exclusive; if
-neither is supplied, the command fails instead of guessing today, latest, or
-all files.
+The `--date` convenience resolves the standard configured file. For `map`, it
+accepts `YYYY-MM-DD`, `today`, `yesterday`, `today-N`, or `last` and uses
+`dump/dump_messages_<date>.jsonl`. `last` selects the greatest valid date found
+in those filenames, regardless of file modification time. `publish` requires
+a project and an ISO date, and uses `<project>/handles/handles_<date>.jsonl`.
+Explicit paths remain available for both commands. A path and `--date` are
+mutually exclusive; if neither is supplied, the command fails rather than
+guessing an input.
 
 `publish --project NAME` validates every selected Handle before publishing and
 stops without sending anything if a project is missing or different. Plain

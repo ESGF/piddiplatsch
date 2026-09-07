@@ -1,11 +1,38 @@
 """Helpers shared by multiple CLI commands."""
 
-from datetime import datetime
+import re
+from datetime import date, datetime, time, timedelta
 from pathlib import Path
 
 import click
 
 from piddiplatsch.config import config
+
+MAP_DATE_FORMATS = "YYYY-MM-DD, today, yesterday, today-N, or last"
+
+
+def parse_map_date(value: str, *, today: date | None = None) -> datetime | str:
+    """Parse an absolute or relative map date selector."""
+    normalized = value.strip().lower()
+    if normalized == "last":
+        return normalized
+
+    current_date = today or date.today()
+    if normalized == "today":
+        selected_date = current_date
+    elif normalized == "yesterday":
+        selected_date = current_date - timedelta(days=1)
+    elif match := re.fullmatch(r"today-(\d+)", normalized):
+        selected_date = current_date - timedelta(days=int(match.group(1)))
+    else:
+        try:
+            selected_date = date.fromisoformat(normalized)
+        except ValueError as exc:
+            raise ValueError(f"must be one of: {MAP_DATE_FORMATS}") from exc
+        if selected_date.isoformat() != normalized:
+            raise ValueError(f"must be one of: {MAP_DATE_FORMATS}")
+
+    return datetime.combine(selected_date, time.min)
 
 
 def select_projects(

@@ -123,9 +123,11 @@ does not filter mismatches. Omit it to retain the generic publisher, including
 support for intentionally mixed-project inputs.
 
 The date form resolves files beneath the configured `consumer.output_dir`.
-`map --date YYYY-MM-DD` selects the global raw dump; `publish --project NAME
---date YYYY-MM-DD` selects that project's Handle file. A path and `--date`
-cannot be combined, and neither command guesses a date when both are omitted.
+`map --date DATE` selects the global raw dump. `DATE` may be an ISO date,
+`today`, `yesterday`, `today-N`, or `last`; `last` selects the greatest valid
+date found in the dump filenames. `publish --project NAME --date YYYY-MM-DD`
+selects that project's Handle file. A path and `--date` cannot be combined,
+and neither command guesses a date when both are omitted.
 
 For a limited trial against the current file, cap the total number of attempted
 Handles:

@@ -1,5 +1,6 @@
 """Unit tests for CLI module."""
 
+from datetime import date, timedelta
 from unittest.mock import patch
 
 import pytest
@@ -295,6 +296,71 @@ class TestMapCommand:
         assert result.exit_code == 0
         assert mock_map_dump_files.call_args.args[0] == (source,)
         assert mock_map_dump_files.call_args.kwargs["projects"] == ("cmip6",)
+
+    @pytest.mark.parametrize(
+        ("selector", "days_ago"),
+        (("today", 0), ("yesterday", 1), ("today-2", 2)),
+    )
+    @patch("piddiplatsch.commands.map.map_dump_files")
+    def test_map_resolves_relative_date(
+        self, mock_map_dump_files, runner, tmp_path, selector, days_ago
+    ):
+        output_dir = tmp_path / "outputs"
+        selected_date = date.today() - timedelta(days=days_ago)
+        source = (
+            output_dir / "dump" / f"dump_messages_{selected_date.isoformat()}.jsonl"
+        )
+        source.parent.mkdir(parents=True)
+        source.write_text("{}\n")
+        config._set("consumer", "output_dir", str(output_dir))
+        mock_map_dump_files.return_value = FeedResult(total=1, succeeded=1)
+
+        result = runner.invoke(cli, ["map", "--date", selector])
+
+        assert result.exit_code == 0
+        assert mock_map_dump_files.call_args.args[0] == (source,)
+
+    @patch("piddiplatsch.commands.map.map_dump_files")
+    def test_map_last_resolves_latest_dated_dump(
+        self, mock_map_dump_files, runner, tmp_path
+    ):
+        dump_dir = tmp_path / "outputs" / "dump"
+        dump_dir.mkdir(parents=True)
+        older = dump_dir / "dump_messages_2026-08-26.jsonl"
+        latest = dump_dir / "dump_messages_2026-08-28.jsonl"
+        malformed = dump_dir / "dump_messages_latest.jsonl"
+        for source in (older, latest, malformed):
+            source.write_text("{}\n")
+        config._set("consumer", "output_dir", str(tmp_path / "outputs"))
+        mock_map_dump_files.return_value = FeedResult(total=1, succeeded=1)
+
+        result = runner.invoke(cli, ["map", "--date", "last"])
+
+        assert result.exit_code == 0
+        assert mock_map_dump_files.call_args.args[0] == (latest,)
+
+    @patch("piddiplatsch.commands.map.map_dump_files")
+    @pytest.mark.parametrize("selector", ("tomorrow", "20260827", "today--1"))
+    def test_map_rejects_invalid_relative_date(
+        self, mock_map_dump_files, runner, selector
+    ):
+        result = runner.invoke(cli, ["map", "--date", selector])
+
+        assert result.exit_code == 2
+        assert "YYYY-MM-DD, today, yesterday, today-N, or last" in result.output
+        mock_map_dump_files.assert_not_called()
+
+    @patch("piddiplatsch.commands.map.map_dump_files")
+    def test_map_last_requires_a_dated_dump(
+        self, mock_map_dump_files, runner, tmp_path
+    ):
+        config._set("consumer", "output_dir", str(tmp_path / "outputs"))
+
+        result = runner.invoke(cli, ["map", "--date", "last"])
+
+        assert result.exit_code == 1
+        assert "No dated raw dumps found" in result.output
+        mock_map_dump_files.assert_not_called()
 
     @patch("piddiplatsch.commands.map.map_dump_files")
     def test_map_requires_path_or_date(self, mock_map_dump_files, runner):

@@ -14,10 +14,22 @@ from piddiplatsch.commands import (
     PublishCommand,
     RetryCommand,
 )
+from piddiplatsch.commands.helper import MAP_DATE_FORMATS, parse_map_date
 from piddiplatsch.config import config
 
 CONTEXT_SETTINGS = {"help_option_names": ["-h", "--help"]}
 DEFAULT_USER_CONFIG = "custom.toml"
+
+
+def _parse_map_date(
+    _ctx: click.Context, _param: click.Parameter, value: str | None
+) -> datetime | str | None:
+    if value is None:
+        return None
+    try:
+        return parse_map_date(value)
+    except ValueError as exc:
+        raise click.BadParameter(str(exc)) from exc
 
 
 @click.group(context_settings=CONTEXT_SETTINGS)
@@ -133,8 +145,9 @@ def harvest(ctx: click.Context, idle_timeout: float) -> None:
 @click.option(
     "--date",
     "input_date",
-    type=click.DateTime(formats=["%Y-%m-%d"]),
-    help="Map the raw dump for this date from the configured output directory.",
+    metavar="DATE",
+    callback=_parse_map_date,
+    help=f"Map a dated raw dump ({MAP_DATE_FORMATS}).",
 )
 @click.option(
     "--project",
@@ -172,7 +185,7 @@ def harvest(ctx: click.Context, idle_timeout: float) -> None:
 def map_messages(
     ctx: click.Context,
     path: tuple[Path, ...],
-    input_date: datetime | None,
+    input_date: datetime | str | None,
     projects: tuple[str, ...],
     all_projects: bool,
     limit: int | None,
