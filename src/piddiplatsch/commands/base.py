@@ -112,7 +112,7 @@ class FileBatchCommand(Command, ABC):
     """Common inputs and path resolution for dated file batches."""
 
     paths: tuple[Path, ...] = ()
-    input_date: datetime | None = None
+    input_date: datetime | str | None = None
     limit: int | None = None
     offset: int = 0
 
@@ -129,6 +129,8 @@ class FileBatchCommand(Command, ABC):
     ) -> tuple[Path, ...]:
         """Resolve explicit paths or a date-derived path below the output directory."""
         self.validate_input()
+        if isinstance(self.input_date, str):
+            raise ValueError(f"Unresolved date selector: {self.input_date}")
         date = self.input_date.date().isoformat() if self.input_date is not None else ""
         return resolve_dated_input(
             self.paths,

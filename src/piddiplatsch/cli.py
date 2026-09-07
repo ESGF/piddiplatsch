@@ -14,9 +14,22 @@ from piddiplatsch.commands import (
     PublishCommand,
     RetryCommand,
 )
+from piddiplatsch.commands.helper import DATE_FORMATS, parse_date_selector
 from piddiplatsch.config import config
 
 CONTEXT_SETTINGS = {"help_option_names": ["-h", "--help"]}
+DEFAULT_USER_CONFIG = "custom.toml"
+
+
+def _parse_date_selector(
+    _ctx: click.Context, _param: click.Parameter, value: str | None
+) -> datetime | str | None:
+    if value is None:
+        return None
+    try:
+        return parse_date_selector(value)
+    except ValueError as exc:
+        raise click.BadParameter(str(exc)) from exc
 
 
 @click.group(context_settings=CONTEXT_SETTINGS)
@@ -26,10 +39,17 @@ CONTEXT_SETTINGS = {"help_option_names": ["-h", "--help"]}
     "--config",
     "config_file",
     type=click.Path(),
-    help="Path to custom config TOML file.",
+    default=DEFAULT_USER_CONFIG,
+    show_default=True,
+    help="Path to custom config TOML file (loaded when present).",
 )
 @click.option("--debug", is_flag=True, help="Enable debug logging.")
-@click.option("-v", "--verbose", is_flag=True, help="Show progress information.")
+@click.option(
+    "-v/-s",
+    "--verbose/--silent",
+    default=True,
+    help="Show progress information (enabled by default).",
+)
 @click.option(
     "-l",
     "--log",
@@ -125,8 +145,9 @@ def harvest(ctx: click.Context, idle_timeout: float) -> None:
 @click.option(
     "--date",
     "input_date",
-    type=click.DateTime(formats=["%Y-%m-%d"]),
-    help="Map the raw dump for this date from the configured output directory.",
+    metavar="DATE",
+    callback=_parse_date_selector,
+    help=f"Select a dated raw dump ({DATE_FORMATS}; default: last).",
 )
 @click.option(
     "--project",
@@ -164,7 +185,7 @@ def harvest(ctx: click.Context, idle_timeout: float) -> None:
 def map_messages(
     ctx: click.Context,
     path: tuple[Path, ...],
-    input_date: datetime | None,
+    input_date: datetime | str | None,
     projects: tuple[str, ...],
     all_projects: bool,
     limit: int | None,
@@ -196,8 +217,9 @@ def map_messages(
 @click.option(
     "--date",
     "input_date",
-    type=click.DateTime(formats=["%Y-%m-%d"]),
-    help="Publish this project's Handle file for the given date.",
+    metavar="DATE",
+    callback=_parse_date_selector,
+    help=f"Select a dated Handle file ({DATE_FORMATS}; default: last).",
 )
 @click.option(
     "--project", help="Validate that every selected Handle belongs to this project."
@@ -243,7 +265,7 @@ def map_messages(
 def publish(
     ctx: click.Context,
     path: tuple[Path, ...],
-    input_date: datetime | None,
+    input_date: datetime | str | None,
     limit: int | None,
     offset: int,
     retries: int,

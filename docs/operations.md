@@ -34,31 +34,32 @@ stable ordering and provenance.
 
 ```bash
 # Kafka -> raw JSONL only
-piddi --config custom.toml harvest
+piddi harvest
 
 # raw JSONL -> project-scoped Handle JSONL only
-piddi --config custom.toml map --project cmip6 --date 2026-08-27
+piddi map --project cmip6 --date 2026-08-27
 
 # Handle JSONL -> REST Handle Service
-piddi --config custom.toml publish --project cmip6 --date 2026-08-27
+piddi publish --project cmip6 --date 2026-08-27
 
 # Kafka -> raw JSONL -> Handle JSONL (default production ingestion)
-piddi --config custom.toml consume
+piddi consume
 
 # All three stages in one process
-piddi --config custom.toml consume --publish
+piddi consume --publish
 ```
 
 `map` accepts files or directories plus `--project`, `--all-projects`,
 `--limit`, `--offset`, and `--force`. It never contacts Kafka or a Handle
 Service and does not modify its input dumps.
 
-The `--date YYYY-MM-DD` convenience resolves the standard configured file:
-`map` uses `dump/dump_messages_<date>.jsonl`, while `publish` requires a project
-and uses `<project>/handles/handles_<date>.jsonl`. Explicit paths remain
-available for both commands. A path and `--date` are mutually exclusive; if
-neither is supplied, the command fails instead of guessing today, latest, or
-all files.
+The `--date` convenience accepts `YYYY-MM-DD`, `today`, `yesterday`, `today-N`,
+or `last`. `map` uses `dump/dump_messages_<date>.jsonl`; `publish` requires a
+project and uses `<project>/handles/handles_<date>.jsonl`. When neither an
+explicit path nor `--date` is supplied, both commands default to `last`.
+This selects the greatest valid date found in the relevant filenames,
+regardless of file modification time. Explicit paths remain available for both
+commands, and a path and `--date` are mutually exclusive.
 
 `publish --project NAME` validates every selected Handle before publishing and
 stops without sending anything if a project is missing or different. Plain
@@ -108,8 +109,8 @@ creates and prints a distinct project-scoped
 normal daily mapping output:
 
 ```bash
-piddi --config custom.toml -v retry outputs/cmip6/failures/r0
-piddi --config custom.toml publish --project cmip6 \
+piddi retry outputs/cmip6/failures/r0
+piddi publish --project cmip6 \
   outputs/cmip6/handles/retry_handles_<timestamp>.jsonl
 ```
 

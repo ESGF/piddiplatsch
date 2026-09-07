@@ -1,5 +1,6 @@
 """Unit tests for CLI module."""
 
+from datetime import date, timedelta
 from unittest.mock import patch
 
 import pytest
@@ -137,15 +138,24 @@ class TestConsumeCommand:
         assert call_kwargs["publish"] is True
 
     @patch("piddiplatsch.commands.base.start_consumer")
-    def test_consume_with_verbose(self, mock_start_consumer, runner):
-        """Test consume command with --verbose flag."""
-        result = runner.invoke(cli, ["--verbose", "consume"])
+    def test_consume_is_verbose_by_default(self, mock_start_consumer, runner):
+        """Test consume command shows progress by default."""
+        result = runner.invoke(cli, ["consume"])
         assert mock_start_consumer.called
         assert "msg/hdl messages/handles" in result.output
         assert "E/F/W/D errors/filtered/warnings/retracted" in result.output
         call_kwargs = mock_start_consumer.call_args.kwargs
         assert call_kwargs.get("verbose") is True
         assert isinstance(call_kwargs["progress"], Progress)
+
+    @patch("piddiplatsch.commands.base.start_consumer")
+    def test_consume_silent_disables_progress(self, mock_start_consumer, runner):
+        result = runner.invoke(cli, ["--silent", "consume"])
+
+        assert result.exit_code == 0
+        call_kwargs = mock_start_consumer.call_args.kwargs
+        assert call_kwargs["verbose"] is False
+        assert isinstance(call_kwargs["progress"], NoOpProgress)
 
     @patch("piddiplatsch.commands.base.start_consumer")
     def test_consume_with_several_projects(self, mock_start_consumer, runner):
@@ -226,6 +236,7 @@ class TestMapCommand:
         result = runner.invoke(
             cli,
             [
+                "--silent",
                 "map",
                 str(source),
                 "--project",
@@ -286,12 +297,70 @@ class TestMapCommand:
         assert mock_map_dump_files.call_args.args[0] == (source,)
         assert mock_map_dump_files.call_args.kwargs["projects"] == ("cmip6",)
 
+    @pytest.mark.parametrize(
+        ("selector", "days_ago"),
+        (("today", 0), ("yesterday", 1), ("today-2", 2)),
+    )
     @patch("piddiplatsch.commands.map.map_dump_files")
-    def test_map_requires_path_or_date(self, mock_map_dump_files, runner):
-        result = runner.invoke(cli, ["map", "--project", "cmip6"])
+    def test_map_resolves_relative_date(
+        self, mock_map_dump_files, runner, tmp_path, selector, days_ago
+    ):
+        output_dir = tmp_path / "outputs"
+        selected_date = date.today() - timedelta(days=days_ago)
+        source = (
+            output_dir / "dump" / f"dump_messages_{selected_date.isoformat()}.jsonl"
+        )
+        source.parent.mkdir(parents=True)
+        source.write_text("{}\n")
+        config._set("consumer", "output_dir", str(output_dir))
+        mock_map_dump_files.return_value = FeedResult(total=1, succeeded=1)
+
+        result = runner.invoke(cli, ["map", "--date", selector])
+
+        assert result.exit_code == 0
+        assert mock_map_dump_files.call_args.args[0] == (source,)
+
+    @pytest.mark.parametrize("date_args", ((), ("--date", "last")))
+    @patch("piddiplatsch.commands.map.map_dump_files")
+    def test_map_defaults_to_latest_dated_dump(
+        self, mock_map_dump_files, runner, tmp_path, date_args
+    ):
+        dump_dir = tmp_path / "outputs" / "dump"
+        dump_dir.mkdir(parents=True)
+        older = dump_dir / "dump_messages_2026-08-26.jsonl"
+        latest = dump_dir / "dump_messages_2026-08-28.jsonl"
+        malformed = dump_dir / "dump_messages_latest.jsonl"
+        for source in (older, latest, malformed):
+            source.write_text("{}\n")
+        config._set("consumer", "output_dir", str(tmp_path / "outputs"))
+        mock_map_dump_files.return_value = FeedResult(total=1, succeeded=1)
+
+        result = runner.invoke(cli, ["map", *date_args])
+
+        assert result.exit_code == 0
+        assert mock_map_dump_files.call_args.args[0] == (latest,)
+
+    @patch("piddiplatsch.commands.map.map_dump_files")
+    @pytest.mark.parametrize("selector", ("tomorrow", "20260827", "today--1"))
+    def test_map_rejects_invalid_relative_date(
+        self, mock_map_dump_files, runner, selector
+    ):
+        result = runner.invoke(cli, ["map", "--date", selector])
 
         assert result.exit_code == 2
-        assert "Provide PATH or --date" in result.output
+        assert "YYYY-MM-DD, today, yesterday, today-N, or last" in result.output
+        mock_map_dump_files.assert_not_called()
+
+    @patch("piddiplatsch.commands.map.map_dump_files")
+    def test_map_last_requires_a_dated_dump(
+        self, mock_map_dump_files, runner, tmp_path
+    ):
+        config._set("consumer", "output_dir", str(tmp_path / "outputs"))
+
+        result = runner.invoke(cli, ["map"])
+
+        assert result.exit_code == 1
+        assert "No dated raw dump files found" in result.output
         mock_map_dump_files.assert_not_called()
 
     @patch("piddiplatsch.commands.map.map_dump_files")
@@ -546,6 +615,53 @@ class TestPublishCommand:
         assert publisher_cls.return_value.run.call_args.args[0] == (source,)
         assert publisher_cls.return_value.run.call_args.kwargs["project"] == "CMIP6"
 
+    @pytest.mark.parametrize("date_args", ((), ("--date", "last")))
+    @patch("piddiplatsch.commands.publish.HandlePublisher")
+    def test_publish_defaults_to_latest_project_file(
+        self, publisher_cls, runner, tmp_path, date_args
+    ):
+        handles_dir = tmp_path / "outputs" / "cmip6" / "handles"
+        handles_dir.mkdir(parents=True)
+        older = handles_dir / "handles_2026-08-26.jsonl"
+        latest = handles_dir / "handles_2026-08-28.jsonl"
+        malformed = handles_dir / "handles_latest.jsonl"
+        for source in (older, latest, malformed):
+            source.touch()
+        config._set("consumer", "output_dir", str(tmp_path / "outputs"))
+        publisher_cls.return_value.run.return_value = PublishResult(
+            total=1, succeeded=1
+        )
+
+        result = runner.invoke(cli, ["publish", "--project", "CMIP6", *date_args])
+
+        assert result.exit_code == 0
+        assert publisher_cls.return_value.run.call_args.args[0] == (latest,)
+
+    @patch("piddiplatsch.commands.publish.HandlePublisher")
+    def test_publish_resolves_relative_date(self, publisher_cls, runner, tmp_path):
+        output_dir = tmp_path / "outputs"
+        selected_date = date.today() - timedelta(days=1)
+        source = (
+            output_dir
+            / "cmip6"
+            / "handles"
+            / f"handles_{selected_date.isoformat()}.jsonl"
+        )
+        source.parent.mkdir(parents=True)
+        source.touch()
+        config._set("consumer", "output_dir", str(output_dir))
+        publisher_cls.return_value.run.return_value = PublishResult(
+            total=1, succeeded=1
+        )
+
+        result = runner.invoke(
+            cli,
+            ["publish", "--project", "cmip6", "--date", "yesterday"],
+        )
+
+        assert result.exit_code == 0
+        assert publisher_cls.return_value.run.call_args.args[0] == (source,)
+
     @patch("piddiplatsch.commands.publish.HandlePublisher")
     def test_publish_date_requires_project(self, publisher_cls, runner):
         result = runner.invoke(cli, ["publish", "--date", "2026-08-27"])
@@ -555,11 +671,22 @@ class TestPublishCommand:
         publisher_cls.assert_not_called()
 
     @patch("piddiplatsch.commands.publish.HandlePublisher")
-    def test_publish_requires_path_or_date(self, publisher_cls, runner):
+    def test_publish_latest_requires_a_dated_handle_file(
+        self, publisher_cls, runner, tmp_path
+    ):
+        config._set("consumer", "output_dir", str(tmp_path / "outputs"))
         result = runner.invoke(cli, ["publish", "--project", "cmip6"])
 
+        assert result.exit_code == 1
+        assert "No dated cmip6 Handle files found" in result.output
+        publisher_cls.assert_not_called()
+
+    @patch("piddiplatsch.commands.publish.HandlePublisher")
+    def test_publish_without_path_or_project_is_rejected(self, publisher_cls, runner):
+        result = runner.invoke(cli, ["publish"])
+
         assert result.exit_code == 2
-        assert "Provide PATH or --date" in result.output
+        assert "Provide PATH or --project" in result.output
         publisher_cls.assert_not_called()
 
     @patch("piddiplatsch.commands.publish.HandlePublisher")
@@ -651,7 +778,7 @@ class TestPublishCommand:
 
     @patch("piddiplatsch.monitoring.progress.tqdm")
     @patch("piddiplatsch.commands.publish.HandlePublisher")
-    def test_publish_without_verbose_skips_progress_bar(
+    def test_publish_silent_skips_progress_bar(
         self, publisher_cls, tqdm_cls, runner, tmp_path
     ):
         source = tmp_path / "handles.jsonl"
@@ -673,7 +800,7 @@ class TestPublishCommand:
 
         publisher_cls.return_value.run.side_effect = run
 
-        result = runner.invoke(cli, ["publish", str(source)])
+        result = runner.invoke(cli, ["--silent", "publish", str(source)])
 
         assert result.exit_code == 0
         assert "Published 1/1 handles" in result.output
@@ -823,12 +950,29 @@ class TestCLIOptions:
         assert mock_start_consumer.called
 
     @patch("piddiplatsch.commands.base.start_consumer")
-    def test_config_file_option(self, mock_start_consumer, runner, tmp_path):
+    @patch("piddiplatsch.cli.config.load_user_config")
+    def test_default_config_file(
+        self, mock_load_user_config, mock_start_consumer, runner
+    ):
+        """Test that ./custom.toml is used by default."""
+        result = runner.invoke(cli, ["consume"])
+
+        assert result.exit_code == 0
+        mock_load_user_config.assert_called_once_with("custom.toml")
+
+    @patch("piddiplatsch.commands.base.start_consumer")
+    @patch("piddiplatsch.cli.config.load_user_config")
+    def test_config_file_option(
+        self, mock_load_user_config, mock_start_consumer, runner, tmp_path
+    ):
         """Test --config option."""
         config_file = tmp_path / "custom.toml"
         config_file.write_text('[plugin]\nprocessor = "test"\n')
 
-        runner.invoke(cli, ["--config", str(config_file), "consume"])
+        result = runner.invoke(cli, ["--config", str(config_file), "consume"])
+
+        assert result.exit_code == 0
+        mock_load_user_config.assert_called_once_with(str(config_file))
         assert mock_start_consumer.called
 
 

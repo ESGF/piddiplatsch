@@ -6,7 +6,7 @@ from pathlib import Path
 import click
 
 from piddiplatsch.commands.base import FileBatchCommand
-from piddiplatsch.commands.helper import select_projects
+from piddiplatsch.commands.helper import resolve_latest_dated_input, select_projects
 from piddiplatsch.consumer import map_dump_files
 from piddiplatsch.exceptions import JsonlReadError
 
@@ -23,10 +23,7 @@ class MapCommand(FileBatchCommand):
     def execute(self) -> None:
         progress = self.progress(title="map", stream=True)
         selection = select_projects(self.projects, self.all_projects)
-        paths = self.resolve_paths(
-            relative_path=lambda date: Path("dump") / f"dump_messages_{date}.jsonl",
-            missing_label="Raw dump",
-        )
+        paths = self._resolve_paths()
         try:
             with progress:
                 result = map_dump_files(
@@ -53,3 +50,16 @@ class MapCommand(FileBatchCommand):
         if result.failed:
             click.echo(f"Failed: {result.failed}")
             raise click.exceptions.Exit(1)
+
+    def _resolve_paths(self) -> tuple[Path, ...]:
+        if not self.paths and self.input_date in (None, "last"):
+            self.validate_input()
+            return resolve_latest_dated_input(
+                relative_dir=Path("dump"),
+                filename_prefix="dump_messages_",
+                missing_label="raw dump",
+            )
+        return self.resolve_paths(
+            relative_path=lambda date: Path("dump") / f"dump_messages_{date}.jsonl",
+            missing_label="Raw dump",
+        )

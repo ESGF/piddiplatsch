@@ -17,8 +17,10 @@ def _load_tests_config():
 
 
 @pytest.fixture(autouse=True)
-def _isolate_runtime_state(tmp_path):
+def _isolate_runtime_state(tmp_path, monkeypatch):
     """Give every test isolated configuration and runtime output paths."""
+    # A developer's ignored ./custom.toml must not affect CLI test results.
+    monkeypatch.chdir(tmp_path)
     original_config = deepcopy(_config.config_data)
     _config._set("consumer", "output_dir", str(tmp_path / "outputs"))
     _config._set("stats", "enable_db", False)
