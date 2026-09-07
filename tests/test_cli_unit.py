@@ -137,15 +137,24 @@ class TestConsumeCommand:
         assert call_kwargs["publish"] is True
 
     @patch("piddiplatsch.commands.base.start_consumer")
-    def test_consume_with_verbose(self, mock_start_consumer, runner):
-        """Test consume command with --verbose flag."""
-        result = runner.invoke(cli, ["--verbose", "consume"])
+    def test_consume_is_verbose_by_default(self, mock_start_consumer, runner):
+        """Test consume command shows progress by default."""
+        result = runner.invoke(cli, ["consume"])
         assert mock_start_consumer.called
         assert "msg/hdl messages/handles" in result.output
         assert "E/F/W/D errors/filtered/warnings/retracted" in result.output
         call_kwargs = mock_start_consumer.call_args.kwargs
         assert call_kwargs.get("verbose") is True
         assert isinstance(call_kwargs["progress"], Progress)
+
+    @patch("piddiplatsch.commands.base.start_consumer")
+    def test_consume_silent_disables_progress(self, mock_start_consumer, runner):
+        result = runner.invoke(cli, ["--silent", "consume"])
+
+        assert result.exit_code == 0
+        call_kwargs = mock_start_consumer.call_args.kwargs
+        assert call_kwargs["verbose"] is False
+        assert isinstance(call_kwargs["progress"], NoOpProgress)
 
     @patch("piddiplatsch.commands.base.start_consumer")
     def test_consume_with_several_projects(self, mock_start_consumer, runner):
@@ -226,6 +235,7 @@ class TestMapCommand:
         result = runner.invoke(
             cli,
             [
+                "--silent",
                 "map",
                 str(source),
                 "--project",
@@ -651,7 +661,7 @@ class TestPublishCommand:
 
     @patch("piddiplatsch.monitoring.progress.tqdm")
     @patch("piddiplatsch.commands.publish.HandlePublisher")
-    def test_publish_without_verbose_skips_progress_bar(
+    def test_publish_silent_skips_progress_bar(
         self, publisher_cls, tqdm_cls, runner, tmp_path
     ):
         source = tmp_path / "handles.jsonl"
@@ -673,7 +683,7 @@ class TestPublishCommand:
 
         publisher_cls.return_value.run.side_effect = run
 
-        result = runner.invoke(cli, ["publish", str(source)])
+        result = runner.invoke(cli, ["--silent", "publish", str(source)])
 
         assert result.exit_code == 0
         assert "Published 1/1 handles" in result.output

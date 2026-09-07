@@ -32,7 +32,12 @@ DEFAULT_USER_CONFIG = "custom.toml"
     help="Path to custom config TOML file (loaded when present).",
 )
 @click.option("--debug", is_flag=True, help="Enable debug logging.")
-@click.option("-v", "--verbose", is_flag=True, help="Show progress information.")
+@click.option(
+    "-v/-s",
+    "--verbose/--silent",
+    default=True,
+    help="Show progress information (enabled by default).",
+)
 @click.option(
     "-l",
     "--log",

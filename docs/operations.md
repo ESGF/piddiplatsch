@@ -108,7 +108,7 @@ creates and prints a distinct project-scoped
 normal daily mapping output:
 
 ```bash
-piddi -v retry outputs/cmip6/failures/r0
+piddi retry outputs/cmip6/failures/r0
 piddi publish --project cmip6 \
   outputs/cmip6/handles/retry_handles_<timestamp>.jsonl
 ```

@@ -44,7 +44,7 @@ explicit publication (or use the local Docker stack for smoke tests).
 - Harvest, map, and publish: `piddi consume --publish`
 - Common flags:
   - `--config <path>`: point to your TOML config
-  - `--verbose`: more logging
+  - `--silent`: hide the default progress display
   - `--debug --log my.log`: enable debug and log to file
   - `--force`: continue on transient external failures (e.g., STAC outages)
 

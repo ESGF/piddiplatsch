@@ -74,7 +74,7 @@ make test            # unit + integration
 # 3) Harvest and map from Kafka (Handle publication is deferred)
 piddi --help         # commands: harvest, map, consume, publish, retry
 piddi consume --help
-piddi --verbose consume
+piddi consume
 ```
 
 **Prerequisites for real runs**
@@ -91,7 +91,7 @@ then maps selected projects into Handle JSONL without contacting a Handle
 Service:
 
 ```bash
-piddi --verbose consume
+piddi consume
 ```
 
 The same work can be separated. `harvest` only reads Kafka and writes raw JSONL;
@@ -114,7 +114,7 @@ configuration file.
 For example, publish all project files from yesterday:
 
 ```bash
-piddi --verbose publish \
+piddi publish \
   --project cmip6 --date 2026-08-24
 ```
 
@@ -131,14 +131,14 @@ For a limited trial against the current file, cap the total number of attempted
 Handles:
 
 ```bash
-piddi --verbose publish --limit 1000 \
+piddi publish --limit 1000 \
   --project cmip6 --date 2026-08-25
 ```
 
 Continue with the next batch by combining the offset and limit:
 
 ```bash
-piddi --verbose publish \
+piddi publish \
   --project cmip6 --date 2026-08-25 \
   --offset 1000 --limit 1000 --retries 3
 ```
@@ -154,8 +154,8 @@ standard log file (`pid.log` by default) and to a run-scoped structured JSONL
 receipt under `outputs/published/`. The CLI prints the exact receipt path when
 the run finishes. Each line includes the outcome, action, PID, full URL,
 project, dataset, asset, source location, batch position, retries, and error.
-Pass the existing global `--verbose` option to enable the terminal progress
-bar; without it, only the final summary is printed.
+Terminal progress is enabled by default. Pass the global `--silent` option to
+hide the progress bar and print only the final summary.
 
 Single-project batches are inferred automatically. Their receipt uses a name
 such as `published_cmip6_handles_2026-08-28_10-15-00.jsonl`; mixed or unknown
@@ -214,15 +214,17 @@ Common first runs:
   piddi --config /path/to/another.toml consume
   ```
 
-### Status Bar (Verbose Mode)
+### Status Bar
 
-Use the global `-v` or `--verbose` option to display live progress for
-`harvest`, `map`, `consume`, or `publish`:
+Live progress is displayed by default for `harvest`, `map`, `consume`, and
+`publish`:
 
 ```bash
-piddi -v consume
-piddi -v map --date 2026-08-27
+piddi consume
+piddi map --date 2026-08-27
 ```
+
+Use the global `-s` or `--silent` option to disable it.
 
 Status line format:
 ```
@@ -280,7 +282,7 @@ piddi config validate
 piddi config show
 
 # Safe test run (no Handle writes; raw dump is automatic)
-piddi --verbose consume
+piddi consume
 ```
 
 This keeps your private ESGF credentials local while enabling safe staged testing.
