@@ -17,6 +17,7 @@ from piddiplatsch.commands import (
 from piddiplatsch.config import config
 
 CONTEXT_SETTINGS = {"help_option_names": ["-h", "--help"]}
+DEFAULT_USER_CONFIG = "custom.toml"
 
 
 @click.group(context_settings=CONTEXT_SETTINGS)
@@ -26,7 +27,9 @@ CONTEXT_SETTINGS = {"help_option_names": ["-h", "--help"]}
     "--config",
     "config_file",
     type=click.Path(),
-    help="Path to custom config TOML file.",
+    default=DEFAULT_USER_CONFIG,
+    show_default=True,
+    help="Path to custom config TOML file (loaded when present).",
 )
 @click.option("--debug", is_flag=True, help="Enable debug logging.")
 @click.option("-v", "--verbose", is_flag=True, help="Show progress information.")

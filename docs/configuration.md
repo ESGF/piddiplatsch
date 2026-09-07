@@ -1,14 +1,15 @@
 # Configuration
 
-Piddiplatsch loads `src/piddiplatsch/config/default.toml` first and recursively
-merges the file passed with `--config` over those defaults. Keep credentials in
-a local ignored file such as `custom.toml`.
+Piddiplatsch loads `src/piddiplatsch/config/default.toml` first, then
+automatically merges `./custom.toml` over those defaults when that file exists.
+Keep credentials in this local ignored file. Use `--config PATH` to load a
+different TOML file instead.
 
 Validate and inspect the effective configuration before a run:
 
 ```bash
-piddi --config custom.toml config validate
-piddi --config custom.toml config show
+piddi config validate
+piddi config show
 ```
 
 ## Application settings

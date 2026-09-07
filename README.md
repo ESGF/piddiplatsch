@@ -91,15 +91,15 @@ then maps selected projects into Handle JSONL without contacting a Handle
 Service:
 
 ```bash
-piddi --config custom.toml --verbose consume
+piddi --verbose consume
 ```
 
 The same work can be separated. `harvest` only reads Kafka and writes raw JSONL;
 `map` replays one or more dump files through the selected plugins:
 
 ```bash
-piddi --config custom.toml harvest
-piddi --config custom.toml map --date 2026-08-27
+piddi harvest
+piddi map --date 2026-08-27
 ```
 
 ### Deferred Handle publication
@@ -114,7 +114,7 @@ configuration file.
 For example, publish all project files from yesterday:
 
 ```bash
-piddi --config custom.toml --verbose publish \
+piddi --verbose publish \
   --project cmip6 --date 2026-08-24
 ```
 
@@ -131,14 +131,14 @@ For a limited trial against the current file, cap the total number of attempted
 Handles:
 
 ```bash
-piddi --config custom.toml --verbose publish --limit 1000 \
+piddi --verbose publish --limit 1000 \
   --project cmip6 --date 2026-08-25
 ```
 
 Continue with the next batch by combining the offset and limit:
 
 ```bash
-piddi --config custom.toml --verbose publish \
+piddi --verbose publish \
   --project cmip6 --date 2026-08-25 \
   --offset 1000 --limit 1000 --retries 3
 ```
@@ -209,9 +209,9 @@ Common first runs:
   piddi consume --project cmip6 --project cmip7
   piddi consume --all-projects
   ```
-- Use a custom configuration:
+- Override the default `./custom.toml` path:
   ```bash
-  piddi --config custom.toml consume
+  piddi --config /path/to/another.toml consume
   ```
 
 ### Status Bar (Verbose Mode)
@@ -220,8 +220,8 @@ Use the global `-v` or `--verbose` option to display live progress for
 `harvest`, `map`, `consume`, or `publish`:
 
 ```bash
-piddi -c custom.toml -v consume
-piddi -c custom.toml -v map --date 2026-08-27
+piddi -v consume
+piddi -v map --date 2026-08-27
 ```
 
 Status line format:
@@ -254,11 +254,13 @@ cp src/piddiplatsch/config/default.toml custom.toml
 vim custom.toml
 ```
 
-Run with your custom configuration:
+The CLI now loads `./custom.toml` automatically when it exists:
 
 ```bash
-piddi --config custom.toml
+piddi config validate
 ```
+
+Use `--config PATH` to select a different file.
 
 Kafka, Handle Service, consumer behaviour, and project selection are all controlled via this file.
 See [docs/configuration.md](docs/configuration.md) for the supported application
@@ -274,11 +276,11 @@ cp etc/esgf-example.toml custom.toml
 vim custom.toml   # set brokers, group.id, SASL, CA path, etc.
 
 # Validate and inspect
-piddi --config custom.toml config validate
-piddi --config custom.toml config show
+piddi config validate
+piddi config show
 
 # Safe test run (no Handle writes; raw dump is automatic)
-piddi --config custom.toml --verbose consume
+piddi --verbose consume
 ```
 
 This keeps your private ESGF credentials local while enabling safe staged testing.
@@ -286,7 +288,7 @@ This keeps your private ESGF credentials local while enabling safe staged testin
 ### Validate Config
 
 ```bash
-piddi --config custom.toml config validate
+piddi config validate
 ```
 
 Exits non-zero on errors; prints warnings when applicable.
@@ -294,10 +296,10 @@ Exits non-zero on errors; prints warnings when applicable.
 ### Show Effective Config
 
 ```bash
-piddi --config custom.toml config show           # TOML
-piddi --config custom.toml config show --format json
-piddi --config custom.toml config show --section consumer
-piddi --config custom.toml config show --section kafka --key group.id
+piddi config show           # TOML
+piddi config show --format json
+piddi config show --section consumer
+piddi config show --section kafka --key group.id
 ```
 
 Prints the merged defaults + your overrides for quick inspection.

@@ -823,12 +823,29 @@ class TestCLIOptions:
         assert mock_start_consumer.called
 
     @patch("piddiplatsch.commands.base.start_consumer")
-    def test_config_file_option(self, mock_start_consumer, runner, tmp_path):
+    @patch("piddiplatsch.cli.config.load_user_config")
+    def test_default_config_file(
+        self, mock_load_user_config, mock_start_consumer, runner
+    ):
+        """Test that ./custom.toml is used by default."""
+        result = runner.invoke(cli, ["consume"])
+
+        assert result.exit_code == 0
+        mock_load_user_config.assert_called_once_with("custom.toml")
+
+    @patch("piddiplatsch.commands.base.start_consumer")
+    @patch("piddiplatsch.cli.config.load_user_config")
+    def test_config_file_option(
+        self, mock_load_user_config, mock_start_consumer, runner, tmp_path
+    ):
         """Test --config option."""
         config_file = tmp_path / "custom.toml"
         config_file.write_text('[plugin]\nprocessor = "test"\n')
 
-        runner.invoke(cli, ["--config", str(config_file), "consume"])
+        result = runner.invoke(cli, ["--config", str(config_file), "consume"])
+
+        assert result.exit_code == 0
+        mock_load_user_config.assert_called_once_with(str(config_file))
         assert mock_start_consumer.called
 
 

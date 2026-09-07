@@ -34,19 +34,19 @@ stable ordering and provenance.
 
 ```bash
 # Kafka -> raw JSONL only
-piddi --config custom.toml harvest
+piddi harvest
 
 # raw JSONL -> project-scoped Handle JSONL only
-piddi --config custom.toml map --project cmip6 --date 2026-08-27
+piddi map --project cmip6 --date 2026-08-27
 
 # Handle JSONL -> REST Handle Service
-piddi --config custom.toml publish --project cmip6 --date 2026-08-27
+piddi publish --project cmip6 --date 2026-08-27
 
 # Kafka -> raw JSONL -> Handle JSONL (default production ingestion)
-piddi --config custom.toml consume
+piddi consume
 
 # All three stages in one process
-piddi --config custom.toml consume --publish
+piddi consume --publish
 ```
 
 `map` accepts files or directories plus `--project`, `--all-projects`,
@@ -108,8 +108,8 @@ creates and prints a distinct project-scoped
 normal daily mapping output:
 
 ```bash
-piddi --config custom.toml -v retry outputs/cmip6/failures/r0
-piddi --config custom.toml publish --project cmip6 \
+piddi -v retry outputs/cmip6/failures/r0
+piddi publish --project cmip6 \
   outputs/cmip6/handles/retry_handles_<timestamp>.jsonl
 ```
 
