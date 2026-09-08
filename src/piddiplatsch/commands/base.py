@@ -104,7 +104,6 @@ class KafkaCommand(Command, ABC):
                 force=force,
                 idle_timeout=idle_timeout,
                 handle_profile=handle_profile,
-                command=title,
             )
 
 

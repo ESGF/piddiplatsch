@@ -1,10 +1,14 @@
 import json
 from types import SimpleNamespace
+from unittest.mock import patch
 
 from click.testing import CliRunner
 
 from piddiplatsch.cli import cli
+from piddiplatsch.config import config
 from piddiplatsch.monitoring.stats import Stats
+from piddiplatsch.monitoring.status import read_status
+from piddiplatsch.result import FeedResult
 
 
 def _monitoring_db(path):
@@ -85,3 +89,43 @@ def test_top_once_shows_history(tmp_path):
     assert result.exit_code == 0
     assert "History · last 30 minutes" in result.output
     assert "ΔMsg" in result.output
+
+
+@patch("piddiplatsch.commands.map.map_dump_files")
+def test_map_command_owns_monitoring_database(mock_map_dump_files, tmp_path):
+    source = tmp_path / "dump.jsonl"
+    source.write_text("{}\n")
+    db_path = tmp_path / "piddi.db"
+    config._set("stats", "enable_db", True)
+    config._set("stats", "db_path", str(db_path))
+    mock_map_dump_files.return_value = FeedResult(total=1, succeeded=1)
+
+    result = CliRunner().invoke(
+        cli,
+        ["--log", str(tmp_path / "test.log"), "map", str(source), "--project", "cmip6"],
+    )
+
+    assert result.exit_code == 0
+    status = read_status(db_path)
+    assert status["runs"][0]["command"] == "map"
+    assert status["runs"][0]["state"] == "completed"
+
+
+@patch("piddiplatsch.commands.map.map_dump_files")
+def test_map_failures_close_monitoring_run_as_failed(mock_map_dump_files, tmp_path):
+    source = tmp_path / "dump.jsonl"
+    source.write_text("{}\n")
+    db_path = tmp_path / "piddi.db"
+    config._set("stats", "enable_db", True)
+    config._set("stats", "db_path", str(db_path))
+    mock_map_dump_files.return_value = FeedResult(total=2, succeeded=1, failed=1)
+
+    result = CliRunner().invoke(
+        cli,
+        ["--log", str(tmp_path / "test.log"), "map", str(source), "--project", "cmip6"],
+    )
+
+    assert result.exit_code == 1
+    run = read_status(db_path)["runs"][0]
+    assert run["state"] == "failed"
+    assert run["error_summary"] == "1 mapping messages failed"

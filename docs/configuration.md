@@ -37,7 +37,7 @@ piddi config show
 | `plugins.<name>` | `landing_page_url`, `max_parts`, `excluded_asset_keys` | Project-specific Handle-record behavior. |
 | `plugins.<name>.stac` | `base_url`, `timeout`, `collection` | Optional project overrides for the global STAC settings. |
 | `stats` | `interval_seconds`, `summary_interval` | Statistics reporting intervals. |
-| `stats` | `enable_db`, `db_path`, heartbeat/sample/history intervals | Local SQLite operational-state database. |
+| `stats` | `enable_db`, `db_path`, heartbeat/sample/history intervals | Local SQLite state and history for `piddi map`. |
 
 Direct `rest` and `pyhandle` publication always appends the prepared record to
 the project-scoped Handle JSONL file before contacting the service. This audit

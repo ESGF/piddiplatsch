@@ -129,7 +129,9 @@ The CLI writes to `pid.log` by default. Use `--log PATH` to select another file.
 At INFO level it records the selected plugins, the first occurrence of every
 filtered project identity, and periodic aggregate filtered counts. Per-message
 filter decisions are available with `--debug` without flooding normal logs.
-The optional SQLite reporter is controlled by `[stats]`.
+The optional SQLite reporter is controlled by `[stats]` and is opened only by
+the explicit `piddi map` command. `consume`, `harvest`, and `top` never update
+the database.
 
 The database contains a versioned current-run status model. A heartbeat is
 updated independently of Kafka traffic, and processing outcomes are split by

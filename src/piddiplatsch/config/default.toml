@@ -153,7 +153,7 @@ interval_seconds = 10
 # Message count threshold before logging a stats snapshot.
 summary_interval = 1000
 
-# Enable SQLite reporter for persistent stats.
+# Enable SQLite monitoring for `piddi map` runs.
 enable_db = true
 
 # Path to SQLite database file (used only if enable_db = true).

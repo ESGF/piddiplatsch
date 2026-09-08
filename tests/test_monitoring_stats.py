@@ -2,8 +2,21 @@ import datetime
 import sqlite3
 from types import SimpleNamespace
 
+import pytest
+
+from piddiplatsch.config import config
+from piddiplatsch.consumer import HarvestProcessor, start_consumer
 from piddiplatsch.monitoring.stats import CounterKey, SQLiteReporter, Stats, concise_error
 from piddiplatsch.monitoring.status import read_status
+from piddiplatsch.result import ProcessingResult
+
+
+class _MappingProcessor:
+    def preflight_check(self, **_kwargs):
+        return None
+
+    def process(self, key, _value):
+        return ProcessingResult(key=key, success=True)
 
 
 def test_counters_increment():
@@ -170,3 +183,18 @@ def test_monitoring_error_summary_redacts_credentials_and_payloads():
     assert concise_error("request failed password=hunter2") == "request failed password=***"
     assert concise_error("https://alice:secret@example.test failed") == "https://***@example.test failed"
     assert concise_error('{"raw": "message"}') == "processing error (structured details omitted)"
+
+
+@pytest.mark.parametrize("processor", [HarvestProcessor(), _MappingProcessor()])
+def test_consumer_entrypoint_never_creates_monitoring_database(tmp_path, processor):
+    db_path = tmp_path / "piddi.db"
+    config._set("stats", "enable_db", True)
+    config._set("stats", "db_path", str(db_path))
+
+    start_consumer(
+        processor=processor,
+        direct_messages=[("one", {"value": 1})],
+        force=True,
+    )
+
+    assert not db_path.exists()

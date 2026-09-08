@@ -454,15 +454,12 @@ def start_consumer(
     projects: list[str] | tuple[str, ...] | str | None = None,
     dump_messages=False,
     verbose=False,
-    enable_db: bool | None = None,
-    db_path: str | None = None,
     direct_messages=None,
     publish: bool = False,
     force: bool = False,
     progress: BaseProgress | None = None,
     idle_timeout: float | None = None,
     handle_profile: str | None = None,
-    command: str = "consume",
 ):
     max_errors = config.get("consumer", {}).get("max_errors", -1)
     # Build processor instance to run preflight and pass into pipeline
@@ -473,21 +470,10 @@ def start_consumer(
         handle_profile=handle_profile,
     )
     stats_config = config.get("stats", {})
-    project_names = getattr(proc_instance, "project_names", ())
     stats.configure_for_run(
-        enable_db=(
-            stats_config.get("enable_db", False) if enable_db is None else enable_db
-        ),
-        db_path=db_path or stats_config.get("db_path"),
+        enable_db=False,
         log_interval_seconds=stats_config.get("interval_seconds"),
         log_interval_messages=stats_config.get("summary_interval"),
-        command=command,
-        topic=topic,
-        consumer_group=(kafka_cfg or {}).get("group.id"),
-        selected_projects=project_names,
-        heartbeat_interval_seconds=stats_config.get("heartbeat_interval_seconds", 5),
-        sample_interval_seconds=stats_config.get("sample_interval_seconds", 15),
-        sample_retention_days=stats_config.get("sample_retention_days", 30),
     )
     # Optional STAC preflight
     try:
