@@ -96,7 +96,7 @@ The delay occurs outside the mock store lock, so concurrent publisher workers
 can overlap requests as they would with a real service connection/database
 pool. GET requests and requests rejected before storage are not delayed.
 
-These files, `pid.log`, and `stats.db` are ignored by Git and preserved by the
+These files, `pid.log`, and `piddi.db` are ignored by Git and preserved by the
 project's cleanup targets. There is no automatic retention policy. Dump and
 Handle JSONL files can grow quickly, so monitor disk usage and archive or remove
 old files according to the site's operational policy.

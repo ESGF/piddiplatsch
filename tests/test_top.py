@@ -35,7 +35,7 @@ def _monitoring_db(path):
 
 
 def test_top_json_is_project_aware(tmp_path):
-    db_path = tmp_path / "monitor.db"
+    db_path = tmp_path / "piddi.db"
     _monitoring_db(db_path)
 
     result = CliRunner().invoke(cli, ["--log", str(tmp_path / "test.log"), "top", "--db", str(db_path), "--json"])
@@ -48,7 +48,7 @@ def test_top_json_is_project_aware(tmp_path):
 
 
 def test_top_once_filters_project(tmp_path):
-    db_path = tmp_path / "monitor.db"
+    db_path = tmp_path / "piddi.db"
     _monitoring_db(db_path)
 
     result = CliRunner().invoke(

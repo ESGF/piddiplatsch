@@ -417,7 +417,7 @@ def top(
     stats_config = config.get("stats", {})
     TopCommand(
         verbose=ctx.obj["verbose"],
-        db_path=db_path or Path(stats_config.get("db_path", "stats.db")),
+        db_path=db_path or Path(stats_config.get("db_path", "piddi.db")),
         project=project,
         once=once,
         json_output=json_output,

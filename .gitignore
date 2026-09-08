@@ -183,6 +183,7 @@ custom_*.toml
 outputs/
 pid.log
 stats.db
+piddi.db
 *.db
 
 # VS Code

@@ -82,7 +82,7 @@ def test_timestamps_are_utc():
 
 
 def test_project_status_is_persisted_with_run_heartbeat(tmp_path):
-    db_path = tmp_path / "stats.db"
+    db_path = tmp_path / "piddi.db"
     s = Stats(enable_db=False)
     s.configure_for_run(
         enable_db=True,
@@ -132,7 +132,7 @@ def test_project_status_is_persisted_with_run_heartbeat(tmp_path):
 
 
 def test_read_status_can_filter_project(tmp_path):
-    db_path = tmp_path / "stats.db"
+    db_path = tmp_path / "piddi.db"
     reporter = SQLiteReporter(str(db_path))
     reporter.close()
 
@@ -141,7 +141,7 @@ def test_read_status_can_filter_project(tmp_path):
 
 
 def test_fresh_database_contains_only_current_monitoring_tables(tmp_path):
-    db_path = tmp_path / "stats.db"
+    db_path = tmp_path / "piddi.db"
     reporter = SQLiteReporter(str(db_path))
     reporter.close()
 

@@ -157,7 +157,7 @@ summary_interval = 1000
 enable_db = true
 
 # Path to SQLite database file (used only if enable_db = true).
-db_path = "stats.db"
+db_path = "piddi.db"
 
 # Heartbeats are written even while Kafka is idle. A monitor considers an
 # unfinished run stale after the second threshold.

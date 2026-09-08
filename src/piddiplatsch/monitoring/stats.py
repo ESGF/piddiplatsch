@@ -80,7 +80,7 @@ class ConsoleReporter(StatsReporter):
 
 
 class SQLiteReporter(StatsReporter):
-    def __init__(self, db_path: str = "stats.db"):
+    def __init__(self, db_path: str = "piddi.db"):
         self._conn = sqlite3.connect(db_path, check_same_thread=False)
         self._conn.execute("PRAGMA busy_timeout = 5000")
         self._conn.execute("PRAGMA journal_mode = WAL")
