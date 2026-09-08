@@ -152,6 +152,8 @@ class HandlesConfig(BaseModel):
 class StacConfig(BaseModel):
     model_config = ConfigDict(extra="allow")
     base_url: str | None = None
+    timeout: float | None = None
+    collection: str | None = None
 
 
 class ElasticsearchConfig(BaseModel):
@@ -176,6 +178,7 @@ class ProjectPluginConfig(BaseModel):
     model_config = ConfigDict(extra="allow")
     landing_page_url: str | None = None
     handle: str | None = None
+    stac: StacConfig | None = None
 
 
 class PluginsConfig(BaseModel):

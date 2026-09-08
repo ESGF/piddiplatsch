@@ -71,6 +71,15 @@ class Config:
             return merged.get(key, fallback)
         return merged
 
+    def get_stac(self, project: str | None = None) -> dict:
+        """Resolve global STAC settings with optional project overrides."""
+        merged = dict(self.config_data.get("stac", {}) or {})
+        if project:
+            project_stac = self.get_plugin(project, "stac", {}) or {}
+            if isinstance(project_stac, dict):
+                merged.update(project_stac)
+        return merged
+
     def get_handle_profile(self, project: str | None = None) -> str | None:
         """Return the named Handle profile selected for a project.
 

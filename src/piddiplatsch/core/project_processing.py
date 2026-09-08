@@ -36,10 +36,10 @@ class StacProjectProcessor(BaseProcessor):
             "excluded_asset_keys",
             self.default_excluded_asset_keys,
         )
-        self.stac_client = get_stac_client()
+        self.stac_client = get_stac_client(self.plugin_name)
 
     def preflight_check(self, stop_on_transient_skip: bool = True):
-        stac_cfg = config.get("stac", {})
+        stac_cfg = config.get_stac(self.plugin_name)
         base_url = stac_cfg.get("base_url")
         consumer_cfg = config.get("consumer", {})
         transient_cfg = consumer_cfg.get("transient", {})

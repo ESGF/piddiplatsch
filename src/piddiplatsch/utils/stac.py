@@ -83,7 +83,7 @@ class LocalStacClient(BaseStacClient):
         }
 
 
-def get_stac_client() -> BaseStacClient:
+def get_stac_client(project: str | None = None) -> BaseStacClient:
     """
     Factory function to return a STAC client based on the config.
 
@@ -91,7 +91,7 @@ def get_stac_client() -> BaseStacClient:
     [stac]
     base_url = "https://api.stac.esgf.ceda.ac.uk"
     """
-    stac_cfg = config.get("stac", {})
+    stac_cfg = config.get_stac(project)
     base_url = stac_cfg.get("base_url")
     timeout = float(stac_cfg.get("timeout", 10.0))
     if not base_url:

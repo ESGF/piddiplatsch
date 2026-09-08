@@ -3,6 +3,7 @@ from piddiplatsch.config.schema import LookupConfig, validate_config
 from piddiplatsch.core.models import strict_mode
 from piddiplatsch.lookup.api import get_lookup
 from piddiplatsch.lookup.base import DummyLookup
+from piddiplatsch.lookup.stac import STACLookup
 
 
 def _base_config():
@@ -28,6 +29,37 @@ def test_lookup_without_enabled_flag_uses_dummy_backend():
     config._set("lookup", None, {})
 
     assert isinstance(get_lookup(), DummyLookup)
+
+
+def test_project_stac_settings_override_global_defaults():
+    config._set(
+        "stac",
+        None,
+        {
+            "base_url": "https://stac.example.test",
+            "timeout": 10,
+            "collection": "GLOBAL",
+        },
+    )
+    config._set("plugins", "cmip7", {"stac": {"collection": "CMIP7"}})
+
+    assert config.get_stac("cmip7") == {
+        "base_url": "https://stac.example.test",
+        "timeout": 10,
+        "collection": "CMIP7",
+    }
+
+
+def test_stac_lookup_uses_project_collection():
+    config._set("lookup", None, {"enabled": True, "backend": "stac"})
+    config._set("stac", None, {"base_url": "https://stac.example.test"})
+    config._set("plugins", "cmip7", {"stac": {"collection": "CMIP7"}})
+
+    lookup = get_lookup("cmip7")
+
+    assert isinstance(lookup, STACLookup)
+    assert lookup.stac_url == "https://stac.example.test"
+    assert lookup.collection == "CMIP7"
 
 
 def test_jsonl_is_not_a_selectable_publication_backend():

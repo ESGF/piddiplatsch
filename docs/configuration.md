@@ -29,12 +29,13 @@ piddi config show
 | `handles.profiles.<name>` | `backend` | `rest` for publication or legacy `pyhandle`; both always write JSONL first. |
 | `handles.profiles.<name>` | `server_url`, `prefix`, `username`, `password` | Connection and credentials for one Handle service. |
 | `handles.profiles.<name>` | `verify_https`, `timeout` | TLS verification and per-request timeout for one Handle service. |
-| `stac` | `base_url`, `timeout`, `collection` | Optional STAC lookup and patch retrieval settings; no remote URL is configured by default. |
+| `stac` | `base_url`, `timeout`, `collection` | Global STAC defaults; the shared endpoint is `https://discovery.east.esgf.io`. |
 | `lookup` | `enabled`, `backend` | Enable version lookup using `stac` or `es`; disabled by default. |
 | `elasticsearch` | `base_url`, `index` | Elasticsearch lookup settings when `lookup.backend = "es"`. |
 | `schema` | `strict_mode` | Reject incomplete or unsupported records; defaults to `true`. |
 | `plugins.<name>` | `handle` | Named Handle profile used by this project. |
 | `plugins.<name>` | `landing_page_url`, `max_parts`, `excluded_asset_keys` | Project-specific Handle-record behavior. |
+| `plugins.<name>.stac` | `base_url`, `timeout`, `collection` | Optional project overrides for the global STAC settings. |
 | `stats` | `interval_seconds`, `summary_interval` | Statistics reporting intervals. |
 | `stats` | `enable_db`, `db_path` | Optional SQLite statistics reporter. |
 
@@ -89,6 +90,25 @@ projects = ["cmip6"]
 # projects = ["cmip6", "cmip7"]
 # projects = "all"
 ```
+
+STAC settings may be shared while each project selects its own collection:
+
+```toml
+[stac]
+base_url = "https://discovery.east.esgf.io"
+timeout = 10
+
+[plugins.cmip6.stac]
+collection = "CMIP6"
+
+[plugins.cmip7.stac]
+collection = "CMIP7"
+```
+
+Project settings inherit unspecified values from `[stac]`. A project-specific
+`base_url` or `timeout` can therefore be added later if that collection moves to
+another service. PATCH events continue to use their own `collection_id`; the
+configured collection is used by STAC version lookups.
 
 For a single invocation, repeat `--project` or use `--all-projects`. CLI
 selection overrides configuration. Separate project-specific processes reading
