@@ -78,9 +78,12 @@ username = "300:21.TEST/testuser"
 password = "testpass"
 
 [stac]
-# Remote STAC integration is opt-in. Set a base URL in a site configuration.
-# base_url = "https://api.stac.esgf.ceda.ac.uk"
+# Shared STAC endpoint. Projects may override this under
+# [plugins.<name>.stac] when their collection is hosted elsewhere.
+base_url = "https://discovery.east.esgf.io"
 timeout = 10  # seconds
+# Fallback for callers that do not select a project. Project defaults below
+# override this value for project-aware STAC version lookups.
 collection = "cmip6"
 
 [elasticsearch]
@@ -106,6 +109,9 @@ max_parts = -1
 # Asset keys excluded from HAS_PARTS generation (non-data assets, previews, etc.).
 excluded_asset_keys = ["reference_file", "globus", "thumbnail", "quicklook"]
 
+[plugins.cmip6.stac]
+collection = "CMIP6"
+
 [plugins.cmip7]
 # handle = "profile-name"
 # CMIP7 currently shares the Handle output schema and STAC mapping workflow
@@ -114,17 +120,26 @@ landing_page_url = "https://handle-esgf.dkrz.de/lp"
 max_parts = -1
 excluded_asset_keys = ["reference_file", "globus", "thumbnail", "quicklook"]
 
+[plugins.cmip7.stac]
+collection = "CMIP7"
+
 [plugins.cordex-cmip6]
 # handle = "profile-name"
 landing_page_url = "https://handle-esgf.dkrz.de/lp"
 max_parts = -1
 excluded_asset_keys = ["reference_file", "globus", "thumbnail", "quicklook"]
 
+[plugins.cordex-cmip6.stac]
+collection = "CORDEX-CMIP6"
+
 [plugins.cmip6plus]
 # handle = "profile-name"
 landing_page_url = "https://handle-esgf.dkrz.de/lp"
 max_parts = -1
 excluded_asset_keys = ["reference_file", "globus", "thumbnail", "quicklook"]
+
+[plugins.cmip6plus.stac]
+collection = "CMIP6Plus"
 
 [lookup]
 # Lookup backend: "stac" (requires stac.base_url) or "es" (requires elasticsearch.base_url).

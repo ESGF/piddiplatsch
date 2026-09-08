@@ -39,7 +39,7 @@ class CMIP6DatasetRecord(ProjectDatasetRecord, BaseCMIP6Record):
         handle_profile: str | None = None,
     ) -> None:
         super().__init__(item, exclude_keys, additional_attributes, handle_profile)
-        self.lookup = get_lookup()
+        self.lookup = get_lookup(self.plugin_name)
 
     @cached_property
     def dataset_properties(self):
