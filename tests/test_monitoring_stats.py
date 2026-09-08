@@ -1,7 +1,9 @@
 import datetime
 import sqlite3
+from types import SimpleNamespace
 
-from piddiplatsch.monitoring.stats import CounterKey, SQLiteReporter, Stats
+from piddiplatsch.monitoring.stats import CounterKey, SQLiteReporter, Stats, concise_error
+from piddiplatsch.monitoring.status import read_status
 
 
 def test_counters_increment():
@@ -79,17 +81,82 @@ def test_timestamps_are_utc():
     assert s.uptime >= 0
 
 
-def test_sqlite_reporter_persists_filtered_counter(tmp_path):
+def test_project_status_is_persisted_with_run_heartbeat(tmp_path):
+    db_path = tmp_path / "stats.db"
+    s = Stats(enable_db=False)
+    s.configure_for_run(
+        enable_db=True,
+        db_path=str(db_path),
+        command="consume",
+        topic="publication",
+        consumer_group="piddi-cmip",
+        selected_projects=("cmip6", "cmip7"),
+        heartbeat_interval_seconds=60,
+    )
+    s.record_result(
+        SimpleNamespace(
+            key="one",
+            plugin="cmip6",
+            project="cmip6",
+            filtered=False,
+            skipped=False,
+            success=True,
+            num_handles=3,
+            handle_processing_time=0.2,
+            error=None,
+        )
+    )
+    s.record_result(
+        SimpleNamespace(
+            key="two",
+            plugin=None,
+            project="cmip7",
+            filtered=True,
+            skipped=False,
+            success=True,
+            num_handles=0,
+            handle_processing_time=0,
+            error=None,
+        )
+    )
+    s.close(status="completed")
+
+    status = read_status(db_path)
+    assert status["schema_version"] == 1
+    assert status["runs"][0]["state"] == "completed"
+    assert status["runs"][0]["selected_projects"] == ["cmip6", "cmip7"]
+    projects = {row["project"]: row for row in status["runs"][0]["projects"]}
+    assert projects["cmip6"]["succeeded"] == 1
+    assert projects["cmip6"]["handles"] == 3
+    assert projects["cmip7"]["filtered"] == 1
+
+
+def test_read_status_can_filter_project(tmp_path):
     db_path = tmp_path / "stats.db"
     reporter = SQLiteReporter(str(db_path))
-    summary = Stats(enable_db=False).summary()
-    summary[CounterKey.FILTERED.value] = 3
+    reporter.close()
 
-    reporter.log(summary)
+    status = read_status(db_path, project="cmip7")
+    assert status["runs"] == []
+
+
+def test_fresh_database_contains_only_current_monitoring_tables(tmp_path):
+    db_path = tmp_path / "stats.db"
+    reporter = SQLiteReporter(str(db_path))
     reporter.close()
 
     with sqlite3.connect(db_path) as connection:
-        row = connection.execute(
-            "SELECT filtered_messages FROM message_stats"
-        ).fetchone()
-    assert row == (3,)
+        tables = {
+            row[0]
+            for row in connection.execute(
+                "SELECT name FROM sqlite_master WHERE type = 'table'"
+            )
+        }
+
+    assert tables == {"monitor_meta", "monitor_runs", "monitor_project_stats"}
+
+
+def test_monitoring_error_summary_redacts_credentials_and_payloads():
+    assert concise_error("request failed password=hunter2") == "request failed password=***"
+    assert concise_error("https://alice:secret@example.test failed") == "https://***@example.test failed"
+    assert concise_error('{"raw": "message"}') == "processing error (structured details omitted)"

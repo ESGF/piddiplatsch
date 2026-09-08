@@ -131,6 +131,28 @@ filtered project identity, and periodic aggregate filtered counts. Per-message
 filter decisions are available with `--debug` without flooding normal logs.
 The optional SQLite reporter is controlled by `[stats]`.
 
+The database contains a versioned current-run status model. A heartbeat is
+updated independently of Kafka traffic, and processing outcomes are split by
+canonical project. Inspect it without contacting Kafka or the Handle service:
+
+```console
+# live view (Ctrl-C exits)
+piddi top
+
+# one project, one terminal snapshot
+piddi top --project cmip7 --once
+
+# machine-readable status
+piddi top --json
+```
+
+`top` marks unfinished runs stale when their heartbeat exceeds
+`stats.stale_after_seconds`. An idle topic is healthy while the process keeps
+heartbeating. The heartbeat interval is configured with
+`stats.heartbeat_interval_seconds`. Both default to 5 and 15 seconds,
+respectively. `top` is read-only and reports a clear error for a missing or
+invalid monitoring database.
+
 ## Shutdown behavior
 
 SIGINT and keyboard interruption close the Kafka consumer, progress display,
