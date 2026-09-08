@@ -80,19 +80,28 @@ class ConsoleReporter(StatsReporter):
 
 
 class SQLiteReporter(StatsReporter):
-    def __init__(self, db_path: str = "piddi.db"):
+    def __init__(
+        self,
+        db_path: str = "piddi.db",
+        sample_interval_seconds: float = 15.0,
+        sample_retention_days: float = 30.0,
+    ):
         self._conn = sqlite3.connect(db_path, check_same_thread=False)
         self._conn.execute("PRAGMA busy_timeout = 5000")
         self._conn.execute("PRAGMA journal_mode = WAL")
         self._cursor = self._conn.cursor()
         self._lock = threading.RLock()
+        self.sample_interval_seconds = max(0.1, sample_interval_seconds)
+        self.sample_retention_days = max(0.0, sample_retention_days)
+        self._last_sample_at: datetime.datetime | None = None
+        self._last_prune_at: datetime.datetime | None = None
         self._cursor.executescript("""
             CREATE TABLE IF NOT EXISTS monitor_meta (
                 key TEXT PRIMARY KEY,
                 value TEXT NOT NULL
             );
-            INSERT OR IGNORE INTO monitor_meta (key, value)
-            VALUES ('schema_version', '1');
+            INSERT OR REPLACE INTO monitor_meta (key, value)
+            VALUES ('schema_version', '2');
 
             CREATE TABLE IF NOT EXISTS monitor_runs (
                 run_id TEXT PRIMARY KEY,
@@ -130,6 +139,23 @@ class SQLiteReporter(StatsReporter):
             );
             CREATE INDEX IF NOT EXISTS idx_monitor_project_stats_project
                 ON monitor_project_stats(project);
+
+            CREATE TABLE IF NOT EXISTS monitor_samples (
+                run_id TEXT NOT NULL,
+                project TEXT NOT NULL,
+                sampled_at TEXT NOT NULL,
+                consumed INTEGER NOT NULL,
+                routed INTEGER NOT NULL,
+                filtered INTEGER NOT NULL,
+                succeeded INTEGER NOT NULL,
+                skipped INTEGER NOT NULL,
+                failed INTEGER NOT NULL,
+                handles INTEGER NOT NULL,
+                PRIMARY KEY (run_id, project, sampled_at),
+                FOREIGN KEY (run_id) REFERENCES monitor_runs(run_id)
+            );
+            CREATE INDEX IF NOT EXISTS idx_monitor_samples_project_time
+                ON monitor_samples(project, sampled_at);
             """)
         self._conn.commit()
         self._closed = False
@@ -138,22 +164,34 @@ class SQLiteReporter(StatsReporter):
         if self._closed:
             raise RuntimeError("SQLiteReporter is closed")
         with self._lock:
-            self._write_status(summary)
+            self._persist(summary)
             self._conn.commit()
 
-    def heartbeat(self, summary: dict) -> None:
-        """Refresh run liveness without adding a historical stats snapshot."""
+    def heartbeat(self, summary: dict, *, force_sample: bool = False) -> None:
+        """Refresh run liveness and periodically append a historical sample."""
         if self._closed:
             return
         with self._lock:
-            self._write_status(summary)
+            self._persist(summary, force_sample=force_sample)
             self._conn.commit()
 
-    def _write_status(self, summary: dict) -> None:
+    def _persist(self, summary: dict, *, force_sample: bool = False) -> None:
+        now = datetime.datetime.now(datetime.UTC)
+        self._write_status(summary, now)
+        sample_due = (
+            self._last_sample_at is None
+            or (now - self._last_sample_at).total_seconds() >= self.sample_interval_seconds
+        )
+        if force_sample or sample_due:
+            self._write_samples(summary, now)
+            self._last_sample_at = now
+            self._prune_samples(now)
+
+    def _write_status(self, summary: dict, now: datetime.datetime) -> None:
         run = summary.get("run")
         if not run:
             return
-        now = datetime.datetime.now(datetime.UTC).isoformat()
+        timestamp = now.isoformat()
         self._cursor.execute(
             """
             INSERT INTO monitor_runs (
@@ -176,7 +214,7 @@ class SQLiteReporter(StatsReporter):
                 run["pid"],
                 run["hostname"],
                 run["started_at"],
-                now,
+                timestamp,
                 run.get("finished_at"),
                 run["status"],
                 run.get("topic"),
@@ -211,9 +249,47 @@ class SQLiteReporter(StatsReporter):
                     counters["skipped"],
                     counters["failed"],
                     counters["handles"],
-                    now,
+                    timestamp,
                 ),
             )
+
+    def _write_samples(self, summary: dict, now: datetime.datetime) -> None:
+        run = summary.get("run")
+        if not run:
+            return
+        timestamp = now.isoformat()
+        for project, counters in summary.get("projects", {}).items():
+            self._cursor.execute(
+                """
+                INSERT INTO monitor_samples (
+                    run_id, project, sampled_at, consumed, routed, filtered,
+                    succeeded, skipped, failed, handles
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    run["run_id"],
+                    project,
+                    timestamp,
+                    counters["consumed"],
+                    counters["routed"],
+                    counters["filtered"],
+                    counters["succeeded"],
+                    counters["skipped"],
+                    counters["failed"],
+                    counters["handles"],
+                ),
+            )
+
+    def _prune_samples(self, now: datetime.datetime) -> None:
+        if self.sample_retention_days == 0:
+            return
+        if self._last_prune_at and (now - self._last_prune_at).total_seconds() < 3600:
+            return
+        cutoff = now - datetime.timedelta(days=self.sample_retention_days)
+        self._cursor.execute(
+            "DELETE FROM monitor_samples WHERE sampled_at < ?", (cutoff.isoformat(),)
+        )
+        self._last_prune_at = now
 
     def close(self):
         if getattr(self, "_closed", False):
@@ -329,6 +405,8 @@ class Stats:
         consumer_group: str | None = None,
         selected_projects: tuple[str, ...] | list[str] = (),
         heartbeat_interval_seconds: float = 5.0,
+        sample_interval_seconds: float = 15.0,
+        sample_retention_days: float = 30.0,
     ):
         """Reset counters and reporters for a fresh run, optionally enabling DB.
 
@@ -344,7 +422,13 @@ class Stats:
             self.log_interval_messages = log_interval_messages
         if enable_db and db_path:
             try:
-                self.reporters.append(SQLiteReporter(db_path=db_path))
+                self.reporters.append(
+                    SQLiteReporter(
+                        db_path=db_path,
+                        sample_interval_seconds=sample_interval_seconds,
+                        sample_retention_days=sample_retention_days,
+                    )
+                )
             except Exception:
                 logger.exception("Failed to initialize SQLiteReporter; continuing without DB reporter")
         if enable_db and any(isinstance(r, SQLiteReporter) for r in self.reporters):
@@ -363,7 +447,7 @@ class Stats:
             }
             for project in selected_projects:
                 self._project_counters[project]
-            self._heartbeat_once()
+            self._heartbeat_once(force_sample=True)
             self._start_heartbeat(heartbeat_interval_seconds)
 
     def _start_heartbeat(self, interval: float) -> None:
@@ -383,12 +467,12 @@ class Stats:
             thread.join(timeout=2)
         self._heartbeat_thread = None
 
-    def _heartbeat_once(self) -> None:
+    def _heartbeat_once(self, *, force_sample: bool = False) -> None:
         summary = self.summary()
         for reporter in list(self.reporters):
             if isinstance(reporter, SQLiteReporter):
                 try:
-                    reporter.heartbeat(summary)
+                    reporter.heartbeat(summary, force_sample=force_sample)
                 except Exception:
                     logger.exception("Failed to persist monitoring heartbeat")
 
@@ -617,7 +701,7 @@ class Stats:
             self._run["finished_at"] = to_iso(datetime.datetime.now(datetime.UTC))
             if error_summary is not None:
                 self._run["error_summary"] = concise_error(error_summary)
-            self._heartbeat_once()
+            self._heartbeat_once(force_sample=True)
         for reporter in list(self.reporters):
             try:
                 reporter.close()

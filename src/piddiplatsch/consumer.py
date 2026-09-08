@@ -486,6 +486,8 @@ def start_consumer(
         consumer_group=(kafka_cfg or {}).get("group.id"),
         selected_projects=project_names,
         heartbeat_interval_seconds=stats_config.get("heartbeat_interval_seconds", 5),
+        sample_interval_seconds=stats_config.get("sample_interval_seconds", 15),
+        sample_retention_days=stats_config.get("sample_retention_days", 30),
     )
     # Optional STAC preflight
     try:

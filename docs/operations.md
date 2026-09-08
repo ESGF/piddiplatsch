@@ -144,6 +144,9 @@ piddi top --project cmip7 --once
 
 # machine-readable status
 piddi top --json
+
+# use a six-hour history window
+piddi top --history 360
 ```
 
 `top` marks unfinished runs stale when their heartbeat exceeds
@@ -152,6 +155,15 @@ heartbeating. The heartbeat interval is configured with
 `stats.heartbeat_interval_seconds`. Both default to 5 and 15 seconds,
 respectively. `top` is read-only and reports a clear error for a missing or
 invalid monitoring database.
+
+The database appends cumulative per-project samples every
+`stats.sample_interval_seconds` (15 seconds by default), including samples at
+run startup and shutdown. The history table shows counter changes, average
+message throughput, and a compact throughput trend for the last
+`stats.history_minutes` (60 minutes by default). `--history MINUTES` overrides
+that window. Samples older than `stats.sample_retention_days` (30 days by
+default) are removed; set it to `0` to retain them indefinitely. Samples contain
+counters only; raw messages and log lines are never stored.
 
 ## Shutdown behavior
 

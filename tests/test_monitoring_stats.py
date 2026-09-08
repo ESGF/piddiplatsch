@@ -122,13 +122,18 @@ def test_project_status_is_persisted_with_run_heartbeat(tmp_path):
     s.close(status="completed")
 
     status = read_status(db_path)
-    assert status["schema_version"] == 1
+    assert status["schema_version"] == 2
     assert status["runs"][0]["state"] == "completed"
     assert status["runs"][0]["selected_projects"] == ["cmip6", "cmip7"]
     projects = {row["project"]: row for row in status["runs"][0]["projects"]}
     assert projects["cmip6"]["succeeded"] == 1
     assert projects["cmip6"]["handles"] == 3
     assert projects["cmip7"]["filtered"] == 1
+    history = {row["project"]: row for row in status["runs"][0]["history"]}
+    assert history["cmip6"]["sample_count"] == 2
+    assert history["cmip6"]["deltas"]["consumed"] == 1
+    assert history["cmip6"]["deltas"]["handles"] == 3
+    assert history["cmip7"]["deltas"]["filtered"] == 1
 
 
 def test_read_status_can_filter_project(tmp_path):
@@ -153,7 +158,12 @@ def test_fresh_database_contains_only_current_monitoring_tables(tmp_path):
             )
         }
 
-    assert tables == {"monitor_meta", "monitor_runs", "monitor_project_stats"}
+    assert tables == {
+        "monitor_meta",
+        "monitor_runs",
+        "monitor_project_stats",
+        "monitor_samples",
+    }
 
 
 def test_monitoring_error_summary_redacts_credentials_and_payloads():

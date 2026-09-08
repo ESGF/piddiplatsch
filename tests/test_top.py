@@ -45,6 +45,8 @@ def test_top_json_is_project_aware(tmp_path):
     projects = {row["project"]: row for row in status["runs"][0]["projects"]}
     assert projects["cmip6"]["consumed"] == 1
     assert projects["cmip7"]["consumed"] == 0
+    history = {row["project"]: row for row in status["runs"][0]["history"]}
+    assert history["cmip6"]["deltas"]["consumed"] == 1
 
 
 def test_top_once_filters_project(tmp_path):
@@ -69,3 +71,17 @@ def test_top_missing_database_is_clear(tmp_path):
 
     assert result.exit_code == 1
     assert "does not exist" in result.output
+
+
+def test_top_once_shows_history(tmp_path):
+    db_path = tmp_path / "piddi.db"
+    _monitoring_db(db_path)
+
+    result = CliRunner().invoke(
+        cli,
+        ["--log", str(tmp_path / "test.log"), "top", "--db", str(db_path), "--once", "--history", "30"],
+    )
+
+    assert result.exit_code == 0
+    assert "History · last 30 minutes" in result.output
+    assert "ΔMsg" in result.output
