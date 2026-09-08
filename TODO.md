@@ -16,9 +16,9 @@
   metadata; document migration from the current JSONL format.
 - [ ] Define durability rules for flushing, partial writes, disk limits, and
   retention.
-- [ ] Add file rotation, atomic sealing/claiming, checksums, and crash recovery.
+- [ ] Add atomic file sealing/claiming, checksums, and crash recovery.
 - [ ] Add `publish` watch mode with checkpoints, graceful restart, rate limiting,
-  per-PID ordering, and backlog metrics.
+  and backlog metrics.
 - [ ] Add an outbox validation command that never publishes.
 - [ ] Define multi-target routing and track delivery independently per target.
 
@@ -28,6 +28,33 @@
   counters.
 - [ ] Define and test Kafka acknowledgement behavior across persistence errors,
   automatic commits, transient failures, and restarts.
+
+## Monitoring
+
+- [ ] Define one shared, versioned status model for operator commands and HTTP
+  responses, without exposing credentials, raw messages, or tracebacks.
+- [ ] Persist a consumer heartbeat independently of Kafka traffic, plus startup,
+  last-message, last-success, last-error, counter, topic, group, and selected
+  project information.
+- [ ] Record deferred publication runs, including project, input batch, start and
+  completion times, receipt path, counts, outcome, and concise error details.
+- [ ] Derive publication backlog and output storage usage, with configurable
+  warning and critical thresholds for stale heartbeats, overdue batches, and
+  free disk space.
+- [ ] Add a read-only `piddi status` snapshot with human-readable and JSON output,
+  and a `piddi top` live terminal view following the Rook `qtop` pattern.
+- [ ] Add a separately supervised `piddi monitor` web service, bound to localhost
+  by default, with `/health/live`, `/health/ready`, `/health`, and `/status` JSON
+  endpoints.
+- [ ] Serve a small, server-rendered HTML dashboard at `/` with accessible
+  traffic lights, labels, concise status messages, relative and UTC timestamps,
+  and automatic refresh without requiring JavaScript.
+- [ ] Document health-state semantics so an idle Kafka topic remains healthy,
+  degraded conditions remain distinguishable from failures, and stale status
+  data is visible.
+- [ ] Add systemd and Ansible deployment examples, nginx exposure controls, and
+  tests for heartbeat expiry, HTTP status codes, traffic-light rendering, and
+  redaction of sensitive configuration.
 
 ## PID and fixtures
 
