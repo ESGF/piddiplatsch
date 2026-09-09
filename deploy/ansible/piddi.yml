@@ -1,6 +1,7 @@
 ---
 - name: Install one Piddiplatsch service
-  hosts: piddi
+  hosts: localhost
+  connection: local
   become: true
 
   vars:
@@ -17,6 +18,14 @@
       '/../../etc/piddi-production.toml') }}
 
   pre_tasks:
+    - name: Include variables from custom.yml when present
+      ansible.builtin.include_vars: "{{ item }}"
+      with_first_found:
+        - custom.yml
+        - null.yml
+      tags:
+        - always
+
     - name: Require a pinned Piddiplatsch package or Git reference
       ansible.builtin.assert:
         that:
@@ -24,7 +33,7 @@
           - "'<release-tag-or-commit>' not in piddi_install_spec"
         fail_msg: >-
           Set piddi_install_spec to a pinned package version or Git commit.
-          See inventory.example.yml.
+          See custom.yml.example.
 
   tasks:
     - name: Install required operating-system packages

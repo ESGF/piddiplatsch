@@ -206,15 +206,17 @@ plugins, configuration, systemd service, and logrotate policy. It uses only
 modules included with `ansible-core`; no roles or external collections are
 required.
 
-Install `ansible-core` on the controller, copy the example inventory, and edit
-the host, pinned Piddiplatsch reference, and configuration:
+Install `ansible-core` directly on the VM, then copy and edit only the custom
+variables. The playbook targets `localhost` using Ansible's local connection.
+It automatically loads `custom.yml` when present, overriding its global
+defaults; otherwise it loads the committed empty `null.yml` fallback.
+`custom.yml` contains the pinned Piddiplatsch reference and site configuration:
 
 ```console
 python -m pip install ansible-core
-cp deploy/ansible/inventory.example.yml deploy/ansible/inventory.yml
-editor deploy/ansible/inventory.yml
-ansible-playbook --ask-become-pass \
-  -i deploy/ansible/inventory.yml deploy/ansible/piddi.yml
+cp deploy/ansible/custom.yml.example deploy/ansible/custom.yml
+editor deploy/ansible/custom.yml
+make play
 ```
 
 The target must provide Python virtual-environment support. When installing
@@ -224,9 +226,16 @@ Installing a pinned package release avoids the target-side Git dependency.
 
 The example keeps `piddi_enable_service: false`. The first run therefore
 installs and validates everything without starting the consumer. Configuration
-content is hidden from Ansible output, but the local inventory is ignored by
-Git because it may contain credentials. For shared inventories, place sensitive
-values in an encrypted Ansible Vault file.
+content is hidden from Ansible output, and `custom.yml` is ignored by Git
+because it may contain credentials. For shared variables, use an encrypted
+Ansible Vault file.
+
+`make play` uses `--ask-become-pass` by default. Additional Ansible arguments
+can be supplied when needed:
+
+```console
+make play ANSIBLE_ARGS="--ask-become-pass --ask-vault-pass"
+```
 
 Try the exact production command in the foreground on the VM:
 
@@ -236,13 +245,10 @@ sudo runuser -u piddi -- /opt/piddi/venv/bin/piddi \
 ```
 
 Stop the trial with Ctrl-C. Then enable the service by changing
-`piddi_enable_service` to `true` and applying the same playbook, or override it
-for that run:
+`piddi_enable_service` to `true` in `custom.yml` and applying the same target:
 
 ```console
-ansible-playbook --ask-become-pass \
-  -i deploy/ansible/inventory.yml deploy/ansible/piddi.yml \
-  -e piddi_enable_service=true
+make play
 systemctl status piddi
 sudo tail -f /var/log/piddi/piddi.log
 ```

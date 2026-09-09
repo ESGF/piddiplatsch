@@ -1,6 +1,7 @@
 # Configuration
 APP_ROOT := $(abspath $(lastword $(MAKEFILE_LIST))/..)
 APP_NAME := piddiplatsch
+ANSIBLE_ARGS ?= --ask-become-pass
 
 # end of configuration
 
@@ -31,6 +32,9 @@ install: ## install application
 	@echo "Installing application ..."
 	@bash -c 'pip install -e .'
 	@echo "\nInspect commands with \`piddi --help\`."
+
+play: ## deploy piddi locally using custom variables
+	@ansible-playbook $(ANSIBLE_ARGS) -i localhost, deploy/ansible/piddi.yml
 
 develop: ## install application with development libraries
 	@echo "Installing development requirements ..."

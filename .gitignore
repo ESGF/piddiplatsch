@@ -179,8 +179,8 @@ clusterID/
 # piddiplatsch
 custom.toml
 custom_*.toml
-# Local Ansible inventory may contain hostnames and deployment secrets.
-deploy/ansible/inventory.yml
+# Local Ansible overrides may contain deployment secrets.
+deploy/ansible/custom.yml
 deploy/ansible/host_vars/
 # Runtime inspection data is intentionally retained locally and never committed.
 outputs/

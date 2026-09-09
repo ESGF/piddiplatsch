@@ -34,6 +34,25 @@ def test_ansible_deployment_is_safe_by_default():
     assert "Validate merged Piddiplatsch configuration" in playbook
 
 
+def test_playbook_loads_local_custom_overrides_with_fallback():
+    playbook = (PROJECT_ROOT / "deploy" / "ansible" / "piddi.yml").read_text()
+
+    assert "Include variables from custom.yml when present" in playbook
+    assert "with_first_found:" in playbook
+    assert "- custom.yml" in playbook
+    assert "- null.yml" in playbook
+
+
+def test_make_play_targets_localhost():
+    makefile = (PROJECT_ROOT / "Makefile").read_text()
+    playbook = (PROJECT_ROOT / "deploy" / "ansible" / "piddi.yml").read_text()
+
+    assert "play: ## deploy piddi" in makefile
+    assert "$(ANSIBLE_ARGS) -i localhost," in makefile
+    assert "hosts: localhost" in playbook
+    assert "connection: local" in playbook
+
+
 def test_logrotate_policy_bounds_file_size_and_retention():
     policy = (PROJECT_ROOT / "etc" / "logrotate" / "piddi").read_text()
 

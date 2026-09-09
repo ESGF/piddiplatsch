@@ -1,0 +1,38 @@
+---
+# Copy this file to custom.yml and edit it. custom.yml is ignored by Git and
+# included automatically by the playbook, overriding its defaults. When it is
+# absent, the playbook loads the committed empty null.yml fallback.
+
+# Pin a package release, Git tag, or immutable Git commit before deploying.
+piddi_install_spec: >-
+  git+https://github.com/ESGF/piddiplatsch.git@<release-tag-or-commit>
+
+# Independently packaged plugins installed into the same virtual environment.
+piddi_plugin_packages: []
+
+# Add packages needed by the target distribution and install source.
+# Debian/Ubuntu Git installs commonly also need python3-venv and git.
+piddi_os_packages:
+  - logrotate
+
+# Keep false for the initial install and foreground test.
+piddi_enable_service: false
+
+# This file may contain secrets. Keep custom.yml local or encrypt an equivalent
+# variables file with Ansible Vault before sharing it.
+piddi_config_content: |
+  [consumer]
+  projects = ["cmip6", "cmip7"]
+  topic = "ESGF-PUBLICATIONS"
+  output_dir = "/var/lib/piddi"
+
+  [logging]
+  level = "WARNING"
+  file = "/var/log/piddi/piddi.log"
+
+  [stats]
+  db_path = "/var/lib/piddi/piddi.db"
+
+  [kafka]
+  "bootstrap.servers" = "broker1.example.org:9093"
+  "group.id" = "piddi-esgf"
