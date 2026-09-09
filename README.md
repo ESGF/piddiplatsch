@@ -150,14 +150,16 @@ errors. The delay starts at one second and doubles for each retry; customize it
 with `--retry-delay`. Permanent client errors such as invalid credentials are
 not retried. Use `--workers N` for bounded concurrent PUT requests. Updates for
 the same Handle remain in input order while different Handles are published in
-parallel. Verbose progress shows both the absolute Handle position and its
-position within the selected batch. Publication outcomes are written to the
-standard log file (`pid.log` by default) and to a run-scoped structured JSONL
+parallel. The progress display shows both the absolute Handle position and its
+position within the selected batch. At INFO level, publication outcomes are
+written to the standard log file (`pid.log` by default) and to a run-scoped
+structured JSONL
 receipt under `outputs/published/`. The CLI prints the exact receipt path when
 the run finishes. Each line includes the outcome, action, PID, full URL,
 project, dataset, asset, source location, batch position, retries, and error.
-Terminal progress is enabled by default. Pass the global `--silent` option to
-hide the progress bar and print only the final summary.
+Terminal progress is enabled by default. Pass the global `--silent` or
+`--no-progress` option to hide the progress bar and print only the final
+summary. Use `-v` for INFO logging and `-vv` or `--debug` for DEBUG logging.
 
 Single-project batches are inferred automatically. Their receipt uses a name
 such as `published_cmip6_handles_2026-08-28_10-15-00.jsonl`; mixed or unknown

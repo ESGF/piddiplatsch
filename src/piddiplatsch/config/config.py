@@ -1,4 +1,5 @@
 import logging
+from logging.handlers import WatchedFileHandler
 from pathlib import Path
 
 import toml
@@ -148,12 +149,32 @@ class Config:
             raise ValueError("[handles.defaults] must be a table")
         return {**defaults, **profile_config}
 
-    def configure_logging(self, debug: bool = False, log: str | None = None):
-        log_level = logging.DEBUG if debug else logging.INFO
+    def configure_logging(
+        self,
+        verbosity: int = 0,
+        debug: bool = False,
+        log: str | None = None,
+    ) -> None:
+        """Configure logging from config, with CLI verbosity overrides."""
+        logging_config = self.get("logging", {}) or {}
+        configured_level = str(logging_config.get("level", "WARNING")).strip().upper()
+        if configured_level == "WARN":
+            configured_level = "WARNING"
+        if configured_level not in {"DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"}:
+            raise ValueError(f"Invalid logging level: {configured_level}")
+
+        if debug or verbosity >= 2:
+            log_level = logging.DEBUG
+        elif verbosity == 1:
+            log_level = logging.INFO
+        else:
+            log_level = getattr(logging, configured_level)
+
+        log_path = log if log is not None else logging_config.get("file", "pid.log")
 
         handlers = []
 
-        if not log:
+        if not log_path:
             console = True
         else:
             console = False
@@ -161,7 +182,7 @@ class Config:
         if console:
             handlers.append(RichHandler(rich_tracebacks=True))
         else:
-            handlers.append(logging.FileHandler(log))
+            handlers.append(WatchedFileHandler(log_path, encoding="utf-8"))
 
         logging.basicConfig(
             level=log_level,
@@ -172,6 +193,7 @@ class Config:
             ),
             datefmt="[%X]",
             handlers=handlers,
+            force=True,
         )
 
     def validate(self) -> tuple[list[str], list[str]]:

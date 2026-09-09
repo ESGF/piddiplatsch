@@ -8,12 +8,13 @@
 # - stac: STAC client and collection
 # - elasticsearch: ES endpoint and index (if using ES lookups)
 # - schema: validation strictness
+# - logging: log level and destination
 # - plugins.*: project-specific mapping options
 # - lookup: choose STAC or ES backend
 # - stats: logging/SQLite reporter settings
 #
 # Best practice: keep defaults here minimal and documented.
-# Apply site-specific overrides in custom.toml or environment.
+# Apply site overrides in /etc/piddi/piddi.toml and local overrides in custom.toml.
 #############################################
 
 [consumer]
@@ -25,6 +26,12 @@ output_dir = "outputs"
 # Maximum number of errors before stopping; -1 = unlimited.
 # Conservative default: stop on first error.
 max_errors = 1
+
+[logging]
+# WARNING keeps normal runs compact. Use -v for INFO or -vv/--debug for DEBUG.
+level = "WARNING"
+# Set to an empty string to log to the terminal instead of a file.
+file = "pid.log"
 
 [consumer.transient]
 # --- Transient External Failures (STAC/network) ---

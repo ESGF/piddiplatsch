@@ -125,10 +125,26 @@ available for inspection.
 
 ## Logging and statistics
 
-The CLI writes to `pid.log` by default. Use `--log PATH` to select another file.
-At INFO level it records the selected plugins, the first occurrence of every
-filtered project identity, and periodic aggregate filtered counts. Per-message
-filter decisions are available with `--debug` without flooding normal logs.
+The CLI writes WARNING and above to `pid.log` by default. Use `-v` for INFO,
+`-vv` or its memorable `--debug` alias for DEBUG, and `--log PATH` to override
+the configured file. `--silent` remains an alias for hiding progress;
+`--progress/--no-progress` provides the explicit form. At INFO level Piddiplatsch
+records the selected plugins, the first occurrence of every filtered project
+identity, publication outcomes, and periodic aggregate counts. Per-message
+filter decisions are available at DEBUG level.
+
+The `[logging]` configuration provides the service defaults:
+
+```toml
+[logging]
+level = "WARNING"
+file = "/var/log/piddi/piddi.log"
+```
+
+File logging uses a watched handler: after logrotate renames the active file and
+creates a replacement, Piddiplatsch switches to the new file on its next log
+write. Full recovery and skipped details remain available in JSONL independently
+of the selected logging level.
 The optional SQLite reporter is controlled by `[stats]` and is opened only by
 the explicit `piddi map` command. `consume`, `harvest`, and `top` never update
 the database.
@@ -179,3 +195,51 @@ configured error limit or a fail-fast transient external failure.
 also removes other ignored development artifacts, but explicitly preserves
 runtime output, logs, databases, local configuration, virtual environments, and
 editor settings.
+
+## Lightweight production deployment
+
+The repository includes a production override, systemd units, and a logrotate
+policy under `etc/`. No deployment framework is required. First ensure the
+`piddi` executable is installed in a durable environment such as
+`/opt/piddi/venv`, then install the support files from a checkout:
+
+```console
+PIDDI_EXECUTABLE=$(command -v piddi)
+sudo env PIDDI_EXECUTABLE="$PIDDI_EXECUTABLE" ./scripts/install-production.sh
+sudoedit /etc/piddi/piddi.toml
+```
+
+The installer is idempotent, never overwrites an existing site configuration,
+and does not start the consumer. It creates the `piddi` system account and the
+directories `/etc/piddi`, `/var/lib/piddi`, and `/var/log/piddi`, then installs
+the service and rotation definitions.
+
+Validate the merged configuration and try the exact production command in the
+foreground before enabling it:
+
+```console
+sudo runuser -u piddi -- /absolute/path/to/piddi \
+  --config /etc/piddi/piddi.toml config validate
+sudo runuser -u piddi -- /absolute/path/to/piddi \
+  --config /etc/piddi/piddi.toml --silent consume
+```
+
+Stop the foreground trial with Ctrl-C, then enable the consumer and the hourly
+rotation check:
+
+```console
+sudo systemctl enable --now piddi piddi-logrotate.timer
+systemctl status piddi
+sudo tail -f /var/log/piddi/piddi.log
+```
+
+The rotation policy checks hourly, rotates daily or after the log exceeds 100
+MiB, keeps 14 archives, and compresses older files. The application uses
+WARNING logging unless `logging.level` is changed. For temporary diagnosis,
+stop the service and run the foreground command with `-v` or `--debug`.
+
+For an external SSD, mount it directly at `/var/lib/piddi` rather than exposing
+the hardware-specific mount path in application configuration. The systemd unit
+uses `RequiresMountsFor=/var/lib/piddi`, so a configured mount must be available
+before the consumer starts. Ensure it is declared in `/etc/fstab` before
+enabling the service.

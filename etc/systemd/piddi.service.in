@@ -1,0 +1,26 @@
+[Unit]
+Description=Piddiplatsch Kafka consumer
+Documentation=https://github.com/ESGF/piddiplatsch
+Wants=network-online.target
+After=network-online.target
+RequiresMountsFor=/var/lib/piddi
+
+[Service]
+Type=simple
+User=piddi
+Group=piddi
+WorkingDirectory=/var/lib/piddi
+ExecStart=@PIDDI_EXECUTABLE@ --config /etc/piddi/piddi.toml --silent consume
+Restart=on-failure
+RestartSec=10s
+KillSignal=SIGINT
+TimeoutStopSec=60s
+UMask=0027
+StateDirectory=piddi
+StateDirectoryMode=0750
+LogsDirectory=piddi
+LogsDirectoryMode=0750
+Environment=PYTHONUNBUFFERED=1
+
+[Install]
+WantedBy=multi-user.target

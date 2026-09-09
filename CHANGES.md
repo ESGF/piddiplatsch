@@ -5,6 +5,11 @@ All notable changes to this project are documented here.
 ## [Unreleased]
 
 ### Added
+- Added production logging configuration, repeatable `-v` verbosity, explicit
+  progress controls, watched log files, and a lightweight systemd/logrotate
+  installation bundle.
+- Added layered configuration loading: packaged defaults, optional
+  `/etc/piddi/piddi.toml`, then `custom.toml` or the explicit `--config` file.
 - Added project-specific STAC overrides under `plugins.<name>.stac`, with
   per-project collection defaults and global `[stac]` fallback values.
 - Added a small native Handle REST backend for single-record publication and retrieval; the pyhandle backend remains available as a legacy option.

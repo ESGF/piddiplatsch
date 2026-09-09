@@ -45,7 +45,8 @@ explicit publication (or use the local Docker stack for smoke tests).
 - Common flags:
   - `--config <path>`: point to your TOML config
   - `--silent`: hide the default progress display
-  - `--debug --log my.log`: enable debug and log to file
+  - `-v`: INFO logging; `-vv` or `--debug`: DEBUG logging
+  - `--log my.log`: override the configured log destination
   - `--force`: continue on transient external failures (e.g., STAC outages)
 
 `harvest` and `consume` always write raw queue messages to `outputs/dump/`

@@ -1,0 +1,24 @@
+#############################################
+# Piddiplatsch production overrides
+#
+# Installed as /etc/piddi/piddi.toml. Values here override the packaged
+# defaults; an explicit --config file may override them for a one-off run.
+#############################################
+
+[consumer]
+output_dir = "/var/lib/piddi"
+
+[logging]
+level = "WARNING"
+file = "/var/log/piddi/piddi.log"
+
+[stats]
+db_path = "/var/lib/piddi/piddi.db"
+
+[kafka]
+# Replace these example values before starting the service.
+"bootstrap.servers" = "broker1.example.org:9093,broker2.example.org:9093"
+"group.id" = "piddi-production"
+
+# Add site credentials, Handle profiles, and optional Kafka TLS/SASL settings
+# below. Keep this installed copy readable only by root and the piddi group.

@@ -174,6 +174,21 @@ class SchemaConfig(BaseModel):
     strict_mode: bool = True
 
 
+class LoggingConfig(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    level: Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"] = "WARNING"
+    file: str | None = "pid.log"
+
+    @field_validator("level", mode="before")
+    @classmethod
+    def _normalize_level(cls, value):
+        if isinstance(value, str):
+            value = value.strip().upper()
+            return "WARNING" if value == "WARN" else value
+        return value
+
+
 class ProjectPluginConfig(BaseModel):
     model_config = ConfigDict(extra="allow")
     landing_page_url: str | None = None
@@ -200,6 +215,7 @@ class AppConfig(BaseModel):
     elasticsearch: ElasticsearchConfig | None = None
     lookup: LookupConfig | None = None
     schema_config: SchemaConfig | None = Field(None, alias="schema")
+    logging_config: LoggingConfig | None = Field(None, alias="logging")
     plugins: PluginsConfig | None = None
 
     @model_validator(mode="after")

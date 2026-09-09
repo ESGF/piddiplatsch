@@ -47,30 +47,44 @@ def _parse_date_selector(
         "(replaces the default ./custom.toml layer)."
     ),
 )
-@click.option("--debug", is_flag=True, help="Enable debug logging.")
 @click.option(
-    "-v/-s",
-    "--verbose/--silent",
-    default=True,
-    help="Show progress information (enabled by default).",
+    "-v",
+    "--verbose",
+    "verbosity",
+    count=True,
+    help="Increase log detail: -v for INFO, -vv for DEBUG.",
 )
+@click.option("--debug", is_flag=True, help="Enable DEBUG logging (alias for -vv).")
+@click.option(
+    "--progress/--no-progress",
+    default=True,
+    help="Show or hide progress information.",
+)
+@click.option("-s", "--silent", is_flag=True, help="Hide progress information.")
 @click.option(
     "-l",
     "--log",
     type=click.Path(dir_okay=False, writable=True, resolve_path=True),
-    default="pid.log",
-    show_default=True,
-    help="Log file path.",
+    help="Override the configured log file path.",
 )
 @click.pass_context
 def cli(
-    ctx: click.Context, config_file: str | None, debug: bool, verbose: bool, log: str
+    ctx: click.Context,
+    config_file: str | None,
+    verbosity: int,
+    debug: bool,
+    progress: bool,
+    silent: bool,
+    log: str | None,
 ) -> None:
     """CLI to interact with Kafka and Handle Service."""
     ctx.ensure_object(dict)
-    ctx.obj["verbose"] = verbose
+    ctx.obj["verbose"] = progress and not silent
     config.load_config_layers(config_file)
-    config.configure_logging(debug=debug, log=log)
+    try:
+        config.configure_logging(verbosity=verbosity, debug=debug, log=log)
+    except ValueError as exc:
+        raise click.ClickException(str(exc)) from exc
 
 
 # command consume

@@ -1,6 +1,6 @@
 from piddiplatsch.config import config
 from piddiplatsch.config.config import Config
-from piddiplatsch.config.schema import LookupConfig, validate_config
+from piddiplatsch.config.schema import LoggingConfig, LookupConfig, validate_config
 from piddiplatsch.core.models import strict_mode
 from piddiplatsch.lookup.api import get_lookup
 from piddiplatsch.lookup.base import DummyLookup
@@ -48,6 +48,22 @@ def test_config_layers_ignore_missing_optional_files(tmp_path):
     )
 
     assert layered.get("consumer", "output_dir") == "outputs"
+
+
+def test_logging_level_accepts_warn_alias():
+    logging_config = LoggingConfig.model_validate({"level": "warn"})
+
+    assert logging_config.level == "WARNING"
+
+
+def test_invalid_logging_level_is_reported():
+    cfg = _base_config()
+    cfg["kafka"] = {"bootstrap.servers": "localhost:39092"}
+    cfg["logging"] = {"level": "verbose"}
+
+    errors, _ = validate_config(cfg)
+
+    assert any("logging.level" in error for error in errors)
 
 
 def test_lookup_is_disabled_by_default():

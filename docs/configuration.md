@@ -39,6 +39,8 @@ piddi config show
 | `lookup` | `enabled`, `backend` | Enable version lookup using `stac` or `es`; disabled by default. |
 | `elasticsearch` | `base_url`, `index` | Elasticsearch lookup settings when `lookup.backend = "es"`. |
 | `schema` | `strict_mode` | Reject incomplete or unsupported records; defaults to `true`. |
+| `logging` | `level` | Baseline `DEBUG`, `INFO`, `WARNING`, `ERROR`, or `CRITICAL` level. `WARN` is accepted as an alias. |
+| `logging` | `file` | Log destination. An empty string selects terminal logging. |
 | `plugins.<name>` | `handle` | Named Handle profile used by this project. |
 | `plugins.<name>` | `landing_page_url`, `max_parts`, `excluded_asset_keys` | Project-specific Handle-record behavior. |
 | `plugins.<name>.stac` | `base_url`, `timeout`, `collection` | Optional project overrides for the global STAC settings. |
@@ -73,9 +75,10 @@ live under `etc/`. The legacy single
 `[handle]` table remains supported temporarily and overrides named profiles,
 but new configuration should use `[handles.profiles.<name>]`.
 
-Every successful publication writes an INFO entry to the configured `--log`
-file (`pid.log` by default). The entry identifies whether the server created or
-updated the Handle and includes its directly resolvable REST URL, project,
+Every successful publication writes an INFO entry to the configured log file
+(`pid.log` by default). Pass `-v` to enable INFO logging and `--log PATH` to
+override the configured destination. The entry identifies whether the server
+created or updated the Handle and includes its directly resolvable REST URL, project,
 dataset ID, file name, and source position. For file assets, the publisher joins
 `IS_PART_OF` to a dataset record in the selected batch so the asset log entry
 also includes `DATASET_ID`. Context that is unavailable in older JSONL input is

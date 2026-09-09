@@ -942,6 +942,28 @@ class TestCLIOptions:
         # Debug should configure logging but not affect command execution
         assert mock_start_consumer.called
 
+    @patch("piddiplatsch.cli.config.configure_logging")
+    @patch("piddiplatsch.cli.ConsumeCommand")
+    def test_repeated_verbose_controls_logging(
+        self, command_cls, configure_logging, runner
+    ):
+        result = runner.invoke(cli, ["-vv", "--no-progress", "consume"])
+
+        assert result.exit_code == 0
+        configure_logging.assert_called_once_with(verbosity=2, debug=False, log=None)
+        assert command_cls.call_args.kwargs["verbose"] is False
+
+    @patch("piddiplatsch.cli.config.configure_logging")
+    @patch("piddiplatsch.cli.ConsumeCommand")
+    def test_debug_and_silent_remain_aliases(
+        self, command_cls, configure_logging, runner
+    ):
+        result = runner.invoke(cli, ["--debug", "--silent", "consume"])
+
+        assert result.exit_code == 0
+        configure_logging.assert_called_once_with(verbosity=0, debug=True, log=None)
+        assert command_cls.call_args.kwargs["verbose"] is False
+
     @patch("piddiplatsch.commands.base.start_consumer")
     def test_log_file_option(self, mock_start_consumer, runner, tmp_path):
         """Test --log option."""
