@@ -13,6 +13,7 @@ from piddiplatsch.commands import (
     MapCommand,
     PublishCommand,
     RetryCommand,
+    TopCommand,
 )
 from piddiplatsch.commands.helper import DATE_FORMATS, parse_date_selector
 from piddiplatsch.config import config
@@ -376,6 +377,65 @@ def config_validate() -> None:
 def config_show(fmt: str, section: str | None, key: str | None) -> None:
     """Print the effective configuration (defaults + overrides)."""
     ConfigShowCommand(fmt=fmt, section=section, key=key).execute()
+
+
+@cli.command("top")
+@click.option(
+    "--db",
+    "db_path",
+    type=click.Path(path_type=Path, dir_okay=False),
+    help="Monitoring database (defaults to stats.db_path from configuration).",
+)
+@click.option("--project", help="Show only one project.")
+@click.option("--once", is_flag=True, help="Print one snapshot and exit.")
+@click.option(
+    "--json", "json_output", is_flag=True, help="Print one JSON snapshot and exit."
+)
+@click.option(
+    "--refresh",
+    "refresh_seconds",
+    type=click.FloatRange(min=0.1),
+    default=2.0,
+    show_default=True,
+    help="Live refresh interval in seconds.",
+)
+@click.option(
+    "--stale-after",
+    "stale_after_seconds",
+    type=click.FloatRange(min=0.1),
+    help="Mark a running process stale after this many seconds without a heartbeat.",
+)
+@click.option(
+    "--history",
+    "history_minutes",
+    type=click.FloatRange(min=1),
+    help="History window in minutes.",
+)
+@click.pass_context
+def top(
+    ctx: click.Context,
+    db_path: Path | None,
+    project: str | None,
+    once: bool,
+    json_output: bool,
+    refresh_seconds: float,
+    stale_after_seconds: float | None,
+    history_minutes: float | None,
+) -> None:
+    """Watch current processing progress, separated by project."""
+    stats_config = config.get("stats", {})
+    TopCommand(
+        verbose=ctx.obj["verbose"],
+        db_path=db_path or Path(stats_config.get("db_path", "piddi.db")),
+        project=project,
+        once=once,
+        json_output=json_output,
+        refresh_seconds=refresh_seconds,
+        stale_after_seconds=(
+            stale_after_seconds or stats_config.get("stale_after_seconds", 15)
+        ),
+        history_minutes=(history_minutes or stats_config.get("history_minutes", 60)),
+    ).execute()
 
 
 if __name__ == "__main__":

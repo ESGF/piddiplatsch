@@ -153,8 +153,16 @@ interval_seconds = 10
 # Message count threshold before logging a stats snapshot.
 summary_interval = 1000
 
-# Enable SQLite reporter for persistent stats.
+# Enable SQLite monitoring for `piddi map` runs.
 enable_db = true
 
 # Path to SQLite database file (used only if enable_db = true).
-db_path = "stats.db"
+db_path = "piddi.db"
+
+# Heartbeats are written even while Kafka is idle. A monitor considers an
+# unfinished run stale after the second threshold.
+heartbeat_interval_seconds = 5
+sample_interval_seconds = 15
+sample_retention_days = 30
+stale_after_seconds = 15
+history_minutes = 60

@@ -69,6 +69,9 @@ clean-dist: clean  ## remove ignored build files while preserving runtime data a
 
 lint: ## check style with ruff, black, isort
 	@echo "Running code style checks (ruff, black, isort) ..."
+	@ruff --version
+	@black --version
+	@isort --version-number
 	@bash -c 'ruff check src tests'
 	@bash -c 'black --check src tests'
 	@bash -c 'isort --check-only src tests'

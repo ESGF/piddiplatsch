@@ -215,7 +215,7 @@ python -m twine check dist/*
 
 Tests must write only to pytest-provided temporary directories. Do not read,
 truncate, or delete the repository's ignored `outputs/`, `pid.log`, or
-`stats.db`; developers may retain those files for operational inspection.
+`piddi.db`; developers may retain those files for operational inspection.
 
 ---
 

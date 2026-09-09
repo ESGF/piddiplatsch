@@ -20,10 +20,10 @@ dependencies:
   - pytest>=8
   - pytest-cov>=6
   - hypothesis>=6.140.2
-  - ruff>=0.14,<0.15
+  - ruff=0.14.13
   - twine>=4
   - wheel>=0.40
-  - black>=26,<27
-  - isort>=7,<8
+  - black=26.1.0
+  - isort=7.0.0
   - pre-commit>=4.5.1,<5
   - bump-my-version>=1.2

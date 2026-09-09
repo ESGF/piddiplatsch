@@ -96,7 +96,7 @@ The delay occurs outside the mock store lock, so concurrent publisher workers
 can overlap requests as they would with a real service connection/database
 pool. GET requests and requests rejected before storage are not delayed.
 
-These files, `pid.log`, and `stats.db` are ignored by Git and preserved by the
+These files, `pid.log`, and `piddi.db` are ignored by Git and preserved by the
 project's cleanup targets. There is no automatic retention policy. Dump and
 Handle JSONL files can grow quickly, so monitor disk usage and archive or remove
 old files according to the site's operational policy.
@@ -129,7 +129,43 @@ The CLI writes to `pid.log` by default. Use `--log PATH` to select another file.
 At INFO level it records the selected plugins, the first occurrence of every
 filtered project identity, and periodic aggregate filtered counts. Per-message
 filter decisions are available with `--debug` without flooding normal logs.
-The optional SQLite reporter is controlled by `[stats]`.
+The optional SQLite reporter is controlled by `[stats]` and is opened only by
+the explicit `piddi map` command. `consume`, `harvest`, and `top` never update
+the database.
+
+The database contains a versioned current-run status model. A heartbeat is
+updated independently of Kafka traffic, and processing outcomes are split by
+canonical project. Inspect it without contacting Kafka or the Handle service:
+
+```console
+# live view (Ctrl-C exits)
+piddi top
+
+# one project, one terminal snapshot
+piddi top --project cmip7 --once
+
+# machine-readable status
+piddi top --json
+
+# use a six-hour history window
+piddi top --history 360
+```
+
+`top` marks unfinished runs stale when their heartbeat exceeds
+`stats.stale_after_seconds`. An idle topic is healthy while the process keeps
+heartbeating. The heartbeat interval is configured with
+`stats.heartbeat_interval_seconds`. Both default to 5 and 15 seconds,
+respectively. `top` is read-only and reports a clear error for a missing or
+invalid monitoring database.
+
+The database appends cumulative per-project samples every
+`stats.sample_interval_seconds` (15 seconds by default), including samples at
+run startup and shutdown. The history table shows counter changes, average
+message throughput, and a compact throughput trend for the last
+`stats.history_minutes` (60 minutes by default). `--history MINUTES` overrides
+that window. Samples older than `stats.sample_retention_days` (30 days by
+default) are removed; set it to `0` to retain them indefinitely. Samples contain
+counters only; raw messages and log lines are never stored.
 
 ## Shutdown behavior
 

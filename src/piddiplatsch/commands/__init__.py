@@ -7,6 +7,7 @@ from piddiplatsch.commands.harvest import HarvestCommand
 from piddiplatsch.commands.map import MapCommand
 from piddiplatsch.commands.publish import PublishCommand
 from piddiplatsch.commands.retry import RetryCommand
+from piddiplatsch.commands.top import TopCommand
 
 __all__ = [
     "Command",
@@ -19,4 +20,5 @@ __all__ = [
     "MapCommand",
     "PublishCommand",
     "RetryCommand",
+    "TopCommand",
 ]

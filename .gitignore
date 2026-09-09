@@ -183,6 +183,9 @@ custom_*.toml
 outputs/
 pid.log
 stats.db
+piddi.db
+piddi.db-shm
+piddi.db-wal
 *.db
 
 # VS Code

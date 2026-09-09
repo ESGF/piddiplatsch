@@ -24,16 +24,16 @@
 
 ## Recovery and Kafka
 
-- [ ] Add per-project consumed, routed, filtered, succeeded, skipped, and failed
+- [x] Add per-project consumed, routed, filtered, succeeded, skipped, and failed
   counters.
 - [ ] Define and test Kafka acknowledgement behavior across persistence errors,
   automatic commits, transient failures, and restarts.
 
 ## Monitoring
 
-- [ ] Define one shared, versioned status model for operator commands and HTTP
+- [x] Define one shared, versioned status model for operator commands and HTTP
   responses, without exposing credentials, raw messages, or tracebacks.
-- [ ] Persist a consumer heartbeat independently of Kafka traffic, plus startup,
+- [x] Persist a consumer heartbeat independently of Kafka traffic, plus startup,
   last-message, last-success, last-error, counter, topic, group, and selected
   project information.
 - [ ] Record deferred publication runs, including project, input batch, start and
@@ -42,7 +42,7 @@
   warning and critical thresholds for stale heartbeats, overdue batches, and
   free disk space.
 - [ ] Add a read-only `piddi status` snapshot with human-readable and JSON output,
-  and a `piddi top` live terminal view following the Rook `qtop` pattern.
+  and a `piddi top` live terminal view following the Rook process-monitor pattern.
 - [ ] Add a separately supervised `piddi monitor` web service, bound to localhost
   by default, with `/health/live`, `/health/ready`, `/health`, and `/status` JSON
   endpoints.

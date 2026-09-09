@@ -224,21 +224,7 @@ class ConsumerPipeline:
         for key, value in self.consumer.consume():
             result = self._safe_process_message(key, value)
 
-            # Track metrics
-            if result.filtered:
-                self.stats.tick()
-                self.stats.filtered(message=f"message={key} project={result.project}")
-            elif result.skipped:
-                # A skipped message was consumed, but it did not complete successfully.
-                self.stats.tick()
-            elif result.success:
-                self.stats.tick()
-                self.stats.handle(
-                    n=result.num_handles,
-                    handle_time_sec=result.handle_processing_time,
-                )
-            else:
-                self.stats.error(message=result.error)
+            self.stats.record_result(result)
 
             if result.skipped:
                 self.stats.skip(message=f"message={key}")
@@ -311,7 +297,11 @@ class ConsumerPipeline:
             f"handles: {self.stats[CounterKey.HANDLES]}, skipped: {self.stats.skipped_messages}, "
             f"filtered: {self.stats.filtered_messages}"
         )
-        self.stats.close()
+        failed = cause in {StopCause.MAX_ERRORS, StopCause.TRANSIENT_EXTERNAL}
+        self.stats.close(
+            status="failed" if failed else "stopped",
+            error_summary=cause.value if failed else None,
+        )
 
     def close_progress(self) -> None:
         """Close progress created by this pipeline, leaving injected progress to its owner."""
@@ -464,8 +454,6 @@ def start_consumer(
     projects: list[str] | tuple[str, ...] | str | None = None,
     dump_messages=False,
     verbose=False,
-    enable_db: bool | None = None,
-    db_path: str | None = None,
     direct_messages=None,
     publish: bool = False,
     force: bool = False,
@@ -473,17 +461,6 @@ def start_consumer(
     idle_timeout: float | None = None,
     handle_profile: str | None = None,
 ):
-    # Initialize stats from the fully loaded configuration for this run.
-    stats_config = config.get("stats", {})
-    stats.configure_for_run(
-        enable_db=(
-            stats_config.get("enable_db", False) if enable_db is None else enable_db
-        ),
-        db_path=db_path or stats_config.get("db_path"),
-        log_interval_seconds=stats_config.get("interval_seconds"),
-        log_interval_messages=stats_config.get("summary_interval"),
-    )
-
     max_errors = config.get("consumer", {}).get("max_errors", -1)
     # Build processor instance to run preflight and pass into pipeline
     proc_instance = build_processing_target(
@@ -491,6 +468,12 @@ def start_consumer(
         projects=projects,
         publish=publish,
         handle_profile=handle_profile,
+    )
+    stats_config = config.get("stats", {})
+    stats.configure_for_run(
+        enable_db=False,
+        log_interval_seconds=stats_config.get("interval_seconds"),
+        log_interval_messages=stats_config.get("summary_interval"),
     )
     # Optional STAC preflight
     try:
@@ -509,6 +492,7 @@ def start_consumer(
             proc_instance.preflight_check(stop_on_transient_skip=stop_on_transient_skip)
     except Exception as e:
         logger.error(str(e))
+        stats.close(status="failed", error_summary=str(e))
         # Stop as transient external failure
         sys.exit(1)
 
@@ -555,3 +539,4 @@ def start_consumer(
         sys.exit(0)
     else:
         pipeline.close_progress()
+        stats.close(status="completed")
