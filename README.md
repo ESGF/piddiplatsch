@@ -249,6 +249,8 @@ Detailed CLI options and extended examples live in [CONTRIBUTING.md](CONTRIBUTIN
 
 Operational guidance for output retention, retries, logging, and shutdown is in
 [docs/operations.md](docs/operations.md).
+The short production and Vagrant procedure is in
+[deploy/README.md](deploy/README.md).
 
 ---
 

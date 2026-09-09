@@ -8,6 +8,7 @@
     piddi_user: piddi
     piddi_group: piddi
     piddi_venv: /opt/piddi/venv
+    piddi_python: /usr/bin/python3.11
     piddi_install_spec: ""
     piddi_plugin_packages: []
     piddi_os_packages:
@@ -88,7 +89,7 @@
         name: "{{ [piddi_install_spec] + piddi_plugin_packages }}"
         state: present
         virtualenv: "{{ piddi_venv }}"
-        virtualenv_command: "{{ ansible_python.executable }} -m venv"
+        virtualenv_command: "{{ piddi_python }} -m venv"
       register: piddi_packages
 
     - name: Install site configuration

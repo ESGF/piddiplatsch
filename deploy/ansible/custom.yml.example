@@ -7,6 +7,10 @@
 piddi_install_spec: >-
   git+https://github.com/ESGF/piddiplatsch.git@<release-tag-or-commit>
 
+# Python used to create the application virtual environment. Piddi requires
+# Python 3.11 or newer; this is preinstalled by the development Vagrantfile.
+piddi_python: /usr/bin/python3.11
+
 # Independently packaged plugins installed into the same virtual environment.
 piddi_plugin_packages: []
 

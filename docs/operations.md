@@ -196,76 +196,13 @@ also removes other ignored development artifacts, but explicitly preserves
 runtime output, logs, databases, local configuration, virtual environments, and
 editor settings.
 
-## Lightweight production deployment
+## Deployment
 
-The supported deployment model is one Piddiplatsch instance per VM. Every VM
-uses the conventional paths `/etc/piddi/piddi.toml`, `/var/lib/piddi`, and
-`/var/log/piddi/piddi.log`, with a dedicated non-login `piddi` user. A small
-Ansible playbook installs the virtual environment, application and optional
-plugins, configuration, systemd service, and logrotate policy. It uses only
-modules included with `ansible-core`; no roles or external collections are
-required.
+The Ansible playbook installs one Piddi service per VM. It uses
+`/etc/piddi/piddi.toml`, `/var/lib/piddi`, and `/var/log/piddi/piddi.log` and
+configures systemd plus hourly log rotation. For the short production and
+Vagrant procedures, see [deploy/README.md](../deploy/README.md).
 
-Install `ansible-core` directly on the VM, then copy and edit only the custom
-variables. The playbook targets `localhost` using Ansible's local connection.
-It automatically loads `custom.yml` when present, overriding its global
-defaults; otherwise it loads the committed empty `null.yml` fallback.
-`custom.yml` contains the pinned Piddiplatsch reference and site configuration:
-
-```console
-python -m pip install ansible-core
-cp deploy/ansible/custom.yml.example deploy/ansible/custom.yml
-editor deploy/ansible/custom.yml
-make play
-```
-
-The target must provide Python virtual-environment support. When installing
-from a Git reference, add the distribution's Git package to
-`piddi_os_packages`; Debian and Ubuntu commonly require `python3-venv` as well.
-Installing a pinned package release avoids the target-side Git dependency.
-
-The example keeps `piddi_enable_service: false`. The first run therefore
-installs and validates everything without starting the consumer. Configuration
-content is hidden from Ansible output, and `custom.yml` is ignored by Git
-because it may contain credentials. For shared variables, use an encrypted
-Ansible Vault file.
-
-`make play` uses `--ask-become-pass` by default. Additional Ansible arguments
-can be supplied when needed:
-
-```console
-make play ANSIBLE_ARGS="--ask-become-pass --ask-vault-pass"
-```
-
-Try the exact production command in the foreground on the VM:
-
-```console
-sudo runuser -u piddi -- /opt/piddi/venv/bin/piddi \
-  --config /etc/piddi/piddi.toml --silent consume
-```
-
-Stop the trial with Ctrl-C. Then enable the service by changing
-`piddi_enable_service` to `true` in `custom.yml` and applying the same target:
-
-```console
-make play
-systemctl status piddi
-sudo tail -f /var/log/piddi/piddi.log
-```
-
-The rotation policy checks hourly, rotates daily or after the log exceeds 100
-MiB, keeps 14 archives, and compresses older files. The application uses
-WARNING logging unless `logging.level` is changed. For temporary diagnosis,
-stop the service and run the foreground command with `-v` or `--debug`.
-
-For an external SSD, mount it directly at `/var/lib/piddi` rather than exposing
-the hardware-specific mount path in application configuration. The systemd unit
-uses `RequiresMountsFor=/var/lib/piddi`, so a configured mount must be available
-before the consumer starts. Ensure it is declared in `/etc/fstab` before
-enabling the service.
-
-If several independent Piddiplatsch installations later need to share one VM,
-prefer one Podman or Docker container per workflow, with distinct configuration,
-data, log, and credential mounts. That provides a clearer isolation boundary
-than multiplying system users, virtual environments, and systemd templates on
-the host. The initial single-VM service does not require containers.
+Mount an external data disk at `/var/lib/piddi`; the systemd service waits for a
+configured mount. If several isolated Piddi installations share one VM, prefer
+one Podman or Docker container per workflow.

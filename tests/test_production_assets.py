@@ -60,3 +60,18 @@ def test_logrotate_policy_bounds_file_size_and_retention():
     assert "maxsize 100M" in policy
     assert "rotate 14" in policy
     assert "compress" in policy
+
+
+def test_vagrantfile_targets_arm_parallels_almalinux_with_test_tools():
+    vagrantfile = (PROJECT_ROOT / "Vagrantfile").read_text()
+
+    assert 'config.vm.box = "almalinux/9"' in vagrantfile
+    assert 'config.vm.provider "parallels"' in vagrantfile
+    for package in (
+        "ansible-core",
+        "byobu",
+        "git",
+        "python3.11",
+        "vim-enhanced",
+    ):
+        assert package in vagrantfile
