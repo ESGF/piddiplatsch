@@ -388,7 +388,9 @@ def config_show(fmt: str, section: str | None, key: str | None) -> None:
 )
 @click.option("--project", help="Show only one project.")
 @click.option("--once", is_flag=True, help="Print one snapshot and exit.")
-@click.option("--json", "json_output", is_flag=True, help="Print one JSON snapshot and exit.")
+@click.option(
+    "--json", "json_output", is_flag=True, help="Print one JSON snapshot and exit."
+)
 @click.option(
     "--refresh",
     "refresh_seconds",
@@ -429,7 +431,9 @@ def top(
         once=once,
         json_output=json_output,
         refresh_seconds=refresh_seconds,
-        stale_after_seconds=(stale_after_seconds or stats_config.get("stale_after_seconds", 15)),
+        stale_after_seconds=(
+            stale_after_seconds or stats_config.get("stale_after_seconds", 15)
+        ),
         history_minutes=(history_minutes or stats_config.get("history_minutes", 60)),
     ).execute()
 

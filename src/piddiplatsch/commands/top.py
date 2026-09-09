@@ -77,7 +77,9 @@ class TopCommand(Command):
             )
 
         for run in status["runs"]:
-            color = {"healthy": "green", "stale": "yellow", "failed": "red"}.get(run["state"], "dim")
+            color = {"healthy": "green", "stale": "yellow", "failed": "red"}.get(
+                run["state"], "dim"
+            )
             projects = run["projects"] or [
                 {
                     "project": ",".join(run["selected_projects"]) or "—",
@@ -156,7 +158,10 @@ def _sparkline(values: list[float]) -> str:
     peak = max(values)
     if peak <= 0:
         return blocks[0] * len(values)
-    return "".join(blocks[min(len(blocks) - 1, round(value / peak * (len(blocks) - 1)))] for value in values[-20:])
+    return "".join(
+        blocks[min(len(blocks) - 1, round(value / peak * (len(blocks) - 1)))]
+        for value in values[-20:]
+    )
 
 
 __all__ = ["TopCommand"]

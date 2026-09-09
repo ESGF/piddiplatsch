@@ -25,13 +25,19 @@ def read_status(
     with sqlite3.connect(path) as connection:
         connection.row_factory = sqlite3.Row
         try:
-            version_row = connection.execute("SELECT value FROM monitor_meta WHERE key = 'schema_version'").fetchone()
-            runs = connection.execute("SELECT * FROM monitor_runs ORDER BY heartbeat_at DESC").fetchall()
+            version_row = connection.execute(
+                "SELECT value FROM monitor_meta WHERE key = 'schema_version'"
+            ).fetchone()
+            runs = connection.execute(
+                "SELECT * FROM monitor_runs ORDER BY heartbeat_at DESC"
+            ).fetchall()
         except sqlite3.OperationalError as exc:
             raise ValueError(f"{path} is not a valid monitoring database") from exc
         version = int(version_row["value"]) if version_row else 0
         if version != 2:
-            raise ValueError(f"{path} uses unsupported monitoring schema version {version}")
+            raise ValueError(
+                f"{path} uses unsupported monitoring schema version {version}"
+            )
 
         result_runs = []
         history_cutoff = (now - datetime.timedelta(seconds=history_seconds)).isoformat()
@@ -48,7 +54,11 @@ def read_status(
                 (run["run_id"], project, project),
             ).fetchall()
             selected = json.loads(run.pop("selected_projects"))
-            if project and project.casefold() not in {value.casefold() for value in selected} and not project_rows:
+            if (
+                project
+                and project.casefold() not in {value.casefold() for value in selected}
+                and not project_rows
+            ):
                 continue
             sample_rows = connection.execute(
                 """
@@ -91,7 +101,15 @@ def _summarize_history(rows: list[sqlite3.Row]) -> list[dict]:
         grouped.setdefault(sample["project"], []).append(sample)
 
     summaries = []
-    counters = ("consumed", "routed", "filtered", "succeeded", "skipped", "failed", "handles")
+    counters = (
+        "consumed",
+        "routed",
+        "filtered",
+        "succeeded",
+        "skipped",
+        "failed",
+        "handles",
+    )
     for project, samples in grouped.items():
         first = samples[0]
         last = samples[-1]
@@ -110,7 +128,9 @@ def _summarize_history(rows: list[sqlite3.Row]) -> list[dict]:
                 - datetime.datetime.fromisoformat(previous["sampled_at"])
             ).total_seconds()
             if seconds > 0:
-                rate_series.append((current["consumed"] - previous["consumed"]) / seconds)
+                rate_series.append(
+                    (current["consumed"] - previous["consumed"]) / seconds
+                )
         summaries.append(
             {
                 "project": project,

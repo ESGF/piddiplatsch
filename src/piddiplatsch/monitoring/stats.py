@@ -180,7 +180,8 @@ class SQLiteReporter(StatsReporter):
         self._write_status(summary, now)
         sample_due = (
             self._last_sample_at is None
-            or (now - self._last_sample_at).total_seconds() >= self.sample_interval_seconds
+            or (now - self._last_sample_at).total_seconds()
+            >= self.sample_interval_seconds
         )
         if force_sample or sample_due:
             self._write_samples(summary, now)
@@ -340,7 +341,18 @@ class Stats:
         self._counters = dict.fromkeys(CounterKey, 0)
         self._counters[CounterKey.HANDLE_TIME] = 0.0
         self._project_counters: dict[str, dict[str, int]] = defaultdict(
-            lambda: dict.fromkeys(("consumed", "routed", "filtered", "succeeded", "skipped", "failed", "handles"), 0)
+            lambda: dict.fromkeys(
+                (
+                    "consumed",
+                    "routed",
+                    "filtered",
+                    "succeeded",
+                    "skipped",
+                    "failed",
+                    "handles",
+                ),
+                0,
+            )
         )
         self._run: dict | None = None
         self._heartbeat_thread: threading.Thread | None = None
@@ -376,7 +388,18 @@ class Stats:
         self._counters = dict.fromkeys(CounterKey, 0)
         self._counters[CounterKey.HANDLE_TIME] = 0.0
         self._project_counters = defaultdict(
-            lambda: dict.fromkeys(("consumed", "routed", "filtered", "succeeded", "skipped", "failed", "handles"), 0)
+            lambda: dict.fromkeys(
+                (
+                    "consumed",
+                    "routed",
+                    "filtered",
+                    "succeeded",
+                    "skipped",
+                    "failed",
+                    "handles",
+                ),
+                0,
+            )
         )
         self._run = None
 
@@ -430,7 +453,9 @@ class Stats:
                     )
                 )
             except Exception:
-                logger.exception("Failed to initialize SQLiteReporter; continuing without DB reporter")
+                logger.exception(
+                    "Failed to initialize SQLiteReporter; continuing without DB reporter"
+                )
         if enable_db and any(isinstance(r, SQLiteReporter) for r in self.reporters):
             self._run = {
                 "run_id": uuid.uuid4().hex,
@@ -457,7 +482,9 @@ class Stats:
             while not self._heartbeat_stop.wait(max(0.1, interval)):
                 self._heartbeat_once()
 
-        self._heartbeat_thread = threading.Thread(target=beat, name="piddi-stats-heartbeat", daemon=True)
+        self._heartbeat_thread = threading.Thread(
+            target=beat, name="piddi-stats-heartbeat", daemon=True
+        )
         self._heartbeat_thread.start()
 
     def _stop_heartbeat(self) -> None:
@@ -574,12 +601,16 @@ class Stats:
     # --- Logging / persistence ---
     def _maybe_log(self):
         now = time.time()
-        messages_since_last = self._counters[CounterKey.MESSAGES] - self._last_logged_messages
+        messages_since_last = (
+            self._counters[CounterKey.MESSAGES] - self._last_logged_messages
+        )
 
         if messages_since_last == 0:
             return
 
-        if (now - self._last_log_time >= self.log_interval_seconds) or (messages_since_last >= self.log_interval_messages):
+        if (now - self._last_log_time >= self.log_interval_seconds) or (
+            messages_since_last >= self.log_interval_messages
+        ):
             self._log_stats()
             self._last_log_time = now
             self._last_logged_messages = self._counters[CounterKey.MESSAGES]
@@ -674,7 +705,9 @@ class Stats:
     def summary(self):
         with self._lock:
             summary = {key.value: self._counters[key] for key in CounterKey}
-            projects = {name: dict(values) for name, values in self._project_counters.items()}
+            projects = {
+                name: dict(values) for name, values in self._project_counters.items()
+            }
         summary.update(
             {
                 "uptime": self.uptime,

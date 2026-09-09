@@ -42,7 +42,10 @@ def test_top_json_is_project_aware(tmp_path):
     db_path = tmp_path / "piddi.db"
     _monitoring_db(db_path)
 
-    result = CliRunner().invoke(cli, ["--log", str(tmp_path / "test.log"), "top", "--db", str(db_path), "--json"])
+    result = CliRunner().invoke(
+        cli,
+        ["--log", str(tmp_path / "test.log"), "top", "--db", str(db_path), "--json"],
+    )
 
     assert result.exit_code == 0
     status = json.loads(result.output)
@@ -59,7 +62,16 @@ def test_top_once_filters_project(tmp_path):
 
     result = CliRunner().invoke(
         cli,
-        ["--log", str(tmp_path / "test.log"), "top", "--db", str(db_path), "--project", "cmip7", "--once"],
+        [
+            "--log",
+            str(tmp_path / "test.log"),
+            "top",
+            "--db",
+            str(db_path),
+            "--project",
+            "cmip7",
+            "--once",
+        ],
     )
 
     assert result.exit_code == 0
@@ -70,7 +82,14 @@ def test_top_once_filters_project(tmp_path):
 def test_top_missing_database_is_clear(tmp_path):
     result = CliRunner().invoke(
         cli,
-        ["--log", str(tmp_path / "test.log"), "top", "--db", str(tmp_path / "missing.db"), "--once"],
+        [
+            "--log",
+            str(tmp_path / "test.log"),
+            "top",
+            "--db",
+            str(tmp_path / "missing.db"),
+            "--once",
+        ],
     )
 
     assert result.exit_code == 1
@@ -83,7 +102,16 @@ def test_top_once_shows_history(tmp_path):
 
     result = CliRunner().invoke(
         cli,
-        ["--log", str(tmp_path / "test.log"), "top", "--db", str(db_path), "--once", "--history", "30"],
+        [
+            "--log",
+            str(tmp_path / "test.log"),
+            "top",
+            "--db",
+            str(db_path),
+            "--once",
+            "--history",
+            "30",
+        ],
     )
 
     assert result.exit_code == 0

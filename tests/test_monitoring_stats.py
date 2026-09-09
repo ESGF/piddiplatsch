@@ -6,7 +6,12 @@ import pytest
 
 from piddiplatsch.config import config
 from piddiplatsch.consumer import HarvestProcessor, start_consumer
-from piddiplatsch.monitoring.stats import CounterKey, SQLiteReporter, Stats, concise_error
+from piddiplatsch.monitoring.stats import (
+    CounterKey,
+    SQLiteReporter,
+    Stats,
+    concise_error,
+)
 from piddiplatsch.monitoring.status import read_status
 from piddiplatsch.result import ProcessingResult
 
@@ -180,9 +185,18 @@ def test_fresh_database_contains_only_current_monitoring_tables(tmp_path):
 
 
 def test_monitoring_error_summary_redacts_credentials_and_payloads():
-    assert concise_error("request failed password=hunter2") == "request failed password=***"
-    assert concise_error("https://alice:secret@example.test failed") == "https://***@example.test failed"
-    assert concise_error('{"raw": "message"}') == "processing error (structured details omitted)"
+    assert (
+        concise_error("request failed password=hunter2")
+        == "request failed password=***"
+    )
+    assert (
+        concise_error("https://alice:secret@example.test failed")
+        == "https://***@example.test failed"
+    )
+    assert (
+        concise_error('{"raw": "message"}')
+        == "processing error (structured details omitted)"
+    )
 
 
 @pytest.mark.parametrize("processor", [HarvestProcessor(), _MappingProcessor()])
