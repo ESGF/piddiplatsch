@@ -1,0 +1,159 @@
+---
+- name: Install one Piddiplatsch service
+  hosts: piddi
+  become: true
+
+  vars:
+    piddi_user: piddi
+    piddi_group: piddi
+    piddi_venv: /opt/piddi/venv
+    piddi_install_spec: ""
+    piddi_plugin_packages: []
+    piddi_os_packages:
+      - logrotate
+    piddi_enable_service: false
+    piddi_config_content: >-
+      {{ lookup('ansible.builtin.file', playbook_dir +
+      '/../../etc/piddi-production.toml') }}
+
+  pre_tasks:
+    - name: Require a pinned Piddiplatsch package or Git reference
+      ansible.builtin.assert:
+        that:
+          - piddi_install_spec | length > 0
+          - "'<release-tag-or-commit>' not in piddi_install_spec"
+        fail_msg: >-
+          Set piddi_install_spec to a pinned package version or Git commit.
+          See inventory.example.yml.
+
+  tasks:
+    - name: Install required operating-system packages
+      ansible.builtin.package:
+        name: "{{ piddi_os_packages }}"
+        state: present
+
+    - name: Create Piddiplatsch group
+      ansible.builtin.group:
+        name: "{{ piddi_group }}"
+        system: true
+        state: present
+
+    - name: Create Piddiplatsch service user
+      ansible.builtin.user:
+        name: "{{ piddi_user }}"
+        group: "{{ piddi_group }}"
+        comment: Piddiplatsch service
+        home: /var/lib/piddi
+        shell: /usr/sbin/nologin
+        create_home: false
+        system: true
+        state: present
+
+    - name: Create application and runtime directories
+      ansible.builtin.file:
+        path: "{{ item.path }}"
+        state: directory
+        owner: "{{ item.owner }}"
+        group: "{{ item.group }}"
+        mode: "{{ item.mode }}"
+      loop:
+        - path: /opt/piddi
+          owner: root
+          group: root
+          mode: "0755"
+        - path: /etc/piddi
+          owner: root
+          group: "{{ piddi_group }}"
+          mode: "0750"
+        - path: /var/lib/piddi
+          owner: "{{ piddi_user }}"
+          group: "{{ piddi_group }}"
+          mode: "0750"
+        - path: /var/log/piddi
+          owner: "{{ piddi_user }}"
+          group: "{{ piddi_group }}"
+          mode: "0750"
+
+    - name: Install Piddiplatsch and selected plugins in a virtual environment
+      ansible.builtin.pip:
+        name: "{{ [piddi_install_spec] + piddi_plugin_packages }}"
+        state: present
+        virtualenv: "{{ piddi_venv }}"
+        virtualenv_command: "{{ ansible_python.executable }} -m venv"
+      register: piddi_packages
+
+    - name: Install site configuration
+      ansible.builtin.copy:
+        content: "{{ piddi_config_content }}\n"
+        dest: /etc/piddi/piddi.toml
+        owner: root
+        group: "{{ piddi_group }}"
+        mode: "0640"
+      no_log: true
+      register: piddi_config
+
+    - name: Install Piddiplatsch systemd service
+      ansible.builtin.template:
+        src: templates/piddi.service.j2
+        dest: /etc/systemd/system/piddi.service
+        owner: root
+        group: root
+        mode: "0644"
+      notify:
+        - Reload systemd
+      register: piddi_service_unit
+
+    - name: Install logrotate policy
+      ansible.builtin.copy:
+        src: ../../etc/logrotate/piddi
+        dest: /etc/logrotate.d/piddi
+        owner: root
+        group: root
+        mode: "0644"
+
+    - name: Install hourly logrotate units
+      ansible.builtin.copy:
+        src: "../../etc/systemd/{{ item }}"
+        dest: "/etc/systemd/system/{{ item }}"
+        owner: root
+        group: root
+        mode: "0644"
+      loop:
+        - piddi-logrotate.service
+        - piddi-logrotate.timer
+      notify: Reload systemd
+
+    - name: Apply systemd unit changes before validation
+      ansible.builtin.meta: flush_handlers
+
+    - name: Validate merged Piddiplatsch configuration
+      ansible.builtin.command:
+        argv:
+          - "{{ piddi_venv }}/bin/piddi"
+          - --config
+          - /etc/piddi/piddi.toml
+          - config
+          - validate
+      become_user: "{{ piddi_user }}"
+      changed_when: false
+
+    - name: Enable the consumer and rotation timer when requested
+      ansible.builtin.systemd_service:
+        name: "{{ item }}"
+        enabled: true
+        state: >-
+          {{ 'restarted'
+          if item == 'piddi.service' and
+          (piddi_packages.changed or piddi_config.changed or
+          piddi_service_unit.changed)
+          else 'started' }}
+        daemon_reload: true
+      loop:
+        - piddi.service
+        - piddi-logrotate.timer
+      when: piddi_enable_service | bool
+
+  handlers:
+    - name: Reload systemd
+      ansible.builtin.systemd_service:
+        daemon_reload: true

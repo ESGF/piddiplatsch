@@ -198,37 +198,51 @@ editor settings.
 
 ## Lightweight production deployment
 
-The repository includes a production override, systemd units, and a logrotate
-policy under `etc/`. No deployment framework is required. First ensure the
-`piddi` executable is installed in a durable environment such as
-`/opt/piddi/venv`, then install the support files from a checkout:
+The supported deployment model is one Piddiplatsch instance per VM. Every VM
+uses the conventional paths `/etc/piddi/piddi.toml`, `/var/lib/piddi`, and
+`/var/log/piddi/piddi.log`, with a dedicated non-login `piddi` user. A small
+Ansible playbook installs the virtual environment, application and optional
+plugins, configuration, systemd service, and logrotate policy. It uses only
+modules included with `ansible-core`; no roles or external collections are
+required.
+
+Install `ansible-core` on the controller, copy the example inventory, and edit
+the host, pinned Piddiplatsch reference, and configuration:
 
 ```console
-PIDDI_EXECUTABLE=$(command -v piddi)
-sudo env PIDDI_EXECUTABLE="$PIDDI_EXECUTABLE" ./scripts/install-production.sh
-sudoedit /etc/piddi/piddi.toml
+python -m pip install ansible-core
+cp deploy/ansible/inventory.example.yml deploy/ansible/inventory.yml
+editor deploy/ansible/inventory.yml
+ansible-playbook --ask-become-pass \
+  -i deploy/ansible/inventory.yml deploy/ansible/piddi.yml
 ```
 
-The installer is idempotent, never overwrites an existing site configuration,
-and does not start the consumer. It creates the `piddi` system account and the
-directories `/etc/piddi`, `/var/lib/piddi`, and `/var/log/piddi`, then installs
-the service and rotation definitions.
+The target must provide Python virtual-environment support. When installing
+from a Git reference, add the distribution's Git package to
+`piddi_os_packages`; Debian and Ubuntu commonly require `python3-venv` as well.
+Installing a pinned package release avoids the target-side Git dependency.
 
-Validate the merged configuration and try the exact production command in the
-foreground before enabling it:
+The example keeps `piddi_enable_service: false`. The first run therefore
+installs and validates everything without starting the consumer. Configuration
+content is hidden from Ansible output, but the local inventory is ignored by
+Git because it may contain credentials. For shared inventories, place sensitive
+values in an encrypted Ansible Vault file.
+
+Try the exact production command in the foreground on the VM:
 
 ```console
-sudo runuser -u piddi -- /absolute/path/to/piddi \
-  --config /etc/piddi/piddi.toml config validate
-sudo runuser -u piddi -- /absolute/path/to/piddi \
+sudo runuser -u piddi -- /opt/piddi/venv/bin/piddi \
   --config /etc/piddi/piddi.toml --silent consume
 ```
 
-Stop the foreground trial with Ctrl-C, then enable the consumer and the hourly
-rotation check:
+Stop the trial with Ctrl-C. Then enable the service by changing
+`piddi_enable_service` to `true` and applying the same playbook, or override it
+for that run:
 
 ```console
-sudo systemctl enable --now piddi piddi-logrotate.timer
+ansible-playbook --ask-become-pass \
+  -i deploy/ansible/inventory.yml deploy/ansible/piddi.yml \
+  -e piddi_enable_service=true
 systemctl status piddi
 sudo tail -f /var/log/piddi/piddi.log
 ```
@@ -243,3 +257,9 @@ the hardware-specific mount path in application configuration. The systemd unit
 uses `RequiresMountsFor=/var/lib/piddi`, so a configured mount must be available
 before the consumer starts. Ensure it is declared in `/etc/fstab` before
 enabling the service.
+
+If several independent Piddiplatsch installations later need to share one VM,
+prefer one Podman or Docker container per workflow, with distinct configuration,
+data, log, and credential mounts. That provides a clearer isolation boundary
+than multiplying system users, virtual environments, and systemd templates on
+the host. The initial single-VM service does not require containers.

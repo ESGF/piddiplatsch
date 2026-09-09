@@ -7,10 +7,10 @@ RequiresMountsFor=/var/lib/piddi
 
 [Service]
 Type=simple
-User=piddi
-Group=piddi
+User={{ piddi_user }}
+Group={{ piddi_group }}
 WorkingDirectory=/var/lib/piddi
-ExecStart=@PIDDI_EXECUTABLE@ --config /etc/piddi/piddi.toml --silent consume
+ExecStart={{ piddi_venv }}/bin/piddi --config /etc/piddi/piddi.toml --silent consume
 Restart=on-failure
 RestartSec=10s
 KillSignal=SIGINT

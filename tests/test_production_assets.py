@@ -17,10 +17,21 @@ def test_production_override_is_valid_with_packaged_defaults():
 
 
 def test_service_uses_production_config_and_silent_progress():
-    unit = (PROJECT_ROOT / "etc" / "systemd" / "piddi.service.in").read_text()
+    unit = (
+        PROJECT_ROOT / "deploy" / "ansible" / "templates" / "piddi.service.j2"
+    ).read_text()
 
-    assert "@PIDDI_EXECUTABLE@ --config /etc/piddi/piddi.toml --silent consume" in unit
+    assert "--config /etc/piddi/piddi.toml --silent consume" in unit
     assert "RequiresMountsFor=/var/lib/piddi" in unit
+
+
+def test_ansible_deployment_is_safe_by_default():
+    playbook = (PROJECT_ROOT / "deploy" / "ansible" / "piddi.yml").read_text()
+
+    assert "piddi_enable_service: false" in playbook
+    assert "ansible.builtin.user:" in playbook
+    assert "ansible.builtin.pip:" in playbook
+    assert "Validate merged Piddiplatsch configuration" in playbook
 
 
 def test_logrotate_policy_bounds_file_size_and_retention():

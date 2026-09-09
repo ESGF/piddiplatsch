@@ -7,7 +7,7 @@ All notable changes to this project are documented here.
 ### Added
 - Added production logging configuration, repeatable `-v` verbosity, explicit
   progress controls, watched log files, and a lightweight systemd/logrotate
-  installation bundle.
+  deployment managed by a small Ansible playbook.
 - Added layered configuration loading: packaged defaults, optional
   `/etc/piddi/piddi.toml`, then `custom.toml` or the explicit `--config` file.
 - Added project-specific STAC overrides under `plugins.<name>.stac`, with
