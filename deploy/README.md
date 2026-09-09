@@ -1,6 +1,15 @@
 # Deployment
 
-The Ansible playbook installs one Piddi service on the local VM.
+Check out Piddi manually, normally below `/opt/piddiplatsch`, then create its
+project-local Conda environment and install Piddi into it:
+
+```console
+cd /opt/piddiplatsch
+conda env create --prefix .conda --file environment.yml
+conda run --prefix .conda python -m pip install -e .
+```
+
+Configure its executable and service:
 
 ```console
 python -m pip install ansible-core
@@ -9,10 +18,11 @@ vim deploy/ansible/custom.yml
 make play
 ```
 
-The first run installs and validates Piddi but does not start it. Test it:
+Ansible creates the service user and directories, renders
+`/etc/piddi/piddi.toml`, and validates it, but does not start Piddi. Test it:
 
 ```console
-sudo runuser -u piddi -- /opt/piddi/venv/bin/piddi \
+sudo runuser -u piddi -- /opt/piddiplatsch/.conda/bin/piddi \
   --config /etc/piddi/piddi.toml --silent consume
 ```
 

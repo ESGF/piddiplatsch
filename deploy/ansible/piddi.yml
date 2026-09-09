@@ -1,5 +1,5 @@
 ---
-- name: Install one Piddiplatsch service
+- name: Configure one Piddiplatsch service
   hosts: localhost
   connection: local
   become: true
@@ -7,16 +7,26 @@
   vars:
     piddi_user: piddi
     piddi_group: piddi
-    piddi_venv: /opt/piddi/venv
-    piddi_python: /usr/bin/python3.11
-    piddi_install_spec: ""
-    piddi_plugin_packages: []
+    piddi_conda_env: /opt/piddiplatsch/.conda
+    piddi_executable: "{{ piddi_conda_env }}/bin/piddi"
     piddi_os_packages:
       - logrotate
     piddi_enable_service: false
-    piddi_config_content: >-
-      {{ lookup('ansible.builtin.file', playbook_dir +
-      '/../../etc/piddi-production.toml') }}
+    piddi_projects:
+      - cmip6
+      - cmip6plus
+      - cmip7
+      - cordex-cmip6
+    piddi_topic: ESGF-PUBLICATIONS
+    piddi_output_dir: /var/lib/piddi
+    piddi_max_errors: 1
+    piddi_log_level: WARNING
+    piddi_log_file: /var/log/piddi/piddi.log
+    piddi_db_path: /var/lib/piddi/piddi.db
+    piddi_kafka:
+      bootstrap.servers: localhost:9092
+      group.id: piddi-production
+    piddi_config_extra: ""
 
   pre_tasks:
     - name: Include variables from custom.yml when present
@@ -26,15 +36,6 @@
         - null.yml
       tags:
         - always
-
-    - name: Require a pinned Piddiplatsch package or Git reference
-      ansible.builtin.assert:
-        that:
-          - piddi_install_spec | length > 0
-          - "'<release-tag-or-commit>' not in piddi_install_spec"
-        fail_msg: >-
-          Set piddi_install_spec to a pinned package version or Git commit.
-          See custom.yml.example.
 
   tasks:
     - name: Install required operating-system packages
@@ -67,10 +68,6 @@
         group: "{{ item.group }}"
         mode: "{{ item.mode }}"
       loop:
-        - path: /opt/piddi
-          owner: root
-          group: root
-          mode: "0755"
         - path: /etc/piddi
           owner: root
           group: "{{ piddi_group }}"
@@ -84,23 +81,28 @@
           group: "{{ piddi_group }}"
           mode: "0750"
 
-    - name: Install Piddiplatsch and selected plugins in a virtual environment
-      ansible.builtin.pip:
-        name: "{{ [piddi_install_spec] + piddi_plugin_packages }}"
-        state: present
-        virtualenv: "{{ piddi_venv }}"
-        virtualenv_command: "{{ piddi_python }} -m venv"
-      register: piddi_packages
-
     - name: Install site configuration
-      ansible.builtin.copy:
-        content: "{{ piddi_config_content }}\n"
+      ansible.builtin.template:
+        src: templates/piddi.toml.j2
         dest: /etc/piddi/piddi.toml
         owner: root
         group: "{{ piddi_group }}"
         mode: "0640"
       no_log: true
       register: piddi_config
+
+    - name: Check the manually installed Piddiplatsch executable
+      ansible.builtin.stat:
+        path: "{{ piddi_executable }}"
+      register: piddi_executable_stat
+
+    - name: Require a manually installed Piddiplatsch executable
+      ansible.builtin.assert:
+        that:
+          - piddi_executable_stat.stat.exists
+          - piddi_executable_stat.stat.executable
+        fail_msg: >-
+          Install Piddiplatsch manually and set piddi_executable in custom.yml.
 
     - name: Install Piddiplatsch systemd service
       ansible.builtin.template:
@@ -139,7 +141,7 @@
     - name: Validate merged Piddiplatsch configuration
       ansible.builtin.command:
         argv:
-          - "{{ piddi_venv }}/bin/piddi"
+          - "{{ piddi_executable }}"
           - --config
           - /etc/piddi/piddi.toml
           - config
@@ -154,8 +156,7 @@
         state: >-
           {{ 'restarted'
           if item == 'piddi.service' and
-          (piddi_packages.changed or piddi_config.changed or
-          piddi_service_unit.changed)
+          (piddi_config.changed or piddi_service_unit.changed)
           else 'started' }}
         daemon_reload: true
       loop:

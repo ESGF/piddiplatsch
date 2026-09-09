@@ -69,7 +69,7 @@ clean-test: ## remove test and coverage artifacts
 clean-dist: clean  ## remove ignored build files while preserving runtime data and local config
 	@echo "Running guarded 'git clean' ..."
 	@test -z "$$(git status --porcelain)" || { echo "There are uncommitted or untracked changes; aborting git clean."; exit 1; }
-	@git clean -dfx -e outputs/ -e '*.log' -e '*.db' -e 'custom*.toml' -e .env -e .venv/ -e .vscode/
+	@git clean -dfx -e outputs/ -e '*.log' -e '*.db' -e 'custom*.toml' -e .env -e .venv/ -e .conda/ -e .vscode/
 
 lint: ## check style with ruff, black, isort
 	@echo "Running code style checks (ruff, black, isort) ..."

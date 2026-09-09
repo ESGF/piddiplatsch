@@ -29,9 +29,43 @@ def test_ansible_deployment_is_safe_by_default():
     playbook = (PROJECT_ROOT / "deploy" / "ansible" / "piddi.yml").read_text()
 
     assert "piddi_enable_service: false" in playbook
+    assert "piddi_conda_env: /opt/piddiplatsch/.conda" in playbook
     assert "ansible.builtin.user:" in playbook
-    assert "ansible.builtin.pip:" in playbook
+    assert "ansible.builtin.pip:" not in playbook
+    assert '"{{ piddi_executable }}"' in playbook
+    assert "piddi_venv" not in playbook
+    assert "Require a manually installed Piddiplatsch executable" in playbook
     assert "Validate merged Piddiplatsch configuration" in playbook
+
+
+def test_ansible_enables_all_current_projects_by_default():
+    playbook = (PROJECT_ROOT / "deploy" / "ansible" / "piddi.yml").read_text()
+
+    assert "piddi_topic: ESGF-PUBLICATIONS" in playbook
+    for project in ("cmip6", "cmip6plus", "cmip7", "cordex-cmip6"):
+        assert f"      - {project}\n" in playbook
+
+
+def test_custom_variables_example_only_contains_site_overrides():
+    example = (PROJECT_ROOT / "deploy" / "ansible" / "custom.yml.example").read_text()
+
+    assert "piddi_kafka:" in example
+    assert "piddi_config_extra:" in example
+    assert "\npiddi_projects:" not in example
+    assert "\npiddi_output_dir:" not in example
+    assert "\npiddi_log_level:" not in example
+
+
+def test_ansible_renders_piddi_configuration_template():
+    playbook = (PROJECT_ROOT / "deploy" / "ansible" / "piddi.yml").read_text()
+    template = (
+        PROJECT_ROOT / "deploy" / "ansible" / "templates" / "piddi.toml.j2"
+    ).read_text()
+
+    assert "templates/piddi.toml.j2" in playbook
+    assert "piddi_projects" in template
+    assert "piddi_kafka.items()" in template
+    assert "piddi_config_extra" in template
 
 
 def test_playbook_loads_local_custom_overrides_with_fallback():

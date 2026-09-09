@@ -3,40 +3,19 @@
 # included automatically by the playbook, overriding its defaults. When it is
 # absent, the playbook loads the committed empty null.yml fallback.
 
-# Pin a package release, Git tag, or immutable Git commit before deploying.
-piddi_install_spec: >-
-  git+https://github.com/ESGF/piddiplatsch.git@<release-tag-or-commit>
+# Site-specific Kafka settings.
+piddi_kafka:
+  bootstrap.servers: broker1.example.org:9093
+  group.id: piddi-esgf
 
-# Python used to create the application virtual environment. Piddi requires
-# Python 3.11 or newer; this is preinstalled by the development Vagrantfile.
-piddi_python: /usr/bin/python3.11
+# Optional TOML for Handle profiles, credentials, and plugin-specific settings.
+# Keep custom.yml local or encrypt it with Ansible Vault before sharing it.
+piddi_config_extra: |
+  # [handles]
+  # default = "production"
 
-# Independently packaged plugins installed into the same virtual environment.
-piddi_plugin_packages: []
+# Uncomment after the foreground test succeeds.
+# piddi_enable_service: true
 
-# Add packages needed by the target distribution and install source.
-# Debian/Ubuntu Git installs commonly also need python3-venv and git.
-piddi_os_packages:
-  - logrotate
-
-# Keep false for the initial install and foreground test.
-piddi_enable_service: false
-
-# This file may contain secrets. Keep custom.yml local or encrypt an equivalent
-# variables file with Ansible Vault before sharing it.
-piddi_config_content: |
-  [consumer]
-  projects = ["cmip6", "cmip7"]
-  topic = "ESGF-PUBLICATIONS"
-  output_dir = "/var/lib/piddi"
-
-  [logging]
-  level = "WARNING"
-  file = "/var/log/piddi/piddi.log"
-
-  [stats]
-  db_path = "/var/lib/piddi/piddi.db"
-
-  [kafka]
-  "bootstrap.servers" = "broker1.example.org:9093"
-  "group.id" = "piddi-esgf"
+# Override only when the checkout or Conda environment uses another location.
+# piddi_conda_env: /opt/piddiplatsch/.conda

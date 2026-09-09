@@ -2,6 +2,7 @@
 __pycache__/
 *.py[cod]
 *$py.class
+*.swp
 
 # C extensions
 *.so
@@ -131,6 +132,7 @@ celerybeat.pid
 .vagrant/
 .env
 .venv
+.conda/
 env/
 venv/
 ENV/
