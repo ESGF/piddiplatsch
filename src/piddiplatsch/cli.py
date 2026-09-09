@@ -42,7 +42,10 @@ def _parse_date_selector(
     type=click.Path(),
     default=DEFAULT_USER_CONFIG,
     show_default=True,
-    help="Path to custom config TOML file (loaded when present).",
+    help=(
+        "Local config TOML loaded after /etc/piddi/piddi.toml "
+        "(replaces the default ./custom.toml layer)."
+    ),
 )
 @click.option("--debug", is_flag=True, help="Enable debug logging.")
 @click.option(
@@ -66,7 +69,7 @@ def cli(
     """CLI to interact with Kafka and Handle Service."""
     ctx.ensure_object(dict)
     ctx.obj["verbose"] = verbose
-    config.load_user_config(config_file)
+    config.load_config_layers(config_file)
     config.configure_logging(debug=debug, log=log)
 
 

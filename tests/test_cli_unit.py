@@ -950,29 +950,29 @@ class TestCLIOptions:
         assert mock_start_consumer.called
 
     @patch("piddiplatsch.commands.base.start_consumer")
-    @patch("piddiplatsch.cli.config.load_user_config")
+    @patch("piddiplatsch.cli.config.load_config_layers")
     def test_default_config_file(
-        self, mock_load_user_config, mock_start_consumer, runner
+        self, mock_load_config_layers, mock_start_consumer, runner
     ):
-        """Test that ./custom.toml is used by default."""
+        """Test that the default site and local layers are loaded."""
         result = runner.invoke(cli, ["consume"])
 
         assert result.exit_code == 0
-        mock_load_user_config.assert_called_once_with("custom.toml")
+        mock_load_config_layers.assert_called_once_with("custom.toml")
 
     @patch("piddiplatsch.commands.base.start_consumer")
-    @patch("piddiplatsch.cli.config.load_user_config")
+    @patch("piddiplatsch.cli.config.load_config_layers")
     def test_config_file_option(
-        self, mock_load_user_config, mock_start_consumer, runner, tmp_path
+        self, mock_load_config_layers, mock_start_consumer, runner, tmp_path
     ):
-        """Test --config option."""
+        """Test that --config replaces the default local layer."""
         config_file = tmp_path / "custom.toml"
         config_file.write_text('[plugin]\nprocessor = "test"\n')
 
         result = runner.invoke(cli, ["--config", str(config_file), "consume"])
 
         assert result.exit_code == 0
-        mock_load_user_config.assert_called_once_with(str(config_file))
+        mock_load_config_layers.assert_called_once_with(str(config_file))
         assert mock_start_consumer.called
 
 

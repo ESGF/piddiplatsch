@@ -7,6 +7,7 @@ from rich.logging import RichHandler
 from piddiplatsch.config.schema import validate_config
 
 DEFAULT_CONFIG_PATH = Path(__file__).parent / "default.toml"
+DEFAULT_SITE_CONFIG_PATH = Path("/etc/piddi/piddi.toml")
 
 
 class Config:
@@ -40,6 +41,29 @@ class Config:
             if user_path.exists():
                 user_data = self._load_toml(user_path)
                 self._merge_dicts(self.config_data, user_data)
+
+    def load_config_layers(
+        self,
+        local_config_path: str | Path | None,
+        site_config_path: str | Path = DEFAULT_SITE_CONFIG_PATH,
+    ) -> None:
+        """Merge optional site and local configuration over packaged defaults.
+
+        The site configuration is loaded first. The local configuration (or a
+        path explicitly selected with ``--config``) is loaded last and thus has
+        the highest precedence. Missing optional files are ignored.
+        """
+        paths = [Path(site_config_path)]
+        if local_config_path is not None:
+            paths.append(Path(local_config_path))
+
+        loaded: set[Path] = set()
+        for path in paths:
+            normalized = path.resolve()
+            if normalized in loaded:
+                continue
+            loaded.add(normalized)
+            self.load_user_config(str(path))
 
     def _merge_dicts(self, base, override):
         for key, value in override.items():

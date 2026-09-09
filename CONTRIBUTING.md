@@ -54,7 +54,9 @@ Handle Service.
 
 ### Config Validation
 
-Validate the loaded configuration (defaults merged with `--config file`). Structural checks only; exits non-zero on errors:
+Validate the loaded configuration (packaged defaults, then the optional site
+config, then `custom.toml` or `--config FILE`). Structural checks only; exits
+non-zero on errors:
 
 ```bash
 # Validate current setup

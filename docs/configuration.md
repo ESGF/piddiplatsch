@@ -1,9 +1,15 @@
 # Configuration
 
-Piddiplatsch loads `src/piddiplatsch/config/default.toml` first, then
-automatically merges `./custom.toml` over those defaults when that file exists.
-Keep credentials in this local ignored file. Use `--config PATH` to load a
-different TOML file instead.
+Piddiplatsch loads configuration in this order, with each existing file
+overriding values from the preceding layer:
+
+1. packaged `src/piddiplatsch/config/default.toml`
+2. site-wide `/etc/piddi/piddi.toml`
+3. local `./custom.toml`
+
+Missing site and local files are ignored. Keep development credentials in the
+local ignored file. `--config PATH` replaces the third layer with the selected
+file; the packaged and site-wide layers are still loaded first.
 
 Validate and inspect the effective configuration before a run:
 

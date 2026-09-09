@@ -211,7 +211,8 @@ Common first runs:
   piddi consume --project cmip6 --project cmip7
   piddi consume --all-projects
   ```
-- Override the default `./custom.toml` path:
+- Override the default `./custom.toml` layer (the site-wide
+  `/etc/piddi/piddi.toml` is still loaded first):
   ```bash
   piddi --config /path/to/another.toml consume
   ```
@@ -258,13 +259,15 @@ cp src/piddiplatsch/config/default.toml custom.toml
 vim custom.toml
 ```
 
-The CLI now loads `./custom.toml` automatically when it exists:
+The CLI loads packaged defaults, then `/etc/piddi/piddi.toml`, then
+`./custom.toml` when those optional files exist:
 
 ```bash
 piddi config validate
 ```
 
-Use `--config PATH` to select a different file.
+Use `--config PATH` to select a different final override file in place of
+`./custom.toml`.
 
 Kafka, Handle Service, consumer behaviour, and project selection are all controlled via this file.
 See [docs/configuration.md](docs/configuration.md) for the supported application
