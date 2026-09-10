@@ -115,8 +115,43 @@ def test_top_once_shows_history(tmp_path):
     )
 
     assert result.exit_code == 0
-    assert "History · last 30 minutes" in result.output
+    assert "Active runs" in result.output
+    assert "no active runs" in result.output
+    assert "stopped" not in result.output
+    assert "Latest run history · last 30 minutes" in result.output
     assert "ΔMsg" in result.output
+
+
+def test_top_history_excludes_previous_stopped_run(tmp_path):
+    db_path = tmp_path / "piddi.db"
+    _monitoring_db(db_path)
+    stats = Stats(enable_db=False)
+    stats.configure_for_run(
+        enable_db=True,
+        db_path=str(db_path),
+        command="consume",
+        selected_projects=("cmip6", "cmip7"),
+        heartbeat_interval_seconds=60,
+    )
+    try:
+        result = CliRunner().invoke(
+            cli,
+            [
+                "--log",
+                str(tmp_path / "test.log"),
+                "top",
+                "--db",
+                str(db_path),
+                "--once",
+            ],
+        )
+    finally:
+        stats.close(status="stopped")
+
+    assert result.exit_code == 0
+    assert "Current run history · last 60 minutes" in result.output
+    assert result.output.count("cmip6") == 2
+    assert result.output.count("cmip7") == 2
 
 
 @patch("piddiplatsch.commands.map.map_dump_files")

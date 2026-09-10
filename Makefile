@@ -1,6 +1,8 @@
 # Configuration
 APP_ROOT := $(abspath $(lastword $(MAKEFILE_LIST))/..)
 APP_NAME := piddiplatsch
+ANSIBLE_ARGS ?=
+CONDA_ENV_PREFIX ?= $(APP_ROOT)/.conda
 
 # end of configuration
 
@@ -21,6 +23,7 @@ endef
 export PRINT_HELP_PYSCRIPT
 
 .DEFAULT_GOAL := help
+.PHONY: conda deploy play
 
 help: ## print this help message. (Default)
 	@python -c "$$PRINT_HELP_PYSCRIPT" < $(MAKEFILE_LIST)
@@ -31,6 +34,21 @@ install: ## install application
 	@echo "Installing application ..."
 	@bash -c 'pip install -e .'
 	@echo "\nInspect commands with \`piddi --help\`."
+
+conda: ## create or update the project Conda environment
+	@if test -d "$(CONDA_ENV_PREFIX)/conda-meta"; then \
+		echo "Updating Conda environment at $(CONDA_ENV_PREFIX) ..."; \
+		conda env update --prefix "$(CONDA_ENV_PREFIX)" --file environment.yml --prune; \
+	else \
+		echo "Creating Conda environment at $(CONDA_ENV_PREFIX) ..."; \
+		conda env create --prefix "$(CONDA_ENV_PREFIX)" --file environment.yml; \
+	fi
+	@conda run --prefix "$(CONDA_ENV_PREFIX)" python -m pip install -e .
+
+play: ## deploy piddi locally using custom variables
+	@ansible-playbook $(ANSIBLE_ARGS) -i localhost, deploy/ansible/piddi.yml
+
+deploy: conda play ## prepare the Conda environment and deploy piddi locally
 
 develop: ## install application with development libraries
 	@echo "Installing development requirements ..."
@@ -65,7 +83,7 @@ clean-test: ## remove test and coverage artifacts
 clean-dist: clean  ## remove ignored build files while preserving runtime data and local config
 	@echo "Running guarded 'git clean' ..."
 	@test -z "$$(git status --porcelain)" || { echo "There are uncommitted or untracked changes; aborting git clean."; exit 1; }
-	@git clean -dfx -e outputs/ -e '*.log' -e '*.db' -e 'custom*.toml' -e .env -e .venv/ -e .vscode/
+	@git clean -dfx -e outputs/ -e '*.log' -e '*.db' -e 'custom*.toml' -e .env -e .venv/ -e .conda/ -e .vscode/
 
 lint: ## check style with ruff, black, isort
 	@echo "Running code style checks (ruff, black, isort) ..."

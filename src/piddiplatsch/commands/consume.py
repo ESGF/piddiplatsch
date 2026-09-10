@@ -22,5 +22,6 @@ class ConsumeCommand(KafkaCommand):
             projects=select_projects(self.projects, self.all_projects),
             publish=self.publish,
             force=self.force,
+            monitor_db=True,
             handle_profile=self.handle_profile,
         )

@@ -1,5 +1,6 @@
 from piddiplatsch.config import config
-from piddiplatsch.config.schema import LookupConfig, validate_config
+from piddiplatsch.config.config import Config
+from piddiplatsch.config.schema import LoggingConfig, LookupConfig, validate_config
 from piddiplatsch.core.models import strict_mode
 from piddiplatsch.lookup.api import get_lookup
 from piddiplatsch.lookup.base import DummyLookup
@@ -19,6 +20,50 @@ def _base_config():
         # Disable lookups unless explicitly tested
         "lookup": {"enabled": False},
     }
+
+
+def test_config_layers_merge_defaults_then_site_then_local(tmp_path):
+    site_config = tmp_path / "etc" / "piddi.toml"
+    site_config.parent.mkdir()
+    site_config.write_text(
+        '[consumer]\noutput_dir = "/var/lib/piddi"\n'
+        '[kafka]\n"group.id" = "site-group"\n'
+    )
+    local_config = tmp_path / "custom.toml"
+    local_config.write_text('[consumer]\noutput_dir = "local-outputs"\n')
+
+    layered = Config()
+    layered.load_config_layers(local_config, site_config)
+
+    assert layered.get("consumer", "topic") == "CMIP6"
+    assert layered.get("kafka", "group.id") == "site-group"
+    assert layered.get("consumer", "output_dir") == "local-outputs"
+
+
+def test_config_layers_ignore_missing_optional_files(tmp_path):
+    layered = Config()
+
+    layered.load_config_layers(
+        tmp_path / "missing-local.toml", tmp_path / "missing-site.toml"
+    )
+
+    assert layered.get("consumer", "output_dir") == "outputs"
+
+
+def test_logging_level_accepts_warn_alias():
+    logging_config = LoggingConfig.model_validate({"level": "warn"})
+
+    assert logging_config.level == "WARNING"
+
+
+def test_invalid_logging_level_is_reported():
+    cfg = _base_config()
+    cfg["kafka"] = {"bootstrap.servers": "localhost:39092"}
+    cfg["logging"] = {"level": "verbose"}
+
+    errors, _ = validate_config(cfg)
+
+    assert any("logging.level" in error for error in errors)
 
 
 def test_lookup_is_disabled_by_default():

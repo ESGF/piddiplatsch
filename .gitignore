@@ -2,6 +2,7 @@
 __pycache__/
 *.py[cod]
 *$py.class
+*.swp
 
 # C extensions
 *.so
@@ -128,8 +129,10 @@ celerybeat.pid
 *.sage.py
 
 # Environments
+.vagrant/
 .env
 .venv
+.conda/
 env/
 venv/
 ENV/
@@ -179,6 +182,9 @@ clusterID/
 # piddiplatsch
 custom.toml
 custom_*.toml
+# Local Ansible overrides may contain deployment secrets.
+deploy/ansible/custom.yml
+deploy/ansible/host_vars/
 # Runtime inspection data is intentionally retained locally and never committed.
 outputs/
 pid.log

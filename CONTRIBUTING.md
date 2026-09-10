@@ -45,7 +45,8 @@ explicit publication (or use the local Docker stack for smoke tests).
 - Common flags:
   - `--config <path>`: point to your TOML config
   - `--silent`: hide the default progress display
-  - `--debug --log my.log`: enable debug and log to file
+  - `-v`: INFO logging; `-vv` or `--debug`: DEBUG logging
+  - `--log my.log`: override the configured log destination
   - `--force`: continue on transient external failures (e.g., STAC outages)
 
 `harvest` and `consume` always write raw queue messages to `outputs/dump/`
@@ -54,7 +55,9 @@ Handle Service.
 
 ### Config Validation
 
-Validate the loaded configuration (defaults merged with `--config file`). Structural checks only; exits non-zero on errors:
+Validate the loaded configuration (packaged defaults, then the optional site
+config, then `custom.toml` or `--config FILE`). Structural checks only; exits
+non-zero on errors:
 
 ```bash
 # Validate current setup

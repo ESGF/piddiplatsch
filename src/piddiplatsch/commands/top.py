@@ -56,7 +56,7 @@ class TopCommand(Command):
 
     @staticmethod
     def _table(status: dict) -> Table:
-        table = Table(title=f"piddiplatsch monitor · {status['generated_at']}")
+        table = Table(title=f"Active runs · {status['generated_at']}")
         for heading, justify in (
             ("State", "left"),
             ("Cmd", "left"),
@@ -76,7 +76,8 @@ class TopCommand(Command):
                 no_wrap=heading in {"State", "Cmd", "Project"},
             )
 
-        for run in status["runs"]:
+        active_runs = [run for run in status["runs"] if run["status"] == "running"]
+        for run in active_runs:
             color = {"healthy": "green", "stale": "yellow", "failed": "red"}.get(
                 run["state"], "dim"
             )
@@ -111,14 +112,19 @@ class TopCommand(Command):
                     ),
                     f"{run['heartbeat_age_seconds']:.1f}s" if index == 0 else "",
                 )
-        if not status["runs"]:
-            table.add_row("dim", "—", "no matching runs", *("—" for _ in range(8)))
+        if not active_runs:
+            table.add_row(
+                "—", "—", "no active runs", *("—" for _ in range(8)), style="dim"
+            )
         return table
 
     @staticmethod
     def _history_table(status: dict) -> Table:
         minutes = status["history_seconds"] / 60
-        table = Table(title=f"History · last {minutes:g} minutes")
+        active_runs = [run for run in status["runs"] if run["status"] == "running"]
+        displayed_runs = active_runs or status["runs"][:1]
+        scope = "Current run history" if active_runs else "Latest run history"
+        table = Table(title=f"{scope} · last {minutes:g} minutes")
         for heading, justify in (
             ("Cmd", "left"),
             ("Project", "left"),
@@ -132,7 +138,7 @@ class TopCommand(Command):
         ):
             table.add_column(heading, justify=justify)
 
-        for run in status["runs"]:
+        for run in displayed_runs:
             for history in run["history"]:
                 deltas = history["deltas"]
                 table.add_row(
@@ -146,7 +152,7 @@ class TopCommand(Command):
                     str(deltas["handles"]),
                     _sparkline(history["message_rate_series"]),
                 )
-        if not any(run["history"] for run in status["runs"]):
+        if not any(run["history"] for run in displayed_runs):
             table.add_row("—", "no samples in window", *("—" for _ in range(7)))
         return table
 

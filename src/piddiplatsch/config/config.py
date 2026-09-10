@@ -1,4 +1,5 @@
 import logging
+from logging.handlers import WatchedFileHandler
 from pathlib import Path
 
 import toml
@@ -7,6 +8,7 @@ from rich.logging import RichHandler
 from piddiplatsch.config.schema import validate_config
 
 DEFAULT_CONFIG_PATH = Path(__file__).parent / "default.toml"
+DEFAULT_SITE_CONFIG_PATH = Path("/etc/piddi/piddi.toml")
 
 
 class Config:
@@ -40,6 +42,29 @@ class Config:
             if user_path.exists():
                 user_data = self._load_toml(user_path)
                 self._merge_dicts(self.config_data, user_data)
+
+    def load_config_layers(
+        self,
+        local_config_path: str | Path | None,
+        site_config_path: str | Path = DEFAULT_SITE_CONFIG_PATH,
+    ) -> None:
+        """Merge optional site and local configuration over packaged defaults.
+
+        The site configuration is loaded first. The local configuration (or a
+        path explicitly selected with ``--config``) is loaded last and thus has
+        the highest precedence. Missing optional files are ignored.
+        """
+        paths = [Path(site_config_path)]
+        if local_config_path is not None:
+            paths.append(Path(local_config_path))
+
+        loaded: set[Path] = set()
+        for path in paths:
+            normalized = path.resolve()
+            if normalized in loaded:
+                continue
+            loaded.add(normalized)
+            self.load_user_config(str(path))
 
     def _merge_dicts(self, base, override):
         for key, value in override.items():
@@ -124,12 +149,32 @@ class Config:
             raise ValueError("[handles.defaults] must be a table")
         return {**defaults, **profile_config}
 
-    def configure_logging(self, debug: bool = False, log: str | None = None):
-        log_level = logging.DEBUG if debug else logging.INFO
+    def configure_logging(
+        self,
+        verbosity: int = 0,
+        debug: bool = False,
+        log: str | None = None,
+    ) -> None:
+        """Configure logging from config, with CLI verbosity overrides."""
+        logging_config = self.get("logging", {}) or {}
+        configured_level = str(logging_config.get("level", "WARNING")).strip().upper()
+        if configured_level == "WARN":
+            configured_level = "WARNING"
+        if configured_level not in {"DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"}:
+            raise ValueError(f"Invalid logging level: {configured_level}")
+
+        if debug or verbosity >= 2:
+            log_level = logging.DEBUG
+        elif verbosity == 1:
+            log_level = logging.INFO
+        else:
+            log_level = getattr(logging, configured_level)
+
+        log_path = log if log is not None else logging_config.get("file", "pid.log")
 
         handlers = []
 
-        if not log:
+        if not log_path:
             console = True
         else:
             console = False
@@ -137,7 +182,7 @@ class Config:
         if console:
             handlers.append(RichHandler(rich_tracebacks=True))
         else:
-            handlers.append(logging.FileHandler(log))
+            handlers.append(WatchedFileHandler(log_path, encoding="utf-8"))
 
         logging.basicConfig(
             level=log_level,
@@ -148,6 +193,7 @@ class Config:
             ),
             datefmt="[%X]",
             handlers=handlers,
+            force=True,
         )
 
     def validate(self) -> tuple[list[str], list[str]]:

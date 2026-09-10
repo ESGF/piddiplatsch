@@ -12,8 +12,8 @@
 "bootstrap.servers" = "broker1.esgf.org:9093,broker2.esgf.org:9093"
 "group.id" = "piddi-esgf-demo"
 
-# Optional but recommended identifiers
-"client.id" = "piddi-esgf"
+# Required ESGF Resource identifier
+"client.id" = "YOUR_ESGF_RESOURCE"
 
 # ESGF clusters commonly use SASL over SSL
 "security.protocol" = "SASL_SSL"

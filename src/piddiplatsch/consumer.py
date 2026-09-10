@@ -187,6 +187,7 @@ class ConsumerPipeline:
         publish: bool = False,
         force: bool = False,
         failure_dir: Path | None = None,
+        limit: int | None = None,
     ):
         """
         consumer: instance of BaseConsumer (KafkaConsumer or DirectConsumer)
@@ -201,6 +202,9 @@ class ConsumerPipeline:
         )
         self.dump_messages = dump_messages
         self.max_errors = int(max_errors)
+        if limit is not None and limit <= 0:
+            raise ValueError("limit must be positive")
+        self.limit = limit
         self.force = force
         self.failure_dir = failure_dir
         consumer_cfg = config.get("consumer", {})
@@ -221,6 +225,7 @@ class ConsumerPipeline:
 
     def run(self):
         logger.info("Starting consumer pipeline...")
+        processed = 0
         for key, value in self.consumer.consume():
             result = self._safe_process_message(key, value)
 
@@ -248,6 +253,10 @@ class ConsumerPipeline:
                 self.progress.refresh()
 
             self._check_success()
+            processed += 1
+            if self.limit is not None and processed >= self.limit:
+                logger.info("Harvest limit reached (%d messages)", self.limit)
+                break
 
     def _check_success(self):
         if self.max_errors >= 0 and self.stats.errors >= self.max_errors:
@@ -459,6 +468,8 @@ def start_consumer(
     force: bool = False,
     progress: BaseProgress | None = None,
     idle_timeout: float | None = None,
+    limit: int | None = None,
+    monitor_db: bool = False,
     handle_profile: str | None = None,
 ):
     max_errors = config.get("consumer", {}).get("max_errors", -1)
@@ -470,10 +481,19 @@ def start_consumer(
         handle_profile=handle_profile,
     )
     stats_config = config.get("stats", {})
+    selected_projects = getattr(proc_instance, "project_names", ())
     stats.configure_for_run(
-        enable_db=False,
+        enable_db=monitor_db and stats_config.get("enable_db", False),
+        db_path=stats_config.get("db_path"),
         log_interval_seconds=stats_config.get("interval_seconds"),
         log_interval_messages=stats_config.get("summary_interval"),
+        command="consume",
+        topic=topic,
+        consumer_group=(kafka_cfg or {}).get("group.id"),
+        selected_projects=selected_projects,
+        heartbeat_interval_seconds=stats_config.get("heartbeat_interval_seconds", 5),
+        sample_interval_seconds=stats_config.get("sample_interval_seconds", 15),
+        sample_retention_days=stats_config.get("sample_retention_days", 30),
     )
     # Optional STAC preflight
     try:
@@ -514,6 +534,7 @@ def start_consumer(
         max_errors=max_errors,
         publish=publish,
         force=force,
+        limit=limit,
     )
 
     def sigint_handler(sig, frame):

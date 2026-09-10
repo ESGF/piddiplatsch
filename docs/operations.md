@@ -34,7 +34,7 @@ stable ordering and provenance.
 
 ```bash
 # Kafka -> raw JSONL only
-piddi harvest
+piddi harvest --limit 100
 
 # raw JSONL -> project-scoped Handle JSONL only
 piddi map --project cmip6 --date 2026-08-27
@@ -49,7 +49,9 @@ piddi consume
 piddi consume --publish
 ```
 
-`map` accepts files or directories plus `--project`, `--all-projects`,
+`harvest --limit N` stops normally after dumping `N` messages, which is useful
+for bounded tests against a live topic. `map` accepts files or directories plus
+`--project`, `--all-projects`,
 `--limit`, `--offset`, and `--force`. It never contacts Kafka or a Handle
 Service and does not modify its input dumps.
 
@@ -125,13 +127,29 @@ available for inspection.
 
 ## Logging and statistics
 
-The CLI writes to `pid.log` by default. Use `--log PATH` to select another file.
-At INFO level it records the selected plugins, the first occurrence of every
-filtered project identity, and periodic aggregate filtered counts. Per-message
-filter decisions are available with `--debug` without flooding normal logs.
-The optional SQLite reporter is controlled by `[stats]` and is opened only by
-the explicit `piddi map` command. `consume`, `harvest`, and `top` never update
-the database.
+The CLI writes WARNING and above to `pid.log` by default. Use `-v` for INFO,
+`-vv` or its memorable `--debug` alias for DEBUG, and `--log PATH` to override
+the configured file. `--silent` remains an alias for hiding progress;
+`--progress/--no-progress` provides the explicit form. At INFO level Piddiplatsch
+records the selected plugins, the first occurrence of every filtered project
+identity, publication outcomes, and periodic aggregate counts. Per-message
+filter decisions are available at DEBUG level.
+
+The `[logging]` configuration provides the service defaults:
+
+```toml
+[logging]
+level = "WARNING"
+file = "/var/log/piddi/piddi.log"
+```
+
+File logging uses a watched handler: after logrotate renames the active file and
+creates a replacement, Piddiplatsch switches to the new file on its next log
+write. Full recovery and skipped details remain available in JSONL independently
+of the selected logging level.
+The optional SQLite reporter is controlled by `[stats]` and is opened by
+`piddi consume` and `piddi map`. `harvest` and the read-only `top` command never
+update the database.
 
 The database contains a versioned current-run status model. A heartbeat is
 updated independently of Kafka traffic, and processing outcomes are split by
@@ -179,3 +197,17 @@ configured error limit or a fail-fast transient external failure.
 also removes other ignored development artifacts, but explicitly preserves
 runtime output, logs, databases, local configuration, virtual environments, and
 editor settings.
+
+## Deployment
+
+After Piddi is checked out and installed into its Conda environment manually,
+the Ansible playbook configures one service per VM. It renders the site
+configuration from variables in
+`deploy/ansible/custom.yml`, uses
+`/etc/piddi/piddi.toml`, `/var/lib/piddi`, and `/var/log/piddi/piddi.log` and
+configures systemd plus hourly log rotation. For the short production and
+Vagrant procedures, see [deploy/README.md](../deploy/README.md).
+
+Mount an external data disk at `/var/lib/piddi`; the systemd service waits for a
+configured mount. If several isolated Piddi installations share one VM, prefer
+one Podman or Docker container per workflow.

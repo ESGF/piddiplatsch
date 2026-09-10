@@ -1,9 +1,15 @@
 # Configuration
 
-Piddiplatsch loads `src/piddiplatsch/config/default.toml` first, then
-automatically merges `./custom.toml` over those defaults when that file exists.
-Keep credentials in this local ignored file. Use `--config PATH` to load a
-different TOML file instead.
+Piddiplatsch loads configuration in this order, with each existing file
+overriding values from the preceding layer:
+
+1. packaged `src/piddiplatsch/config/default.toml`
+2. site-wide `/etc/piddi/piddi.toml`
+3. local `./custom.toml`
+
+Missing site and local files are ignored. Keep development credentials in the
+local ignored file. `--config PATH` replaces the third layer with the selected
+file; the packaged and site-wide layers are still loaded first.
 
 Validate and inspect the effective configuration before a run:
 
@@ -33,11 +39,13 @@ piddi config show
 | `lookup` | `enabled`, `backend` | Enable version lookup using `stac` or `es`; disabled by default. |
 | `elasticsearch` | `base_url`, `index` | Elasticsearch lookup settings when `lookup.backend = "es"`. |
 | `schema` | `strict_mode` | Reject incomplete or unsupported records; defaults to `true`. |
+| `logging` | `level` | Baseline `DEBUG`, `INFO`, `WARNING`, `ERROR`, or `CRITICAL` level. `WARN` is accepted as an alias. |
+| `logging` | `file` | Log destination. An empty string selects terminal logging. |
 | `plugins.<name>` | `handle` | Named Handle profile used by this project. |
 | `plugins.<name>` | `landing_page_url`, `max_parts`, `excluded_asset_keys` | Project-specific Handle-record behavior. |
 | `plugins.<name>.stac` | `base_url`, `timeout`, `collection` | Optional project overrides for the global STAC settings. |
 | `stats` | `interval_seconds`, `summary_interval` | Statistics reporting intervals. |
-| `stats` | `enable_db`, `db_path`, heartbeat/sample/history intervals | Local SQLite state and history for `piddi map`. |
+| `stats` | `enable_db`, `db_path`, heartbeat/sample/history intervals | Local SQLite state and history for `piddi consume` and `piddi map`. |
 
 Direct `rest` and `pyhandle` publication always appends the prepared record to
 the project-scoped Handle JSONL file before contacting the service. This audit
@@ -67,9 +75,10 @@ live under `etc/`. The legacy single
 `[handle]` table remains supported temporarily and overrides named profiles,
 but new configuration should use `[handles.profiles.<name>]`.
 
-Every successful publication writes an INFO entry to the configured `--log`
-file (`pid.log` by default). The entry identifies whether the server created or
-updated the Handle and includes its directly resolvable REST URL, project,
+Every successful publication writes an INFO entry to the configured log file
+(`pid.log` by default). Pass `-v` to enable INFO logging and `--log PATH` to
+override the configured destination. The entry identifies whether the server
+created or updated the Handle and includes its directly resolvable REST URL, project,
 dataset ID, file name, and source position. For file assets, the publisher joins
 `IS_PART_OF` to a dataset record in the selected batch so the asset log entry
 also includes `DATASET_ID`. Context that is unavailable in older JSONL input is

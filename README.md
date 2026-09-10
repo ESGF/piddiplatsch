@@ -98,7 +98,7 @@ The same work can be separated. `harvest` only reads Kafka and writes raw JSONL;
 `map` replays one or more dump files through the selected plugins:
 
 ```bash
-piddi harvest
+piddi harvest --limit 100
 piddi map --date 2026-08-27
 ```
 
@@ -150,14 +150,16 @@ errors. The delay starts at one second and doubles for each retry; customize it
 with `--retry-delay`. Permanent client errors such as invalid credentials are
 not retried. Use `--workers N` for bounded concurrent PUT requests. Updates for
 the same Handle remain in input order while different Handles are published in
-parallel. Verbose progress shows both the absolute Handle position and its
-position within the selected batch. Publication outcomes are written to the
-standard log file (`pid.log` by default) and to a run-scoped structured JSONL
+parallel. The progress display shows both the absolute Handle position and its
+position within the selected batch. At INFO level, publication outcomes are
+written to the standard log file (`pid.log` by default) and to a run-scoped
+structured JSONL
 receipt under `outputs/published/`. The CLI prints the exact receipt path when
 the run finishes. Each line includes the outcome, action, PID, full URL,
 project, dataset, asset, source location, batch position, retries, and error.
-Terminal progress is enabled by default. Pass the global `--silent` option to
-hide the progress bar and print only the final summary.
+Terminal progress is enabled by default. Pass the global `--silent` or
+`--no-progress` option to hide the progress bar and print only the final
+summary. Use `-v` for INFO logging and `-vv` or `--debug` for DEBUG logging.
 
 Single-project batches are inferred automatically. Their receipt uses a name
 such as `published_cmip6_handles_2026-08-28_10-15-00.jsonl`; mixed or unknown
@@ -191,7 +193,7 @@ Common first runs:
 
 - Inspect messages only:
   ```bash
-  piddi harvest
+  piddi harvest --limit 100
   ```
 - Observe without stopping on skips:
   ```bash
@@ -211,7 +213,8 @@ Common first runs:
   piddi consume --project cmip6 --project cmip7
   piddi consume --all-projects
   ```
-- Override the default `./custom.toml` path:
+- Override the default `./custom.toml` layer (the site-wide
+  `/etc/piddi/piddi.toml` is still loaded first):
   ```bash
   piddi --config /path/to/another.toml consume
   ```
@@ -246,6 +249,8 @@ Detailed CLI options and extended examples live in [CONTRIBUTING.md](CONTRIBUTIN
 
 Operational guidance for output retention, retries, logging, and shutdown is in
 [docs/operations.md](docs/operations.md).
+The short production and Vagrant procedure is in
+[deploy/README.md](deploy/README.md).
 
 ---
 
@@ -258,13 +263,15 @@ cp src/piddiplatsch/config/default.toml custom.toml
 vim custom.toml
 ```
 
-The CLI now loads `./custom.toml` automatically when it exists:
+The CLI loads packaged defaults, then `/etc/piddi/piddi.toml`, then
+`./custom.toml` when those optional files exist:
 
 ```bash
 piddi config validate
 ```
 
-Use `--config PATH` to select a different file.
+Use `--config PATH` to select a different final override file in place of
+`./custom.toml`.
 
 Kafka, Handle Service, consumer behaviour, and project selection are all controlled via this file.
 See [docs/configuration.md](docs/configuration.md) for the supported application

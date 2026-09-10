@@ -42,32 +42,49 @@ def _parse_date_selector(
     type=click.Path(),
     default=DEFAULT_USER_CONFIG,
     show_default=True,
-    help="Path to custom config TOML file (loaded when present).",
+    help=(
+        "Local config TOML loaded after /etc/piddi/piddi.toml "
+        "(replaces the default ./custom.toml layer)."
+    ),
 )
-@click.option("--debug", is_flag=True, help="Enable debug logging.")
 @click.option(
-    "-v/-s",
-    "--verbose/--silent",
-    default=True,
-    help="Show progress information (enabled by default).",
+    "-v",
+    "--verbose",
+    "verbosity",
+    count=True,
+    help="Increase log detail: -v for INFO, -vv for DEBUG.",
 )
+@click.option("--debug", is_flag=True, help="Enable DEBUG logging (alias for -vv).")
+@click.option(
+    "--progress/--no-progress",
+    default=True,
+    help="Show or hide progress information.",
+)
+@click.option("-s", "--silent", is_flag=True, help="Hide progress information.")
 @click.option(
     "-l",
     "--log",
     type=click.Path(dir_okay=False, writable=True, resolve_path=True),
-    default="pid.log",
-    show_default=True,
-    help="Log file path.",
+    help="Override the configured log file path.",
 )
 @click.pass_context
 def cli(
-    ctx: click.Context, config_file: str | None, debug: bool, verbose: bool, log: str
+    ctx: click.Context,
+    config_file: str | None,
+    verbosity: int,
+    debug: bool,
+    progress: bool,
+    silent: bool,
+    log: str | None,
 ) -> None:
     """CLI to interact with Kafka and Handle Service."""
     ctx.ensure_object(dict)
-    ctx.obj["verbose"] = verbose
-    config.load_user_config(config_file)
-    config.configure_logging(debug=debug, log=log)
+    ctx.obj["verbose"] = progress and not silent
+    config.load_config_layers(config_file)
+    try:
+        config.configure_logging(verbosity=verbosity, debug=debug, log=log)
+    except ValueError as exc:
+        raise click.ClickException(str(exc)) from exc
 
 
 # command consume
@@ -130,10 +147,17 @@ def consume(
     show_default=True,
     help="Stop after this many seconds without a Kafka message.",
 )
+@click.option(
+    "--limit",
+    type=click.IntRange(min=1),
+    help="Stop after harvesting this many Kafka messages.",
+)
 @click.pass_context
-def harvest(ctx: click.Context, idle_timeout: float) -> None:
+def harvest(ctx: click.Context, idle_timeout: float, limit: int | None) -> None:
     """Harvest Kafka messages into raw JSONL without mapping."""
-    HarvestCommand(verbose=ctx.obj["verbose"], idle_timeout=idle_timeout).execute()
+    HarvestCommand(
+        verbose=ctx.obj["verbose"], idle_timeout=idle_timeout, limit=limit
+    ).execute()
 
 
 # command map

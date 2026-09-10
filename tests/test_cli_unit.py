@@ -128,6 +128,7 @@ class TestConsumeCommand:
         call_kwargs = mock_start_consumer.call_args.kwargs
         assert call_kwargs["dump_messages"] is True
         assert call_kwargs["publish"] is False
+        assert call_kwargs["monitor_db"] is True
 
     @patch("piddiplatsch.commands.base.start_consumer")
     def test_consume_with_publish(self, mock_start_consumer, runner):
@@ -189,6 +190,7 @@ class TestHarvestCommand:
         assert result.exit_code == 0
         assert "raw JSONL" in result.output
         assert "--idle-timeout" in result.output
+        assert "--limit" in result.output
 
     @patch("piddiplatsch.commands.base.start_consumer")
     def test_harvest_dumps_without_mapping(self, mock_start_consumer, runner):
@@ -199,6 +201,8 @@ class TestHarvestCommand:
         assert kwargs["dump_messages"] is True
         assert kwargs["force"] is True
         assert kwargs["idle_timeout"] == 5.0
+        assert kwargs["limit"] is None
+        assert kwargs["monitor_db"] is False
 
     @patch("piddiplatsch.commands.base.start_consumer")
     def test_harvest_passes_idle_timeout(self, mock_start_consumer, runner):
@@ -206,6 +210,21 @@ class TestHarvestCommand:
 
         assert result.exit_code == 0
         assert mock_start_consumer.call_args.kwargs["idle_timeout"] == 2.5
+
+    @patch("piddiplatsch.commands.base.start_consumer")
+    def test_harvest_passes_limit(self, mock_start_consumer, runner):
+        result = runner.invoke(cli, ["harvest", "--limit", "10"])
+
+        assert result.exit_code == 0
+        assert mock_start_consumer.call_args.kwargs["limit"] == 10
+
+    @patch("piddiplatsch.commands.base.start_consumer")
+    def test_harvest_rejects_non_positive_limit(self, mock_start_consumer, runner):
+        result = runner.invoke(cli, ["harvest", "--limit", "0"])
+
+        assert result.exit_code == 2
+        assert "Invalid value for '--limit'" in result.output
+        mock_start_consumer.assert_not_called()
 
     @patch("piddiplatsch.commands.base.start_consumer")
     def test_harvest_with_verbose_uses_stream_progress(
@@ -942,6 +961,28 @@ class TestCLIOptions:
         # Debug should configure logging but not affect command execution
         assert mock_start_consumer.called
 
+    @patch("piddiplatsch.cli.config.configure_logging")
+    @patch("piddiplatsch.cli.ConsumeCommand")
+    def test_repeated_verbose_controls_logging(
+        self, command_cls, configure_logging, runner
+    ):
+        result = runner.invoke(cli, ["-vv", "--no-progress", "consume"])
+
+        assert result.exit_code == 0
+        configure_logging.assert_called_once_with(verbosity=2, debug=False, log=None)
+        assert command_cls.call_args.kwargs["verbose"] is False
+
+    @patch("piddiplatsch.cli.config.configure_logging")
+    @patch("piddiplatsch.cli.ConsumeCommand")
+    def test_debug_and_silent_remain_aliases(
+        self, command_cls, configure_logging, runner
+    ):
+        result = runner.invoke(cli, ["--debug", "--silent", "consume"])
+
+        assert result.exit_code == 0
+        configure_logging.assert_called_once_with(verbosity=0, debug=True, log=None)
+        assert command_cls.call_args.kwargs["verbose"] is False
+
     @patch("piddiplatsch.commands.base.start_consumer")
     def test_log_file_option(self, mock_start_consumer, runner, tmp_path):
         """Test --log option."""
@@ -950,29 +991,29 @@ class TestCLIOptions:
         assert mock_start_consumer.called
 
     @patch("piddiplatsch.commands.base.start_consumer")
-    @patch("piddiplatsch.cli.config.load_user_config")
+    @patch("piddiplatsch.cli.config.load_config_layers")
     def test_default_config_file(
-        self, mock_load_user_config, mock_start_consumer, runner
+        self, mock_load_config_layers, mock_start_consumer, runner
     ):
-        """Test that ./custom.toml is used by default."""
+        """Test that the default site and local layers are loaded."""
         result = runner.invoke(cli, ["consume"])
 
         assert result.exit_code == 0
-        mock_load_user_config.assert_called_once_with("custom.toml")
+        mock_load_config_layers.assert_called_once_with("custom.toml")
 
     @patch("piddiplatsch.commands.base.start_consumer")
-    @patch("piddiplatsch.cli.config.load_user_config")
+    @patch("piddiplatsch.cli.config.load_config_layers")
     def test_config_file_option(
-        self, mock_load_user_config, mock_start_consumer, runner, tmp_path
+        self, mock_load_config_layers, mock_start_consumer, runner, tmp_path
     ):
-        """Test --config option."""
+        """Test that --config replaces the default local layer."""
         config_file = tmp_path / "custom.toml"
         config_file.write_text('[plugin]\nprocessor = "test"\n')
 
         result = runner.invoke(cli, ["--config", str(config_file), "consume"])
 
         assert result.exit_code == 0
-        mock_load_user_config.assert_called_once_with(str(config_file))
+        mock_load_config_layers.assert_called_once_with(str(config_file))
         assert mock_start_consumer.called
 
 

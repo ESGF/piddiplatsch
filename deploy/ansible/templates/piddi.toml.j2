@@ -1,0 +1,22 @@
+# Managed by Ansible. Edit deploy/ansible/custom.yml, not this file.
+
+[consumer]
+projects = {{ piddi_projects | to_json }}
+topic = {{ piddi_topic | to_json }}
+output_dir = {{ piddi_output_dir | to_json }}
+max_errors = {{ piddi_max_errors }}
+
+[logging]
+level = {{ piddi_log_level | upper | to_json }}
+file = {{ piddi_log_file | to_json }}
+
+[stats]
+enable_db = {{ piddi_stats_enable_db | bool | to_json }}
+db_path = {{ piddi_db_path | to_json }}
+
+[kafka]
+{% for key, value in (piddi_kafka_defaults | combine(piddi_kafka)).items() %}
+{{ key | to_json }} = {{ value | to_json }}
+{% endfor %}
+
+{{ piddi_config_extra }}
