@@ -74,7 +74,8 @@ Vagrant.configure("2") do |config|
           ;;
       esac
 
-      miniforge_installer="$(mktemp)"
+      # Miniforge verifies that the invoked installer filename ends in .sh.
+      miniforge_installer="$(mktemp --suffix=.sh)"
       trap 'rm -f "${miniforge_installer}"' EXIT
       miniforge_url="https://github.com/conda-forge/miniforge/releases/download/${miniforge_version}/Miniforge3-${miniforge_version}-Linux-${miniforge_arch}.sh"
       curl --fail --location --silent --show-error \

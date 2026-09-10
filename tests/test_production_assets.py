@@ -122,5 +122,6 @@ def test_vagrantfile_installs_verified_miniforge_for_supported_architectures():
     assert "miniforge_root=/opt/conda" in vagrantfile
     assert "aarch64)" in vagrantfile
     assert "x86_64)" in vagrantfile
+    assert "mktemp --suffix=.sh" in vagrantfile
     assert "sha256sum --check --status" in vagrantfile
     assert "/etc/profile.d/miniforge.sh" in vagrantfile
