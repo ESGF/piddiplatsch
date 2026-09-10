@@ -1,17 +1,36 @@
 # frozen_string_literal: true
 
-ENV["VAGRANT_DEFAULT_PROVIDER"] ||= "parallels"
+require "rbconfig"
 
 Vagrant.configure("2") do |config|
-  # The official AlmaLinux 9 box provides an ARM64 Parallels image for
-  # Apple Silicon. The project checkout is available at /vagrant.
+  # The official AlmaLinux 9 box provides Parallels for ARM64 and
+  # VirtualBox/libvirt for x86_64. The checkout is available at /vagrant.
   config.vm.box = "almalinux/9"
   config.vm.hostname = "piddi-alma"
 
-  config.vm.provider "parallels" do |prl|
-    prl.name = "piddiplatsch-almalinux9"
-    prl.memory = 4096
-    prl.cpus = 4
+  host_os = RbConfig::CONFIG["host_os"]
+  host_cpu = RbConfig::CONFIG["host_cpu"]
+  apple_silicon = host_os.include?("darwin") && %w[arm64 aarch64].include?(host_cpu)
+
+  if apple_silicon
+    config.vm.provider "parallels" do |prl|
+      prl.name = "piddiplatsch-almalinux9"
+      prl.memory = 4096
+      prl.cpus = 4
+    end
+  else
+    if host_os.include?("linux")
+      config.vm.provider "libvirt" do |libvirt|
+        libvirt.memory = 4096
+        libvirt.cpus = 4
+      end
+    end
+
+    config.vm.provider "virtualbox" do |vb|
+      vb.name = "piddiplatsch-almalinux9"
+      vb.memory = 4096
+      vb.cpus = 4
+    end
   end
 
   config.vm.provision "shell", privileged: true, inline: <<~SHELL

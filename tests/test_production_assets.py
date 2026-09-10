@@ -96,11 +96,15 @@ def test_logrotate_policy_bounds_file_size_and_retention():
     assert "compress" in policy
 
 
-def test_vagrantfile_targets_arm_parallels_almalinux_with_test_tools():
+def test_vagrantfile_targets_almalinux_with_host_appropriate_providers():
     vagrantfile = (PROJECT_ROOT / "Vagrantfile").read_text()
 
     assert 'config.vm.box = "almalinux/9"' in vagrantfile
+    assert 'RbConfig::CONFIG["host_os"]' in vagrantfile
+    assert 'RbConfig::CONFIG["host_cpu"]' in vagrantfile
     assert 'config.vm.provider "parallels"' in vagrantfile
+    assert 'config.vm.provider "libvirt"' in vagrantfile
+    assert 'config.vm.provider "virtualbox"' in vagrantfile
     for package in (
         "ansible-core",
         "byobu",

@@ -33,11 +33,26 @@ Then set `piddi_enable_service: true` in `custom.yml` and run `make play` again.
 
 ## Vagrant test VM
 
-On an Apple Silicon Mac with Parallels:
+Use one of these host/provider combinations:
+
+- Apple Silicon macOS: Parallels
+- Intel macOS: VirtualBox
+- x86_64 Linux: libvirt, with VirtualBox as a fallback
+
+Install the matching Vagrant provider when needed, then start the VM:
 
 ```console
+# Apple Silicon
 vagrant plugin install vagrant-parallels
-vagrant up
+vagrant up --provider=parallels
+
+# Intel macOS
+vagrant up --provider=virtualbox
+
+# Linux
+vagrant plugin install vagrant-libvirt
+vagrant up --provider=libvirt
+
 vagrant ssh
 ```
 
