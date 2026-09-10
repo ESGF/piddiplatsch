@@ -9,6 +9,7 @@
     piddi_group: piddi
     piddi_conda_env: /opt/piddiplatsch/.conda
     piddi_executable: "{{ piddi_conda_env }}/bin/piddi"
+    piddi_command_link: /usr/local/bin/piddi
     piddi_os_packages:
       - logrotate
     piddi_enable_service: false
@@ -107,6 +108,12 @@
           - piddi_executable_stat.stat.executable
         fail_msg: >-
           Install Piddiplatsch manually and set piddi_executable in custom.yml.
+
+    - name: Install Piddiplatsch administrator command
+      ansible.builtin.file:
+        src: "{{ piddi_executable }}"
+        dest: "{{ piddi_command_link }}"
+        state: link
 
     - name: Install Piddiplatsch systemd service
       ansible.builtin.template:

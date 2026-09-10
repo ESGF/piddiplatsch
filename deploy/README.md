@@ -29,6 +29,13 @@ sudo runuser -u piddi -- /opt/piddiplatsch/.conda/bin/piddi \
 ```
 
 Then set `piddi_enable_service: true` in `custom.yml` and run `make play` again.
+Check that Piddi is working:
+
+```console
+systemctl status piddi
+piddi top
+tail -f /var/log/piddi/piddi.log
+```
 
 ## Vagrant test VM
 

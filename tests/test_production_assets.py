@@ -35,11 +35,13 @@ def test_ansible_deployment_is_safe_by_default():
 
     assert "piddi_enable_service: false" in playbook
     assert "piddi_conda_env: /opt/piddiplatsch/.conda" in playbook
+    assert "piddi_command_link: /usr/local/bin/piddi" in playbook
     assert "ansible.builtin.user:" in playbook
     assert "ansible.builtin.pip:" not in playbook
     assert '"{{ piddi_executable }}"' in playbook
     assert "piddi_venv" not in playbook
     assert "Require a manually installed Piddiplatsch executable" in playbook
+    assert "Install Piddiplatsch administrator command" in playbook
     assert "Validate merged Piddiplatsch configuration" in playbook
 
 
@@ -164,6 +166,9 @@ def test_vagrant_deployment_documents_manual_root_checkout_and_conda_env():
     assert "make deploy" in guide
     assert "Use `make play` for later Ansible-only configuration changes." in guide
     assert "`conda init` is not needed" in guide
+    assert "systemctl status piddi" in guide
+    assert "piddi top" in guide
+    assert "tail -f /var/log/piddi/piddi.log" in guide
 
 
 def test_makefile_provides_repeatable_conda_environment_setup():
