@@ -21,6 +21,16 @@ piddi_kafka:
 # Optional TOML for Handle profiles, credentials, and plugin-specific settings.
 # Keep custom.yml local or encrypt it with Ansible Vault before sharing it.
 piddi_config_extra: |
+  [handles]
+  default = "production"
+
+  [handles.profiles.production]
+  server_url = "https://handle.example.org"
+  prefix = "21.YOUR_PREFIX"
+  username = "300:21.YOUR_PREFIX/YOUR_HANDLE_USERNAME"
+  password = "YOUR_HANDLE_PASSWORD"
+  verify_https = true
+
   # Do not add file links to dataset Handle records.
   [plugins.cmip6]
   max_parts = 0

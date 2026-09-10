@@ -62,6 +62,16 @@ def test_custom_variables_example_only_contains_site_overrides():
     assert "sasl.username: YOUR_ESGF_API_KEY" in example
     assert "sasl.password: YOUR_ESGF_API_SECRET" in example
     assert "piddi_config_extra:" in example
+    assert '[handles]\n  default = "production"' in example
+    assert "[handles.profiles.production]" in example
+    for setting in (
+        "server_url",
+        "prefix",
+        "username",
+        "password",
+        "verify_https",
+    ):
+        assert f"  {setting} = " in example
     for project in ("cmip6", "cmip6plus", "cmip7", "cordex-cmip6"):
         assert f"[plugins.{project}]" in example
     assert example.count("max_parts = 0") == 4
