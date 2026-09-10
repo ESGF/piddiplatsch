@@ -9,7 +9,7 @@
     piddi_group: piddi
     piddi_conda_env: /opt/piddiplatsch/.conda
     piddi_executable: "{{ piddi_conda_env }}/bin/piddi"
-    piddi_command_link: /usr/local/bin/piddi
+    piddi_command_link: /usr/local/sbin/piddi
     piddi_os_packages:
       - logrotate
     piddi_enable_service: false
@@ -108,6 +108,20 @@
           - piddi_executable_stat.stat.executable
         fail_msg: >-
           Install Piddiplatsch manually and set piddi_executable in custom.yml.
+
+    - name: Inspect the legacy administrator command
+      ansible.builtin.stat:
+        path: /usr/local/bin/piddi
+        follow: false
+      register: piddi_legacy_command
+
+    - name: Remove the legacy administrator command managed by Piddiplatsch
+      ansible.builtin.file:
+        path: /usr/local/bin/piddi
+        state: absent
+      when:
+        - piddi_legacy_command.stat.islnk | default(false)
+        - piddi_legacy_command.stat.lnk_source == piddi_executable
 
     - name: Install Piddiplatsch administrator command
       ansible.builtin.file:

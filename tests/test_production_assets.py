@@ -35,12 +35,13 @@ def test_ansible_deployment_is_safe_by_default():
 
     assert "piddi_enable_service: false" in playbook
     assert "piddi_conda_env: /opt/piddiplatsch/.conda" in playbook
-    assert "piddi_command_link: /usr/local/bin/piddi" in playbook
+    assert "piddi_command_link: /usr/local/sbin/piddi" in playbook
     assert "ansible.builtin.user:" in playbook
     assert "ansible.builtin.pip:" not in playbook
     assert '"{{ piddi_executable }}"' in playbook
     assert "piddi_venv" not in playbook
     assert "Require a manually installed Piddiplatsch executable" in playbook
+    assert "Remove the legacy administrator command managed by Piddiplatsch" in playbook
     assert "Install Piddiplatsch administrator command" in playbook
     assert "Validate merged Piddiplatsch configuration" in playbook
 
