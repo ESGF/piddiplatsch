@@ -24,9 +24,12 @@
     piddi_log_file: /var/log/piddi/piddi.log
     piddi_stats_enable_db: true
     piddi_db_path: /var/lib/piddi/piddi.db
-    piddi_kafka:
+    piddi_kafka_defaults:
       bootstrap.servers: localhost:9092
       group.id: piddi-production
+      security.protocol: SASL_SSL
+      sasl.mechanisms: PLAIN
+    piddi_kafka: {}
     piddi_config_extra: ""
 
   pre_tasks:

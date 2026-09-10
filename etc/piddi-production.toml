@@ -20,6 +20,8 @@ db_path = "/var/lib/piddi/piddi.db"
 # Replace these example values before starting the service.
 "bootstrap.servers" = "broker1.example.org:9093,broker2.example.org:9093"
 "group.id" = "piddi-production"
+"security.protocol" = "SASL_SSL"
+"sasl.mechanisms" = "PLAIN"
 
 # Add site credentials, Handle profiles, and optional Kafka TLS/SASL settings
 # below. Keep this installed copy readable only by root and the piddi group.

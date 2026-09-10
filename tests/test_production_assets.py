@@ -16,6 +16,8 @@ def test_production_override_is_valid_with_packaged_defaults():
     assert configured.get("logging", "file") == "/var/log/piddi/piddi.log"
     assert configured.get("stats", "enable_db") is True
     assert configured.get("stats", "db_path") == "/var/lib/piddi/piddi.db"
+    assert configured.get("kafka", "security.protocol") == "SASL_SSL"
+    assert configured.get("kafka", "sasl.mechanisms") == "PLAIN"
 
 
 def test_service_uses_production_config_and_silent_progress():
@@ -68,7 +70,7 @@ def test_ansible_renders_piddi_configuration_template():
     assert "templates/piddi.toml.j2" in playbook
     assert "piddi_projects" in template
     assert "piddi_stats_enable_db" in template
-    assert "piddi_kafka.items()" in template
+    assert "piddi_kafka_defaults | combine(piddi_kafka)" in template
     assert "piddi_config_extra" in template
 
 

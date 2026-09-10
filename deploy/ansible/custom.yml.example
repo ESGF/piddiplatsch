@@ -3,7 +3,8 @@
 # included automatically by the playbook, overriding its defaults. When it is
 # absent, the playbook loads the committed empty null.yml fallback.
 
-# Site-specific Kafka settings.
+# Site-specific Kafka settings. These are merged over the production defaults,
+# including SASL_SSL with the PLAIN mechanism.
 piddi_kafka:
   bootstrap.servers: broker1.example.org:9093
   group.id: piddi-esgf
