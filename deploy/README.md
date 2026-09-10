@@ -4,22 +4,18 @@ Install Conda on the host first; Miniforge is recommended. This remains a
 manual host-administration step in production.
 
 Check out Piddi manually, normally below `/opt/piddiplatsch`, then create its
-project-local Conda environment and install Piddi into it:
+configuration and run the complete deployment:
 
 ```console
 cd /opt/piddiplatsch
-conda env create --prefix .conda --file environment.yml
-conda run --prefix .conda python -m pip install -e .
-```
-
-Configure its executable and service:
-
-```console
 python -m pip install ansible-core
 cp deploy/ansible/custom.yml.example deploy/ansible/custom.yml
 vim deploy/ansible/custom.yml
-make play
+make deploy
 ```
+
+`make deploy` creates or updates `.conda`, installs Piddi, and runs Ansible.
+Use `make play` for later Ansible-only configuration changes.
 
 Run this as root or with passwordless sudo. If Ansible needs a sudo password,
 use `make play ANSIBLE_ARGS=--ask-become-pass`.
@@ -60,16 +56,22 @@ vagrant ssh
 ```
 
 The VM provisioning installs Miniforge under `/opt/conda`. For an already
-running VM after a Vagrantfile change, run `vagrant provision` once. Then check
-out Piddi under `/opt/piddiplatsch` and perform the Conda setup above manually.
+running VM after a Vagrantfile change, run `vagrant provision` once.
 
-Run the local Ansible deployment from that checkout:
+Inside the VM, perform the complete deployment as root:
 
 ```console
+sudo -i
+git clone https://github.com/ESGF/piddiplatsch.git /opt/piddiplatsch
 cd /opt/piddiplatsch
 cp deploy/ansible/custom.yml.example deploy/ansible/custom.yml
 vim deploy/ansible/custom.yml
-make play
+make deploy
 ```
+
+`conda init` is not needed because the Make target addresses the environment
+by its prefix. For optional interactive activation in the current root shell, run
+`source /opt/conda/etc/profile.d/conda.sh` followed by
+`conda activate /opt/piddiplatsch/.conda`.
 
 Remove the VM later with `vagrant destroy` on the Mac.

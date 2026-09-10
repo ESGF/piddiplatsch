@@ -152,3 +152,28 @@ def test_vagrantfile_installs_verified_miniforge_for_supported_architectures():
     assert "mktemp --suffix=.sh" in vagrantfile
     assert "sha256sum --check --status" in vagrantfile
     assert "/etc/profile.d/miniforge.sh" in vagrantfile
+
+
+def test_vagrant_deployment_documents_manual_root_checkout_and_conda_env():
+    guide = (PROJECT_ROOT / "deploy" / "README.md").read_text()
+
+    assert "sudo -i" in guide
+    assert (
+        "git clone https://github.com/ESGF/piddiplatsch.git /opt/piddiplatsch" in guide
+    )
+    assert "make deploy" in guide
+    assert "Use `make play` for later Ansible-only configuration changes." in guide
+    assert "`conda init` is not needed" in guide
+
+
+def test_makefile_provides_repeatable_conda_environment_setup():
+    makefile = (PROJECT_ROOT / "Makefile").read_text()
+
+    assert "conda: ## create or update the project Conda environment" in makefile
+    assert 'test -d "$(CONDA_ENV_PREFIX)/conda-meta"' in makefile
+    assert "conda env create --prefix" in makefile
+    assert "conda env update --prefix" in makefile
+    assert "--prune" in makefile
+    assert "conda run --prefix" in makefile
+    assert "python -m pip install -e ." in makefile
+    assert "deploy: conda play ##" in makefile
