@@ -12,6 +12,11 @@ piddi_kafka:
   bootstrap.servers: broker1.example.org:9093
   # Keep this stable and unique per workflow. ESGF groups use the de.dkrz prefix.
   group.id: de.dkrz.test.20260907-01
+  # ESGF calls this required client identifier the Resource.
+  client.id: YOUR_ESGF_RESOURCE
+  # ESGF API key and API secret (librdkafka SASL property names).
+  sasl.username: YOUR_ESGF_API_KEY
+  sasl.password: YOUR_ESGF_API_SECRET
 
 # Optional TOML for Handle profiles, credentials, and plugin-specific settings.
 # Keep custom.yml local or encrypt it with Ansible Vault before sharing it.

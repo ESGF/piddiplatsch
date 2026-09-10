@@ -58,6 +58,9 @@ def test_custom_variables_example_only_contains_site_overrides():
     assert "piddi_topic: ESGF-PUBLICATIONS" in example
     assert "piddi_kafka:" in example
     assert "group.id: de.dkrz.test.20260907-01" in example
+    assert "client.id: YOUR_ESGF_RESOURCE" in example
+    assert "sasl.username: YOUR_ESGF_API_KEY" in example
+    assert "sasl.password: YOUR_ESGF_API_SECRET" in example
     assert "piddi_config_extra:" in example
     for project in ("cmip6", "cmip6plus", "cmip7", "cordex-cmip6"):
         assert f"[plugins.{project}]" in example
