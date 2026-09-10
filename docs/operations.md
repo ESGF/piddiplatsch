@@ -34,7 +34,7 @@ stable ordering and provenance.
 
 ```bash
 # Kafka -> raw JSONL only
-piddi harvest
+piddi harvest --limit 100
 
 # raw JSONL -> project-scoped Handle JSONL only
 piddi map --project cmip6 --date 2026-08-27
@@ -49,7 +49,9 @@ piddi consume
 piddi consume --publish
 ```
 
-`map` accepts files or directories plus `--project`, `--all-projects`,
+`harvest --limit N` stops normally after dumping `N` messages, which is useful
+for bounded tests against a live topic. `map` accepts files or directories plus
+`--project`, `--all-projects`,
 `--limit`, `--offset`, and `--force`. It never contacts Kafka or a Handle
 Service and does not modify its input dumps.
 

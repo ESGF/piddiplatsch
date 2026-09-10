@@ -187,6 +187,7 @@ class ConsumerPipeline:
         publish: bool = False,
         force: bool = False,
         failure_dir: Path | None = None,
+        limit: int | None = None,
     ):
         """
         consumer: instance of BaseConsumer (KafkaConsumer or DirectConsumer)
@@ -201,6 +202,9 @@ class ConsumerPipeline:
         )
         self.dump_messages = dump_messages
         self.max_errors = int(max_errors)
+        if limit is not None and limit <= 0:
+            raise ValueError("limit must be positive")
+        self.limit = limit
         self.force = force
         self.failure_dir = failure_dir
         consumer_cfg = config.get("consumer", {})
@@ -221,6 +225,7 @@ class ConsumerPipeline:
 
     def run(self):
         logger.info("Starting consumer pipeline...")
+        processed = 0
         for key, value in self.consumer.consume():
             result = self._safe_process_message(key, value)
 
@@ -248,6 +253,10 @@ class ConsumerPipeline:
                 self.progress.refresh()
 
             self._check_success()
+            processed += 1
+            if self.limit is not None and processed >= self.limit:
+                logger.info("Harvest limit reached (%d messages)", self.limit)
+                break
 
     def _check_success(self):
         if self.max_errors >= 0 and self.stats.errors >= self.max_errors:
@@ -459,6 +468,7 @@ def start_consumer(
     force: bool = False,
     progress: BaseProgress | None = None,
     idle_timeout: float | None = None,
+    limit: int | None = None,
     handle_profile: str | None = None,
 ):
     max_errors = config.get("consumer", {}).get("max_errors", -1)
@@ -514,6 +524,7 @@ def start_consumer(
         max_errors=max_errors,
         publish=publish,
         force=force,
+        limit=limit,
     )
 
     def sigint_handler(sig, frame):

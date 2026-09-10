@@ -98,7 +98,7 @@ The same work can be separated. `harvest` only reads Kafka and writes raw JSONL;
 `map` replays one or more dump files through the selected plugins:
 
 ```bash
-piddi harvest
+piddi harvest --limit 100
 piddi map --date 2026-08-27
 ```
 
@@ -193,7 +193,7 @@ Common first runs:
 
 - Inspect messages only:
   ```bash
-  piddi harvest
+  piddi harvest --limit 100
   ```
 - Observe without stopping on skips:
   ```bash

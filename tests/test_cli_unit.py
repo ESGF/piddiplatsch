@@ -189,6 +189,7 @@ class TestHarvestCommand:
         assert result.exit_code == 0
         assert "raw JSONL" in result.output
         assert "--idle-timeout" in result.output
+        assert "--limit" in result.output
 
     @patch("piddiplatsch.commands.base.start_consumer")
     def test_harvest_dumps_without_mapping(self, mock_start_consumer, runner):
@@ -199,6 +200,7 @@ class TestHarvestCommand:
         assert kwargs["dump_messages"] is True
         assert kwargs["force"] is True
         assert kwargs["idle_timeout"] == 5.0
+        assert kwargs["limit"] is None
 
     @patch("piddiplatsch.commands.base.start_consumer")
     def test_harvest_passes_idle_timeout(self, mock_start_consumer, runner):
@@ -206,6 +208,21 @@ class TestHarvestCommand:
 
         assert result.exit_code == 0
         assert mock_start_consumer.call_args.kwargs["idle_timeout"] == 2.5
+
+    @patch("piddiplatsch.commands.base.start_consumer")
+    def test_harvest_passes_limit(self, mock_start_consumer, runner):
+        result = runner.invoke(cli, ["harvest", "--limit", "10"])
+
+        assert result.exit_code == 0
+        assert mock_start_consumer.call_args.kwargs["limit"] == 10
+
+    @patch("piddiplatsch.commands.base.start_consumer")
+    def test_harvest_rejects_non_positive_limit(self, mock_start_consumer, runner):
+        result = runner.invoke(cli, ["harvest", "--limit", "0"])
+
+        assert result.exit_code == 2
+        assert "Invalid value for '--limit'" in result.output
+        mock_start_consumer.assert_not_called()
 
     @patch("piddiplatsch.commands.base.start_consumer")
     def test_harvest_with_verbose_uses_stream_progress(

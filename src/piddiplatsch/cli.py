@@ -147,10 +147,17 @@ def consume(
     show_default=True,
     help="Stop after this many seconds without a Kafka message.",
 )
+@click.option(
+    "--limit",
+    type=click.IntRange(min=1),
+    help="Stop after harvesting this many Kafka messages.",
+)
 @click.pass_context
-def harvest(ctx: click.Context, idle_timeout: float) -> None:
+def harvest(ctx: click.Context, idle_timeout: float, limit: int | None) -> None:
     """Harvest Kafka messages into raw JSONL without mapping."""
-    HarvestCommand(verbose=ctx.obj["verbose"], idle_timeout=idle_timeout).execute()
+    HarvestCommand(
+        verbose=ctx.obj["verbose"], idle_timeout=idle_timeout, limit=limit
+    ).execute()
 
 
 # command map

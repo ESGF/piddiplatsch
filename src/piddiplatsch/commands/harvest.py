@@ -11,6 +11,7 @@ class HarvestCommand(KafkaCommand):
     """Harvest Kafka messages without mapping them."""
 
     idle_timeout: float = 5.0
+    limit: int | None = None
 
     def execute(self) -> None:
         self.run_consumer(
@@ -18,4 +19,5 @@ class HarvestCommand(KafkaCommand):
             processor=HarvestProcessor(),
             force=True,
             idle_timeout=self.idle_timeout,
+            limit=self.limit,
         )

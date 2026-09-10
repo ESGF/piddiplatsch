@@ -7,6 +7,7 @@ from piddiplatsch.config import config
 from piddiplatsch.consumer import (
     ConsumerPipeline,
     DirectConsumer,
+    HarvestProcessor,
     map_dump_files,
 )
 from piddiplatsch.core.routing import ProjectRouter
@@ -43,6 +44,25 @@ def test_consume_dumps_every_raw_message_before_project_filtering(
     assert dumped == [message for _, message in messages]
     assert list((tmp_path / "cmip6" / "handles").glob("handles_*.jsonl"))
     assert not (tmp_path / "cmip7" / "handles").exists()
+
+
+def test_harvest_limit_stops_after_dumping_requested_messages(tmp_path: Path):
+    config._set("consumer", "output_dir", str(tmp_path))
+    messages = [(str(index), {"index": index}) for index in range(3)]
+    pipeline = ConsumerPipeline(
+        consumer=DirectConsumer(messages),
+        processor=HarvestProcessor(),
+        dump_messages=True,
+        force=True,
+        limit=2,
+    )
+
+    pipeline.run()
+
+    dump_files = list((tmp_path / "dump").glob("dump_messages_*.jsonl"))
+    assert len(dump_files) == 1
+    dumped = [json.loads(line) for line in dump_files[0].read_text().splitlines()]
+    assert dumped == [{"index": 0}, {"index": 1}]
 
 
 def test_map_replays_dump_without_kafka_or_handle_service(
