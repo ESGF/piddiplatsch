@@ -3,6 +3,9 @@
 # included automatically by the playbook, overriding its defaults. When it is
 # absent, the playbook loads the committed empty null.yml fallback.
 
+# Kafka topic consumed by this Piddi instance.
+piddi_topic: ESGF-PUBLICATIONS
+
 # Site-specific Kafka settings. These are merged over the production defaults,
 # including SASL_SSL with the PLAIN mechanism.
 piddi_kafka:
@@ -12,8 +15,18 @@ piddi_kafka:
 # Optional TOML for Handle profiles, credentials, and plugin-specific settings.
 # Keep custom.yml local or encrypt it with Ansible Vault before sharing it.
 piddi_config_extra: |
-  # [handles]
-  # default = "production"
+  # Do not add file links to dataset Handle records.
+  [plugins.cmip6]
+  max_parts = 0
+
+  [plugins.cordex-cmip6]
+  max_parts = 0
+
+  [plugins.cmip6plus]
+  max_parts = 0
+
+  [plugins.cmip7]
+  max_parts = 0
 
 # Uncomment after the foreground test succeeds.
 # piddi_enable_service: true

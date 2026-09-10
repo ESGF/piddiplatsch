@@ -54,8 +54,12 @@ def test_ansible_enables_all_current_projects_by_default():
 def test_custom_variables_example_only_contains_site_overrides():
     example = (PROJECT_ROOT / "deploy" / "ansible" / "custom.yml.example").read_text()
 
+    assert "piddi_topic: ESGF-PUBLICATIONS" in example
     assert "piddi_kafka:" in example
     assert "piddi_config_extra:" in example
+    for project in ("cmip6", "cmip6plus", "cmip7", "cordex-cmip6"):
+        assert f"[plugins.{project}]" in example
+    assert example.count("max_parts = 0") == 4
     assert "\npiddi_projects:" not in example
     assert "\npiddi_output_dir:" not in example
     assert "\npiddi_log_level:" not in example
