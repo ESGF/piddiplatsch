@@ -148,13 +148,29 @@ class ProjectDatasetRecord(BaseProjectRecord):
 
     @cached_property
     def has_parts(self) -> list[str]:
+        asset_keys = [key for key in self.assets if key not in self.exclude_keys]
+        if self.max_parts == 0:
+            logging.debug(
+                "Asset links disabled: project=%s, dataset=%s, max_parts=0",
+                self.plugin_name,
+                self.item_id,
+            )
+            return []
+
+        selected_keys = asset_keys
+        if self.max_parts > 0 and len(asset_keys) > self.max_parts:
+            logging.warning(
+                "Asset link limit applied: project=%s, dataset=%s, "
+                "included=%s, available=%s",
+                self.plugin_name,
+                self.item_id,
+                self.max_parts,
+                len(asset_keys),
+            )
+            selected_keys = asset_keys[: self.max_parts]
+
         parts: list[str] = []
-        for key in self.assets:
-            if key in self.exclude_keys:
-                continue
-            if self.max_parts > -1 and len(parts) >= self.max_parts:
-                logging.warning("Reached limit of %s assets.", self.max_parts)
-                break
+        for key in selected_keys:
             file_pid = self.file_record(
                 self.item,
                 key,

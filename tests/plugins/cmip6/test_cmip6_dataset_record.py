@@ -161,7 +161,19 @@ def test_max_parts_limit_warning(caplog, stac_item_complex):
     config._set("cmip6", "max_parts", 1)
     record = CMIP6DatasetRecord(stac_item_complex)
     _ = record.has_parts
-    assert any("Reached limit of 1 assets." in rec.message for rec in caplog.records)
+    assert any(
+        "Asset link limit applied: project=cmip6, dataset=CMIP6.COMP.002, "
+        "included=1, available=4" in rec.message
+        for rec in caplog.records
+    )
+
+
+def test_zero_max_parts_disables_asset_links_without_warning(caplog, stac_item_complex):
+    config._set("cmip6", "max_parts", 0)
+    record = CMIP6DatasetRecord(stac_item_complex)
+
+    assert record.has_parts == []
+    assert not [record for record in caplog.records if record.levelname == "WARNING"]
 
 
 # -----------------------------
@@ -187,4 +199,4 @@ def test_max_parts_with_exclude_keys_and_warning(caplog, stac_item_with_alternat
     )
     parts = record.has_parts
     assert len(parts) == 1
-    assert any("Reached limit of 1 assets." in rec.message for rec in caplog.records)
+    assert any("included=1, available=2" in rec.message for rec in caplog.records)
