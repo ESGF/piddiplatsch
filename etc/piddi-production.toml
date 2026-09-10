@@ -13,6 +13,7 @@ level = "WARNING"
 file = "/var/log/piddi/piddi.log"
 
 [stats]
+enable_db = true
 db_path = "/var/lib/piddi/piddi.db"
 
 [kafka]

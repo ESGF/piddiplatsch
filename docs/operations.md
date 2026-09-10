@@ -147,9 +147,9 @@ File logging uses a watched handler: after logrotate renames the active file and
 creates a replacement, Piddiplatsch switches to the new file on its next log
 write. Full recovery and skipped details remain available in JSONL independently
 of the selected logging level.
-The optional SQLite reporter is controlled by `[stats]` and is opened only by
-the explicit `piddi map` command. `consume`, `harvest`, and `top` never update
-the database.
+The optional SQLite reporter is controlled by `[stats]` and is opened by
+`piddi consume` and `piddi map`. `harvest` and the read-only `top` command never
+update the database.
 
 The database contains a versioned current-run status model. A heartbeat is
 updated independently of Kafka traffic, and processing outcomes are split by

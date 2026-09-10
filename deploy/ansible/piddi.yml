@@ -22,6 +22,7 @@
     piddi_max_errors: 1
     piddi_log_level: WARNING
     piddi_log_file: /var/log/piddi/piddi.log
+    piddi_stats_enable_db: true
     piddi_db_path: /var/lib/piddi/piddi.db
     piddi_kafka:
       bootstrap.servers: localhost:9092

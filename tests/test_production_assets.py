@@ -14,6 +14,8 @@ def test_production_override_is_valid_with_packaged_defaults():
     assert errors == []
     assert configured.get("consumer", "output_dir") == "/var/lib/piddi"
     assert configured.get("logging", "file") == "/var/log/piddi/piddi.log"
+    assert configured.get("stats", "enable_db") is True
+    assert configured.get("stats", "db_path") == "/var/lib/piddi/piddi.db"
 
 
 def test_service_uses_production_config_and_silent_progress():
@@ -42,6 +44,7 @@ def test_ansible_enables_all_current_projects_by_default():
     playbook = (PROJECT_ROOT / "deploy" / "ansible" / "piddi.yml").read_text()
 
     assert "piddi_topic: ESGF-PUBLICATIONS" in playbook
+    assert "piddi_stats_enable_db: true" in playbook
     for project in ("cmip6", "cmip6plus", "cmip7", "cordex-cmip6"):
         assert f"      - {project}\n" in playbook
 
@@ -64,6 +67,7 @@ def test_ansible_renders_piddi_configuration_template():
 
     assert "templates/piddi.toml.j2" in playbook
     assert "piddi_projects" in template
+    assert "piddi_stats_enable_db" in template
     assert "piddi_kafka.items()" in template
     assert "piddi_config_extra" in template
 

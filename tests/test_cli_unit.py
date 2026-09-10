@@ -128,6 +128,7 @@ class TestConsumeCommand:
         call_kwargs = mock_start_consumer.call_args.kwargs
         assert call_kwargs["dump_messages"] is True
         assert call_kwargs["publish"] is False
+        assert call_kwargs["monitor_db"] is True
 
     @patch("piddiplatsch.commands.base.start_consumer")
     def test_consume_with_publish(self, mock_start_consumer, runner):
@@ -201,6 +202,7 @@ class TestHarvestCommand:
         assert kwargs["force"] is True
         assert kwargs["idle_timeout"] == 5.0
         assert kwargs["limit"] is None
+        assert kwargs["monitor_db"] is False
 
     @patch("piddiplatsch.commands.base.start_consumer")
     def test_harvest_passes_idle_timeout(self, mock_start_consumer, runner):

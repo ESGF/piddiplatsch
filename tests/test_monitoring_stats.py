@@ -200,7 +200,9 @@ def test_monitoring_error_summary_redacts_credentials_and_payloads():
 
 
 @pytest.mark.parametrize("processor", [HarvestProcessor(), _MappingProcessor()])
-def test_consumer_entrypoint_never_creates_monitoring_database(tmp_path, processor):
+def test_consumer_entrypoint_without_monitoring_opt_in_does_not_create_database(
+    tmp_path, processor
+):
     db_path = tmp_path / "piddi.db"
     config._set("stats", "enable_db", True)
     config._set("stats", "db_path", str(db_path))
@@ -209,6 +211,44 @@ def test_consumer_entrypoint_never_creates_monitoring_database(tmp_path, process
         processor=processor,
         direct_messages=[("one", {"value": 1})],
         force=True,
+    )
+
+    assert not db_path.exists()
+
+
+def test_consumer_entrypoint_creates_configured_monitoring_database(tmp_path):
+    db_path = tmp_path / "piddi.db"
+    config._set("stats", "enable_db", True)
+    config._set("stats", "db_path", str(db_path))
+
+    start_consumer(
+        "publications",
+        {"group.id": "piddi-test"},
+        projects=["cmip6"],
+        direct_messages=[("one", {"value": 1})],
+        force=True,
+        monitor_db=True,
+    )
+
+    status = read_status(db_path)
+    run = status["runs"][0]
+    assert run["command"] == "consume"
+    assert run["topic"] == "publications"
+    assert run["consumer_group"] == "piddi-test"
+    assert run["selected_projects"] == ["cmip6"]
+    assert run["state"] == "completed"
+
+
+def test_consumer_monitoring_respects_disabled_database_config(tmp_path):
+    db_path = tmp_path / "piddi.db"
+    config._set("stats", "enable_db", False)
+    config._set("stats", "db_path", str(db_path))
+
+    start_consumer(
+        processor=_MappingProcessor(),
+        direct_messages=[("one", {"value": 1})],
+        force=True,
+        monitor_db=True,
     )
 
     assert not db_path.exists()

@@ -469,6 +469,7 @@ def start_consumer(
     progress: BaseProgress | None = None,
     idle_timeout: float | None = None,
     limit: int | None = None,
+    monitor_db: bool = False,
     handle_profile: str | None = None,
 ):
     max_errors = config.get("consumer", {}).get("max_errors", -1)
@@ -480,10 +481,19 @@ def start_consumer(
         handle_profile=handle_profile,
     )
     stats_config = config.get("stats", {})
+    selected_projects = getattr(proc_instance, "project_names", ())
     stats.configure_for_run(
-        enable_db=False,
+        enable_db=monitor_db and stats_config.get("enable_db", False),
+        db_path=stats_config.get("db_path"),
         log_interval_seconds=stats_config.get("interval_seconds"),
         log_interval_messages=stats_config.get("summary_interval"),
+        command="consume",
+        topic=topic,
+        consumer_group=(kafka_cfg or {}).get("group.id"),
+        selected_projects=selected_projects,
+        heartbeat_interval_seconds=stats_config.get("heartbeat_interval_seconds", 5),
+        sample_interval_seconds=stats_config.get("sample_interval_seconds", 15),
+        sample_retention_days=stats_config.get("sample_retention_days", 30),
     )
     # Optional STAC preflight
     try:
