@@ -21,6 +21,9 @@ vim deploy/ansible/custom.yml
 make play
 ```
 
+Run this as root or with passwordless sudo. If Ansible needs a sudo password,
+use `make play ANSIBLE_ARGS=--ask-become-pass`.
+
 Ansible creates the service user and directories, renders
 `/etc/piddi/piddi.toml`, and validates it, but does not start Piddi. Test it:
 
@@ -66,7 +69,7 @@ Run the local Ansible deployment from that checkout:
 cd /opt/piddiplatsch
 cp deploy/ansible/custom.yml.example deploy/ansible/custom.yml
 vim deploy/ansible/custom.yml
-make play ANSIBLE_ARGS=
+make play
 ```
 
 Remove the VM later with `vagrant destroy` on the Mac.

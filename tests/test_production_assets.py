@@ -86,6 +86,8 @@ def test_make_play_targets_localhost():
     playbook = (PROJECT_ROOT / "deploy" / "ansible" / "piddi.yml").read_text()
 
     assert "play: ## deploy piddi" in makefile
+    assert "ANSIBLE_ARGS ?=\n" in makefile
+    assert "ANSIBLE_ARGS ?= --ask-become-pass" not in makefile
     assert "$(ANSIBLE_ARGS) -i localhost," in makefile
     assert "hosts: localhost" in playbook
     assert "connection: local" in playbook

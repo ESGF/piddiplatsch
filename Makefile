@@ -1,7 +1,7 @@
 # Configuration
 APP_ROOT := $(abspath $(lastword $(MAKEFILE_LIST))/..)
 APP_NAME := piddiplatsch
-ANSIBLE_ARGS ?= --ask-become-pass
+ANSIBLE_ARGS ?=
 
 # end of configuration
 
