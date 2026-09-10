@@ -109,3 +109,14 @@ def test_vagrantfile_targets_arm_parallels_almalinux_with_test_tools():
         "vim-enhanced",
     ):
         assert package in vagrantfile
+
+
+def test_vagrantfile_installs_verified_miniforge_for_supported_architectures():
+    vagrantfile = (PROJECT_ROOT / "Vagrantfile").read_text()
+
+    assert "miniforge_version=26.7.2-0" in vagrantfile
+    assert "miniforge_root=/opt/conda" in vagrantfile
+    assert "aarch64)" in vagrantfile
+    assert "x86_64)" in vagrantfile
+    assert "sha256sum --check --status" in vagrantfile
+    assert "/etc/profile.d/miniforge.sh" in vagrantfile

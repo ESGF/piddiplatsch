@@ -23,12 +23,50 @@ Vagrant.configure("2") do |config|
     dnf install -y \
       ansible-core \
       byobu \
+      ca-certificates \
+      curl \
       git \
       make \
       python3.11 \
       python3.11-pip \
       vim-enhanced
 
-    echo "Development VM ready. Repository: /vagrant"
+    miniforge_root=/opt/conda
+    miniforge_version=26.7.2-0
+
+    if [ ! -x "${miniforge_root}/bin/conda" ]; then
+      if [ -e "${miniforge_root}" ]; then
+        echo "Incomplete Miniforge installation found at ${miniforge_root}" >&2
+        exit 1
+      fi
+
+      case "$(uname -m)" in
+        aarch64)
+          miniforge_arch=aarch64
+          miniforge_sha256=89b786c8d2c8b0fda7553914c1314ae4ddaa094503802f279377b19ac4463cb2
+          ;;
+        x86_64)
+          miniforge_arch=x86_64
+          miniforge_sha256=281b0ac7d550802efc81af633225a5e6116d29ae72f3ab4eae7168c3931a4c05
+          ;;
+        *)
+          echo "Unsupported Miniforge architecture: $(uname -m)" >&2
+          exit 1
+          ;;
+      esac
+
+      miniforge_installer="$(mktemp)"
+      trap 'rm -f "${miniforge_installer}"' EXIT
+      miniforge_url="https://github.com/conda-forge/miniforge/releases/download/${miniforge_version}/Miniforge3-${miniforge_version}-Linux-${miniforge_arch}.sh"
+      curl --fail --location --silent --show-error \
+        --output "${miniforge_installer}" "${miniforge_url}"
+      echo "${miniforge_sha256}  ${miniforge_installer}" | sha256sum --check --status
+      bash "${miniforge_installer}" -b -p "${miniforge_root}"
+    fi
+
+    printf '%s\n' 'export PATH="/opt/conda/bin:$PATH"' > /etc/profile.d/miniforge.sh
+    chmod 0644 /etc/profile.d/miniforge.sh
+
+    echo "Development VM ready. Miniforge: /opt/conda; repository: /vagrant"
   SHELL
 end

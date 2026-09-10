@@ -1,5 +1,8 @@
 # Deployment
 
+Install Conda on the host first; Miniforge is recommended. This remains a
+manual host-administration step in production.
+
 Check out Piddi manually, normally below `/opt/piddiplatsch`, then create its
 project-local Conda environment and install Piddi into it:
 
@@ -38,10 +41,14 @@ vagrant up
 vagrant ssh
 ```
 
-Inside the AlmaLinux VM:
+The VM provisioning installs Miniforge under `/opt/conda`. For an already
+running VM after a Vagrantfile change, run `vagrant provision` once. Then check
+out Piddi under `/opt/piddiplatsch` and perform the Conda setup above manually.
+
+Run the local Ansible deployment from that checkout:
 
 ```console
-cd /vagrant
+cd /opt/piddiplatsch
 cp deploy/ansible/custom.yml.example deploy/ansible/custom.yml
 vim deploy/ansible/custom.yml
 make play ANSIBLE_ARGS=
