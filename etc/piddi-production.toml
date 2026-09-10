@@ -19,7 +19,7 @@ db_path = "/var/lib/piddi/piddi.db"
 [kafka]
 # Replace these example values before starting the service.
 "bootstrap.servers" = "broker1.example.org:9093,broker2.example.org:9093"
-"group.id" = "piddi-production"
+"group.id" = "de.dkrz.piddi.production-01"
 "security.protocol" = "SASL_SSL"
 "sasl.mechanisms" = "PLAIN"
 

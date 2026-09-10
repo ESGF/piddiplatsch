@@ -10,7 +10,8 @@ piddi_topic: ESGF-PUBLICATIONS
 # including SASL_SSL with the PLAIN mechanism.
 piddi_kafka:
   bootstrap.servers: broker1.example.org:9093
-  group.id: piddi-esgf
+  # Keep this stable and unique per workflow. ESGF groups use the de.dkrz prefix.
+  group.id: de.dkrz.test.20260907-01
 
 # Optional TOML for Handle profiles, credentials, and plugin-specific settings.
 # Keep custom.yml local or encrypt it with Ansible Vault before sharing it.

@@ -18,6 +18,7 @@ def test_production_override_is_valid_with_packaged_defaults():
     assert configured.get("stats", "db_path") == "/var/lib/piddi/piddi.db"
     assert configured.get("kafka", "security.protocol") == "SASL_SSL"
     assert configured.get("kafka", "sasl.mechanisms") == "PLAIN"
+    assert configured.get("kafka", "group.id").startswith("de.dkrz.")
 
 
 def test_service_uses_production_config_and_silent_progress():
@@ -56,6 +57,7 @@ def test_custom_variables_example_only_contains_site_overrides():
 
     assert "piddi_topic: ESGF-PUBLICATIONS" in example
     assert "piddi_kafka:" in example
+    assert "group.id: de.dkrz.test.20260907-01" in example
     assert "piddi_config_extra:" in example
     for project in ("cmip6", "cmip6plus", "cmip7", "cordex-cmip6"):
         assert f"[plugins.{project}]" in example

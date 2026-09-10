@@ -26,7 +26,7 @@
     piddi_db_path: /var/lib/piddi/piddi.db
     piddi_kafka_defaults:
       bootstrap.servers: localhost:9092
-      group.id: piddi-production
+      group.id: de.dkrz.piddi.production-01
       security.protocol: SASL_SSL
       sasl.mechanisms: PLAIN
     piddi_kafka: {}
