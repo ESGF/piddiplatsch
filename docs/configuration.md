@@ -13,14 +13,16 @@ file; the packaged and site-wide layers are still loaded first.
 
 ## Start with a small site override
 
-Copy `etc/site-example.toml` to `custom.toml` and replace its placeholders.
+Copy `etc/esgf-example.toml` to `custom.toml` and replace its placeholders.
 Set the projects/topic, Kafka connection and consumer group, Handle service and
 credentials, and output directory. Packaged defaults supply `SASL_SSL` and `PLAIN`
 for authenticated ESGF Kafka; the example supplies Kafka credential placeholders. Match
 these values to your broker; they are connection requirements, not advanced
 tuning. See `etc/esgf-example.toml` for alternative mechanisms and a custom CA.
-For service deployment,
-`etc/piddi-production.toml` provides filesystem paths and Kafka connection placeholders.
+For production, use `deploy/ansible/custom.yml.example` to create
+`deploy/ansible/custom.yml`. Ansible supplies the production output, logging,
+and database paths and renders `/etc/piddi/piddi.toml`; edit the Ansible
+variables rather than the generated file. See [deployment](../deploy/README.md).
 
 You do not need to copy the full packaged defaults. Leave retry delays, monitoring
 intervals, mapping limits, and optional backends inherited until you need to tune them.
@@ -29,7 +31,7 @@ The packaged `default.toml` is the full reference, not a setup checklist.
 ```bash
 piddi config validate
 piddi config explain --project cmip6
-piddi config explain --project cmip6 --handle-profile site
+piddi config explain --project cmip6 --handle-profile production
 ```
 
 `explain` shows the resolved Handle service, prefix, STAC collection, and lookup

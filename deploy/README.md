@@ -17,6 +17,26 @@ make deploy
 `make deploy` creates or updates `.conda`, installs Piddi, and runs Ansible.
 Use `make play` for later Ansible-only configuration changes.
 
+`deploy/ansible/custom.yml` is the production configuration input. Ansible
+generates `/etc/piddi/piddi.toml`; direct edits to that file are overwritten.
+The single `etc/esgf-example.toml` is for manual/local runs and documents the
+same ESGF parameters. There is no separate production TOML to maintain.
+
+Copy the ESGF broker endpoints and assigned group into `piddi_kafka`.
+ESGF Resource maps to `client.id`, API key to `sasl.username`, and API secret
+to `sasl.password`. Authentication inherits `SASL_SSL` / `PLAIN` from packaged
+defaults. Set `ssl.ca.location` only for a custom CA, using a path on the host
+readable by the `piddi` service user. Other Kafka overrides also go in
+`piddi_kafka`; Handle profiles and project mapping settings go in
+`piddi_config_extra` as TOML.
+
+The playbook supplies `/var/lib/piddi` for output, `/var/log/piddi/piddi.log`
+for logs, and `/var/lib/piddi/piddi.db` for monitoring. Override these through
+`piddi_output_dir`, `piddi_log_file`, and `piddi_db_path` when needed. It also
+selects the four supported projects on `ESGF-PUBLICATIONS`, matching the
+manual ESGF example. Both examples set `max_parts = 0` for dataset records
+without file links; adjust that setting if your workflow needs those links.
+
 Run this as root or with passwordless sudo. If Ansible needs a sudo password,
 use `make play ANSIBLE_ARGS=--ask-become-pass`.
 

@@ -6,17 +6,22 @@
 # Kafka topic consumed by this Piddi instance.
 piddi_topic: ESGF-PUBLICATIONS
 
-# Site-specific Kafka settings. These are merged over the production defaults,
-# including SASL_SSL with the PLAIN mechanism.
+# Site-specific Kafka settings. Authentication inherits SASL_SSL / PLAIN from
+# packaged defaults. These keys match [kafka] in etc/esgf-example.toml.
 piddi_kafka:
+  # Copy the broker endpoint(s) supplied for your ESGF Kafka access.
   bootstrap.servers: broker1.example.org:9093
-  # Keep this stable and unique per workflow. ESGF groups use the de.dkrz prefix.
+  # Copy your assigned consumer group; keep it stable and unique per workflow.
   group.id: de.dkrz.test.20260907-01
   # ESGF calls this required client identifier the Resource.
   client.id: YOUR_ESGF_RESOURCE
   # ESGF API key and API secret (librdkafka SASL property names).
   sasl.username: YOUR_ESGF_API_KEY
   sasl.password: YOUR_ESGF_API_SECRET
+  # Override only if your broker requires another mechanism:
+  # sasl.mechanisms: SCRAM-SHA-512
+  # If your broker uses a custom CA, set its path on the deployed host:
+  # ssl.ca.location: /path/to/ca.pem
 
 # Optional TOML for Handle profiles, credentials, and plugin-specific settings.
 # Keep custom.yml local or encrypt it with Ansible Vault before sharing it.

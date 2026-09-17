@@ -1,13 +1,18 @@
+import json
 from pathlib import Path
+
+import toml
+import yaml
+from jinja2 import Environment, StrictUndefined
 
 from piddiplatsch.config.config import Config
 
 PROJECT_ROOT = Path(__file__).parent.parent
 
 
-def test_site_example_inherits_esgf_authentication():
+def test_esgf_example_inherits_esgf_authentication():
     configured = Config()
-    configured.load_user_config(str(PROJECT_ROOT / "etc" / "site-example.toml"))
+    configured.load_user_config(str(PROJECT_ROOT / "etc" / "esgf-example.toml"))
 
     assert configured.get("kafka", "security.protocol") == "SASL_SSL"
     assert configured.get("kafka", "sasl.mechanisms") == "PLAIN"
@@ -25,20 +30,50 @@ def test_test_config_overrides_production_authentication():
     assert errors == []
 
 
-def test_production_override_is_valid_with_packaged_defaults():
+def test_ansible_render_matches_esgf_example_and_production_paths(tmp_path):
+    ansible_dir = PROJECT_ROOT / "deploy" / "ansible"
+    variables = yaml.safe_load((ansible_dir / "piddi.yml").read_text())[0]["vars"]
+    variables.update(yaml.safe_load((ansible_dir / "custom.yml.example").read_text()))
+    # TOML output must not use HTML escaping.
+    environment = Environment(undefined=StrictUndefined, autoescape=False)  # noqa: S701
+    # Filters used by the Ansible template for these concrete example values.
+    environment.filters.update(
+        to_json=json.dumps, bool=bool, combine=lambda base, extra: {**base, **extra}
+    )
+    rendered = environment.from_string(
+        (ansible_dir / "templates" / "piddi.toml.j2").read_text()
+    ).render(**variables)
+    rendered_path = tmp_path / "production.toml"
+    rendered_path.write_text(rendered)
     configured = Config()
-    configured.load_user_config(str(PROJECT_ROOT / "etc" / "piddi-production.toml"))
+    configured.load_user_config(str(rendered_path))
+    example = Config()
+    example.load_user_config(str(PROJECT_ROOT / "etc" / "esgf-example.toml"))
 
     errors, _ = configured.validate()
-
     assert errors == []
     assert configured.get("consumer", "output_dir") == "/var/lib/piddi"
     assert configured.get("logging", "file") == "/var/log/piddi/piddi.log"
     assert configured.get("stats", "enable_db") is True
     assert configured.get("stats", "db_path") == "/var/lib/piddi/piddi.db"
-    assert configured.get("kafka", "security.protocol") == "SASL_SSL"
-    assert configured.get("kafka", "sasl.mechanisms") == "PLAIN"
-    assert configured.get("kafka", "group.id").startswith("de.dkrz.")
+    assert configured.get("kafka") == example.get("kafka")
+    assert configured.get("consumer", "topic") == example.get("consumer", "topic")
+    assert configured.get("consumer", "projects") == example.get("consumer", "projects")
+    for project in configured.get("consumer", "projects"):
+        assert configured.get_handle(project) == example.get_handle(project)
+        assert configured.get_plugin(project) == example.get_plugin(project)
+
+    # The template must preserve a site's optional mechanism and CA overrides.
+    variables["piddi_kafka"].update(
+        {"sasl.mechanisms": "SCRAM-SHA-512", "ssl.ca.location": "/etc/piddi/ca.pem"}
+    )
+    overridden = toml.loads(
+        environment.from_string(
+            (ansible_dir / "templates" / "piddi.toml.j2").read_text()
+        ).render(**variables)
+    )
+    assert overridden["kafka"]["sasl.mechanisms"] == "SCRAM-SHA-512"
+    assert overridden["kafka"]["ssl.ca.location"] == "/etc/piddi/ca.pem"
 
 
 def test_service_uses_production_config_and_silent_progress():

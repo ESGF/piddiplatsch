@@ -13,7 +13,7 @@
 # - lookup: choose STAC or ES backend
 # - stats: logging/SQLite reporter settings
 #
-# Full reference defaults; for site setup, start with etc/site-example.toml.
+# Full reference defaults; for site setup, start with etc/esgf-example.toml.
 # Apply site overrides in /etc/piddi/piddi.toml and local overrides in custom.toml.
 #############################################
 

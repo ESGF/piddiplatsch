@@ -264,7 +264,7 @@ packaged defaults, including ESGF Kafka authentication (`SASL_SSL` / `PLAIN`).
 Replace the connection and credential placeholders:
 
 ```bash
-cp etc/site-example.toml custom.toml
+cp etc/esgf-example.toml custom.toml
 vim custom.toml
 ```
 
@@ -285,9 +285,16 @@ settings and override behavior.
 
 ### ESGF Example Config
 
-For further ESGF Kafka options, see [etc/esgf-example.toml](etc/esgf-example.toml).
-Merge its Kafka settings into an existing `custom.toml`; keep your Handle and
-project settings. Keep real credentials in the local file (do not commit secrets):
+The single manual setup example is [etc/esgf-example.toml](etc/esgf-example.toml).
+For an existing `custom.toml`, copy only the settings you need. Comments map
+ESGF Resource/API key/API secret to their Kafka properties. Keep real credentials
+in the local file (do not commit secrets).
+
+For production, configure `deploy/ansible/custom.yml` as described in the
+[deployment guide](deploy/README.md). Ansible generates the site configuration
+and manages production paths.
+
+For a manual run:
 
 ```bash
 # Edit the existing site override with your ESGF Kafka settings

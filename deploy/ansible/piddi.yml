@@ -28,8 +28,7 @@
     piddi_kafka_defaults:
       bootstrap.servers: localhost:9092
       group.id: de.dkrz.piddi.production-01
-      security.protocol: SASL_SSL
-      sasl.mechanisms: PLAIN
+      # Authentication inherits SASL_SSL / PLAIN from packaged defaults.
     piddi_kafka: {}
     piddi_config_extra: ""
 
