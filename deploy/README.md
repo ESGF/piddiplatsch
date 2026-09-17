@@ -60,8 +60,12 @@ before deploying. Keep credentials in the ignored local file.
 Run this as root or with passwordless sudo. If Ansible needs a sudo password,
 use `make play ANSIBLE_ARGS=--ask-become-pass`.
 
-Ansible creates the service user and directories, renders
-`/etc/piddi/piddi.toml`, and validates it, but does not start Piddi. Test it:
+Ansible creates the service user and directories, renders a candidate, and
+validates it against packaged defaults before installing `/etc/piddi/piddi.toml`.
+The currently installed file is not used to fill in missing candidate settings.
+An invalid candidate stops deployment before replacing the existing configuration
+or restarting the service. Candidate validation does not open log files or
+contact Kafka/Handle services. Piddi is not started by default. Test it:
 
 ```console
 sudo runuser -u piddi -- /opt/piddiplatsch/.conda/bin/piddi \

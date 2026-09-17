@@ -36,6 +36,9 @@ All notable changes to this project are documented here.
   inputs.
 
 ### Changed
+- Configuration inspection skips file logging, so it works with unwritable
+  production log paths without creating log files. Ansible validates candidate
+  settings before replacing the installed configuration.
 - `config show` redacts recognized credential fields and URL credentials by
   default in TOML and JSON, including filtered views. Use `--show-secrets`
   to explicitly include the original values.

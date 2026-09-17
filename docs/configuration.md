@@ -69,6 +69,11 @@ and missing landing-page warnings concern only configured projects and the
 Handle profiles they select (`projects = "all"` includes all registered projects).
 These checks do not test broker connectivity or credential validity.
 
+`config show`, `config explain`, and `config validate` do not initialize file
+logging or create log files. They work even if the configured production log
+directory is not writable. `--log` is shown as an override by `explain` but does
+not open the file during inspection.
+
 ## Routine operation
 
 Plain `piddi consume` prepares JSONL files. Use `piddi consume --publish` for

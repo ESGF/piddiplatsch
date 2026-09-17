@@ -80,6 +80,10 @@ def cli(
             "must name an existing configuration file", param_hint="--config"
         )
     config.load_config_layers(config_file)
+    # Inspection must work even when the configured production log is not
+    # writable, and validation should report logging errors through its schema.
+    if ctx.invoked_subcommand == "config":
+        return
     try:
         config.configure_logging(verbosity=verbosity, debug=debug, log=log)
     except ValueError as exc:

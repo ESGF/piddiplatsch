@@ -1,4 +1,4 @@
-"""Combine deployment path defaults with the shared application TOML."""
+"""Render and validate a candidate before Ansible installs it."""
 
 import sys
 from copy import deepcopy
@@ -21,7 +21,14 @@ def render_config(source: Path) -> str:
     with source.open() as stream:
         overrides = toml.load(stream)
     merged = deepcopy(PRODUCTION_DEFAULTS)
-    Config()._merge_dicts(merged, overrides)
+    configured = Config()
+    configured._merge_dicts(merged, overrides)
+    # Validate only packaged defaults plus the candidate. Loading the installed
+    # site file here could conceal omissions or retain settings being removed.
+    configured._merge_dicts(configured.config_data, merged)
+    errors, _ = configured.validate()
+    if errors:
+        raise ValueError("Invalid candidate configuration:\n" + "\n".join(errors))
     return toml.dumps(merged)
 
 

@@ -73,7 +73,7 @@ def test_deployment_preserves_explicit_application_overrides(tmp_path):
     assert toml.loads(render(source)) == overrides
     assert source.read_bytes() == original
     # Rendering another file must not retain values from the previous render.
-    source.write_text("")
+    source.write_text('[kafka]\n"security.protocol" = "PLAINTEXT"\n')
     assert toml.loads(render(source))["consumer"]["output_dir"] == "/var/lib/piddi"
 
 
@@ -111,7 +111,7 @@ def test_ansible_deployment_is_safe_by_default():
     assert "Require a manually installed Piddiplatsch executable" in playbook
     assert "Remove the legacy administrator command managed by Piddiplatsch" in playbook
     assert "Install Piddiplatsch administrator command" in playbook
-    assert "Validate merged Piddiplatsch configuration" in playbook
+    assert "Render and validate candidate configuration before installation" in playbook
 
 
 def test_ansible_uses_one_application_config():
@@ -128,9 +128,13 @@ def test_ansible_uses_one_application_config():
     )
     assert example is None  # Optional deployment controls are all commented.
     tasks = {task["name"]: task for task in playbook["tasks"]}
-    render = tasks["Render shared application settings with production path defaults"]
+    render = tasks["Render and validate candidate configuration before installation"]
     assert render["no_log"] is True
     assert "piddi_config_source" in render["ansible.builtin.script"]["cmd"]
+    names = [task["name"] for task in playbook["tasks"]]
+    assert names.index(
+        "Render and validate candidate configuration before installation"
+    ) < names.index("Install site configuration")
     install = tasks["Install site configuration"]
     assert install["no_log"] is True
     assert (
@@ -229,3 +233,22 @@ def test_makefile_provides_repeatable_conda_environment_setup():
     assert "conda run --prefix" in makefile
     assert "python -m pip install -e ." in makefile
     assert "deploy: conda play ##" in makefile
+
+
+@pytest.mark.parametrize(
+    "content",
+    [
+        '[kafka]\n"security.protocol" = "SASL_SSL"\n"sasl.mechanisms" = "PLAIN"\n',
+        '[kafka]\n"security.protocol" = "PLAINTEXT"\n[stats]\nheartbeat_interval_seconds = -1\n',
+    ],
+)
+def test_deployment_rejects_invalid_candidate_without_output(tmp_path, capsys, content):
+    render = runpy.run_path(str(PROJECT_ROOT / "deploy/ansible/render_config.py"))[
+        "render_config"
+    ]
+    source = tmp_path / "custom.toml"
+    source.write_text(content)
+    with pytest.raises(ValueError, match="Invalid candidate configuration"):
+        render(source)
+    assert capsys.readouterr().out == ""
+    assert source.read_text() == content

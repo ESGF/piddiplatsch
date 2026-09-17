@@ -180,3 +180,48 @@ def test_legacy_profile_wins_for_warnings(configured):
         },
     )
     assert configured.validate() == ([], [])
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        ["show"],
+        ["validate"],
+        ["explain", "--project", "cmip6"],
+    ],
+)
+@pytest.mark.parametrize("explicit_log", [False, True])
+def test_config_commands_do_not_initialize_logging(
+    monkeypatch, tmp_path, command, explicit_log
+):
+    cfg = Config()
+    cfg._set("kafka", "security.protocol", "PLAINTEXT")
+    # A nonexistent parent would make file logging fail, even when run as root.
+    log_path = tmp_path / "missing" / "piddi.log"
+    cfg._set("logging", "file", str(log_path))
+    monkeypatch.setattr("piddiplatsch.cli.config", cfg)
+    monkeypatch.setattr("piddiplatsch.commands.config.config", cfg)
+    monkeypatch.setattr(cfg, "load_config_layers", lambda path: None)
+
+    def unexpected_logging(**kwargs):
+        raise AssertionError("Config inspection must not initialize logging")
+
+    monkeypatch.setattr(cfg, "configure_logging", unexpected_logging)
+    options = ["--log", str(log_path)] if explicit_log else []
+    before = set(tmp_path.rglob("*"))
+    result = CliRunner().invoke(cli, [*options, "config", *command])
+    assert result.exit_code == 0, result.output
+    assert set(tmp_path.rglob("*")) == before
+
+
+def test_config_validate_reports_invalid_log_level_via_schema(monkeypatch):
+    cfg = Config()
+    cfg._set("kafka", "security.protocol", "PLAINTEXT")
+    cfg._set("logging", "level", "INVALID")
+    monkeypatch.setattr("piddiplatsch.cli.config", cfg)
+    monkeypatch.setattr("piddiplatsch.commands.config.config", cfg)
+    monkeypatch.setattr(cfg, "load_config_layers", lambda path: None)
+    result = CliRunner().invoke(cli, ["config", "validate"])
+    assert result.exit_code == 1
+    assert "Errors:" in result.output
+    assert "logging.level" in result.output
