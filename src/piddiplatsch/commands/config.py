@@ -9,6 +9,7 @@ import toml
 
 from piddiplatsch.commands.base import Command
 from piddiplatsch.config import config
+from piddiplatsch.config.config import DEFAULT_CONFIG_PATH
 from piddiplatsch.config.redaction import redact_config
 from piddiplatsch.core.registry import get_plugin
 
@@ -30,6 +31,7 @@ class ConfigExplainCommand(Command):
 
         plugin = config.get_plugin(project)
         legacy = config.get(project) or {}
+        source_labels = self._source_labels()
 
         def plugin_source(key: str) -> str:
             section = project if key in legacy else f"plugins.{project}"
@@ -41,12 +43,14 @@ class ConfigExplainCommand(Command):
                 if source.startswith("--")
                 else config.get_source(path or tuple(source.split(".")))
             )
-            click.echo(f"{label}: {json.dumps(value)}  <- {source} ({origin})")
+            click.echo(
+                f"{label}: {json.dumps(value)}  <- {source} ({source_labels.get(origin, origin)})"
+            )
 
         click.echo(f"Project: {project}")
         click.echo("Loaded files (later files override earlier files):")
         for filename in config.loaded_files:
-            click.echo(f"  {filename}")
+            click.echo(f"  {source_labels[filename]}: {filename}")
         for key in ("topic", "output_dir"):
             show(key, config.get("consumer", key), f"consumer.{key}")
 
@@ -101,6 +105,24 @@ class ConfigExplainCommand(Command):
             "Publication: consume writes JSONL; --publish enables immediate delivery."
         )
         click.echo("Deferred publish always uses REST. Credential fields are omitted.")
+
+    def _source_labels(self) -> dict[str, str]:
+        labels = {}
+        used = set()
+        for filename in config.loaded_files:
+            base = (
+                "defaults"
+                if filename == str(DEFAULT_CONFIG_PATH.resolve())
+                else Path(filename).name
+            )
+            label = base
+            suffix = 2
+            while label in used:
+                label = f"{base} [{suffix}]"
+                suffix += 1
+            labels[filename] = label
+            used.add(label)
+        return labels
 
     def _explain_paths(self, show) -> None:
         for label, section, key in (

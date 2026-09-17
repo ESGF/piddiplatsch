@@ -29,12 +29,20 @@ def test_explain_reports_file_origins_and_resolved_paths(configured, tmp_path):
     configured.load_config_layers(local, site)
     result = CliRunner().invoke(cli, ["config", "explain", "--project", "cmip6"])
     assert result.exit_code == 0, result.output
-    assert f"Handle timeout: 23  <- handles.defaults.timeout ({site})" in result.output
     assert (
-        f'Handle prefix: "21.LOCAL"  <- plugins.cmip6.handle_prefix ({local})'
+        "Handle timeout: 23  <- handles.defaults.timeout (site.toml)" in result.output
+    )
+    assert (
+        'Handle prefix: "21.LOCAL"  <- plugins.cmip6.handle_prefix (custom.toml)'
         in result.output
     )
-    assert str(DEFAULT_CONFIG_PATH.resolve()) in result.output
+    for label, path in (
+        ("defaults", DEFAULT_CONFIG_PATH.resolve()),
+        ("site.toml", site),
+        ("custom.toml", local),
+    ):
+        assert f"  {label}: {path}" in result.output
+        assert result.output.count(str(path)) == 1
     for path in ("site.log", "local-output", "local.db"):
         assert str(tmp_path / path) in result.output
     assert "testpass" not in result.output
@@ -225,3 +233,23 @@ def test_config_validate_reports_invalid_log_level_via_schema(monkeypatch):
     assert result.exit_code == 1
     assert "Errors:" in result.output
     assert "logging.level" in result.output
+
+
+def test_explain_distinguishes_matching_source_filenames(configured, tmp_path):
+    site = tmp_path / "site" / "custom.toml"
+    site.parent.mkdir()
+    site.write_text("[handles.defaults]\ntimeout = 23\n")
+    local = tmp_path / "custom.toml"
+    local.write_text('[plugins.cmip6]\nhandle_prefix = "21.LOCAL"\n')
+    configured.load_config_layers(local, site)
+    result = CliRunner().invoke(cli, ["config", "explain", "--project", "cmip6"])
+    assert result.exit_code == 0, result.output
+    assert f"  custom.toml: {site}" in result.output
+    assert f"  custom.toml [2]: {local}" in result.output
+    assert (
+        "Handle timeout: 23  <- handles.defaults.timeout (custom.toml)" in result.output
+    )
+    assert (
+        'Handle prefix: "21.LOCAL"  <- plugins.cmip6.handle_prefix (custom.toml [2])'
+        in result.output
+    )

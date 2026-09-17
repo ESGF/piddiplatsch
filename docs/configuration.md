@@ -39,7 +39,10 @@ piddi config explain --project cmip6 --handle-profile production
 
 `explain` shows the resolved Handle service, prefix, STAC collection, and lookup
 settings, with the configuration keys and files supplying them. It lists loaded
-files in precedence order and resolves output, log, and database paths against
+files in precedence order, listing full filenames once with short labels such
+as `defaults` and `custom.toml`. Settings use those labels; repeated filenames
+receive numbered labels to keep their origins distinct. It resolves output,
+log, and database paths against
 the current working directory. `--log` is reflected as a command-line override;
 terminal logging and disabled database reporting are identified. Username/password
 fields are omitted. The installed production config is attributed to
