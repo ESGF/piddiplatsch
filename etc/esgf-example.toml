@@ -1,25 +1,57 @@
-#############################################
-# ESGF Example Overrides (non-defaults only)
+# ESGF site configuration: copy to custom.toml for a manual/local run.
+# Replace placeholders with your ESGF and Handle service parameters.
+# Keep real credentials out of version control.
 #
-# This file provides minimal overrides on top
-# of src/piddiplatsch/config/default.toml.
-#
-# Focus: Kafka settings for ESGF deployments.
-#############################################
+# Ansible reads this same custom.toml and installs /etc/piddi/piddi.toml.
+# It adds production output/log/database paths only when omitted here.
+# Optional deploy/ansible/custom.yml contains deployment controls, not a second
+# copy of application settings. See deploy/README.md.
+# Omitted settings inherit packaged defaults; see docs/configuration.md.
+
+[consumer]
+# Same projects and shared publication topic as the Ansible deployment.
+projects = ["cmip6", "cmip6plus", "cmip7", "cordex-cmip6"]
+topic = "ESGF-PUBLICATIONS"
 
 [kafka]
-# Replace with your ESGF brokers and group
-"bootstrap.servers" = "broker1.esgf.org:9093,broker2.esgf.org:9093"
-"group.id" = "piddi-esgf-demo"
-
-# Required ESGF Resource identifier
+# Copy the broker endpoint(s) supplied for your ESGF Kafka access.
+"bootstrap.servers" = "broker1.example.org:9093"
+# Copy your assigned consumer group; keep it stable and unique per workflow.
+"group.id" = "de.dkrz.test.20260907-01"
+# ESGF Resource -> client.id
 "client.id" = "YOUR_ESGF_RESOURCE"
+# ESGF API key -> sasl.username; API secret -> sasl.password
+"sasl.username" = "YOUR_ESGF_API_KEY"
+"sasl.password" = "YOUR_ESGF_API_SECRET"
 
-# ESGF clusters commonly use SASL over SSL
-"security.protocol" = "SASL_SSL"
-"sasl.mechanisms" = "PLAIN"  # or SCRAM-SHA-256/512 depending on broker
-"sasl.username" = "esgf_user"
-"sasl.password" = "esgf_pass"
-
+# Inherits security.protocol = "SASL_SSL" and sasl.mechanisms = "PLAIN".
+# If your broker requires another mechanism, override it here:
+# "sasl.mechanisms" = "SCRAM-SHA-512"
 # If your broker uses a custom CA, also set:
 # "ssl.ca.location" = "/path/to/ca.pem"
+# Local Docker test Kafka uses tests/config.toml with PLAINTEXT instead.
+
+[handles]
+default = "production"
+
+[handles.profiles.production]
+server_url = "https://handle.example.org"
+prefix = "21.YOUR_PREFIX"
+username = "300:21.YOUR_PREFIX/YOUR_HANDLE_USERNAME"
+password = "YOUR_HANDLE_PASSWORD"
+
+# Match the Ansible example: do not add file links to dataset Handle records.
+# Set max_parts = -1 for unlimited links, or a positive limit if needed.
+[plugins.cmip6]
+max_parts = 0
+
+[plugins.cordex-cmip6]
+max_parts = 0
+
+[plugins.cmip6plus]
+max_parts = 0
+
+[plugins.cmip7]
+max_parts = 0
+
+# Plain consume writes JSONL. Use consume --publish for immediate delivery.

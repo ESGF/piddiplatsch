@@ -81,6 +81,9 @@ piddi consume
 
 You need Kafka for `harvest` and `consume`. A Handle Service (or mock Handle
 server) is required only for `publish` or `consume --publish`.
+Kafka defaults to ESGF authentication (`SASL_SSL` / `PLAIN`); configure your
+brokers and credentials first. For the local Docker test cluster, use
+`piddi --config tests/config.toml consume`, which selects `PLAINTEXT`.
 
 ---
 
@@ -256,10 +259,12 @@ The short production and Vagrant procedure is in
 
 ## 🛠️ Configuration
 
-Start from the default configuration:
+For a new setup, start with a small site override; omitted settings inherit
+packaged defaults, including ESGF Kafka authentication (`SASL_SSL` / `PLAIN`).
+Replace the connection and credential placeholders:
 
 ```bash
-cp src/piddiplatsch/config/default.toml custom.toml
+cp etc/esgf-example.toml custom.toml
 vim custom.toml
 ```
 
@@ -268,6 +273,7 @@ The CLI loads packaged defaults, then `/etc/piddi/piddi.toml`, then
 
 ```bash
 piddi config validate
+piddi config explain --project cmip6
 ```
 
 Use `--config PATH` to select a different final override file in place of
@@ -279,11 +285,20 @@ settings and override behavior.
 
 ### ESGF Example Config
 
-For non-Docker ESGF Kafka setups, copy the minimal override from [etc/esgf-example.toml](etc/esgf-example.toml) to `custom.toml` and edit your real ESGF options locally (do not commit secrets):
+The single manual setup example is [etc/esgf-example.toml](etc/esgf-example.toml).
+For an existing `custom.toml`, copy only the settings you need. Comments map
+ESGF Resource/API key/API secret to their Kafka properties. Keep real credentials
+in the local file (do not commit secrets).
+
+For production, Ansible reads this same `custom.toml` and adds production path
+defaults for omitted values. The optional `deploy/ansible/custom.yml` holds only
+deployment controls. See the [deployment guide](deploy/README.md) for setup and
+migration from the previous duplicated YAML application settings.
+
+For a manual run:
 
 ```bash
-# Copy example and edit your ESGF Kafka settings
-cp etc/esgf-example.toml custom.toml
+# Edit the existing site override with your ESGF Kafka settings
 vim custom.toml   # set brokers, group.id, SASL, CA path, etc.
 
 # Validate and inspect
@@ -307,10 +322,11 @@ Exits non-zero on errors; prints warnings when applicable.
 ### Show Effective Config
 
 ```bash
-piddi config show           # TOML
+piddi config show           # TOML; recognized credentials are redacted
 piddi config show --format json
 piddi config show --section consumer
 piddi config show --section kafka --key group.id
+piddi config show --show-secrets  # explicitly include credential values
 ```
 
 Prints the merged defaults + your overrides for quick inspection.

@@ -2,11 +2,16 @@ from __future__ import annotations
 
 from piddiplatsch.core.plugin import PluginSpec
 
-from .processor import CMIP7Processor
+
+def make_processor(**kwargs):
+    from .processor import CMIP7Processor
+
+    return CMIP7Processor(**kwargs)
+
 
 plugin = PluginSpec(
     name="cmip7",
     project_ids=("CMIP7",),
-    make_processor=lambda **kwargs: CMIP7Processor(**kwargs),
+    make_processor=make_processor,
     description="CMIP7 data processing plugin",
 )

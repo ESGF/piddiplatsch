@@ -116,9 +116,9 @@ pre-commit: ## run all pre-commit hooks
 
 test: test-unit test-integration ## run all fast tests (unit + integration, no Docker required)
 
-config-validate: ## validate default and test configuration before smoke/integration
-	@echo "Validating default configuration ..."
-	@bash -c 'python -m piddiplatsch.cli config validate'
+config-validate: ## validate ESGF and test overrides with packaged defaults
+	@echo "Validating etc/esgf-example.toml with packaged defaults ..."
+	@bash -c 'python -m piddiplatsch.cli --config etc/esgf-example.toml config validate'
 	@echo "Validating tests/config.toml ..."
 	@bash -c 'python -m piddiplatsch.cli --config tests/config.toml config validate'
 

@@ -11,6 +11,8 @@ max_errors = 10
 preflight_stac = false
 
 [kafka]
+# Docker test brokers do not use TLS or SASL.
+"security.protocol" = "PLAINTEXT"
 "bootstrap.servers" = "localhost:39092"
 "group.id" = "piddiplatsch-smoke"
 "auto.offset.reset" = "earliest"

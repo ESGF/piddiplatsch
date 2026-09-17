@@ -6,9 +6,6 @@ import time
 from enum import StrEnum
 from pathlib import Path
 
-from confluent_kafka import Consumer as ConfluentConsumer
-from confluent_kafka import KafkaException
-
 from piddiplatsch.config import config
 from piddiplatsch.core.routing import ProjectRouter
 from piddiplatsch.exceptions import MaxErrorsExceededError, StopOnTransientSkipError
@@ -98,6 +95,10 @@ class KafkaConsumer(BaseConsumer):
         idle_timeout: float | None = None,
         clock=time.monotonic,
     ):
+        # Configuration and file-only commands must not load Kafka's native
+        # extension (which can enable the GIL on free-threaded Python).
+        from confluent_kafka import Consumer as ConfluentConsumer
+
         if idle_timeout is not None and idle_timeout <= 0:
             raise ValueError("idle timeout must be positive")
         self.topic = topic
@@ -122,6 +123,8 @@ class KafkaConsumer(BaseConsumer):
                     continue
                 last_message_at = self.clock()
                 if msg.error():
+                    from confluent_kafka import KafkaException
+
                     raise KafkaException(msg.error())
 
                 key = msg.key().decode("utf-8") if msg.key() else None

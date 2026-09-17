@@ -70,8 +70,8 @@ def list_plugins() -> list[str]:
     return sorted(_PLUGINS)
 
 
-# Built-ins are imported explicitly. Import failures must stop startup rather
-# than leaving a mysteriously incomplete registry.
+# Built-in metadata is imported explicitly. Processor implementations are loaded
+# by their factories when processing starts, not during configuration inspection.
 from piddiplatsch.plugins.cmip6.plugin import plugin as cmip6_plugin  # noqa: E402
 from piddiplatsch.plugins.cmip6plus.plugin import (  # noqa: E402
     plugin as cmip6plus_plugin,

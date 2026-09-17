@@ -9,26 +9,71 @@ configuration and run the complete deployment:
 ```console
 cd /opt/piddiplatsch
 python -m pip install ansible-core
-cp deploy/ansible/custom.yml.example deploy/ansible/custom.yml
-vim deploy/ansible/custom.yml
+cp etc/esgf-example.toml custom.toml
+vim custom.toml
 make deploy
 ```
 
 `make deploy` creates or updates `.conda`, installs Piddi, and runs Ansible.
 Use `make play` for later Ansible-only configuration changes.
 
+`custom.toml` is the single application configuration for manual runs and
+Ansible deployment. It contains Kafka credentials, projects, Handle profiles,
+and mapping settings. Ansible reads that file and installs a generated copy at
+`/etc/piddi/piddi.toml`; direct edits to the installed copy are overwritten.
+For an existing checkout, keep your `custom.toml` rather than copying the example
+again. Use `make play` after application configuration changes.
+
+Ansible adds only deployment path defaults when those keys are omitted:
+`consumer.output_dir = "/var/lib/piddi"`,
+`logging.file = "/var/log/piddi/piddi.log"`, and
+`stats.db_path = "/var/lib/piddi/piddi.db"`. Explicit TOML values take precedence.
+Relative paths in the service resolve under `/var/lib/piddi`; manual runs use
+their current directory. For custom absolute paths, provision their directories
+and permissions, and adapt log rotation if the log path changes.
+
+The optional `deploy/ansible/custom.yml` now contains deployment controls only,
+such as `piddi_enable_service`, `piddi_conda_env`, or `piddi_config_source`
+(to choose a different TOML source). Copy `custom.yml.example` only if you need
+these overrides. There are no Kafka or Handle values to duplicate in YAML.
+
+### Migrating an existing Ansible configuration
+
+Move application values from `deploy/ansible/custom.yml` into `custom.toml`,
+then remove those YAML variables. The playbook rejects the old application
+variables with a migration message rather than silently ignoring them.
+
+| Old Ansible variable | Shared TOML setting |
+| --- | --- |
+| `piddi_kafka`, `piddi_kafka_defaults` | Keys under `[kafka]` (site overrides win over defaults) |
+| `piddi_config_extra` | Its TOML tables, merged into the file without duplicate table headers |
+| `piddi_projects`, `piddi_topic`, `piddi_max_errors` | `[consumer]` `projects`, `topic`, `max_errors` |
+| `piddi_output_dir` | `[consumer]` `output_dir` |
+| `piddi_log_level`, `piddi_log_file` | `[logging]` `level`, `file` |
+| `piddi_stats_enable_db`, `piddi_db_path` | `[stats]` `enable_db`, `db_path` |
+
+The ESGF example provides the four projects on `ESGF-PUBLICATIONS` and
+`max_parts = 0`. If your existing TOML selects other values, deployment uses
+those values too. Resolve any differences between the old YAML and TOML once
+before deploying. Keep credentials in the ignored local file.
+
 Run this as root or with passwordless sudo. If Ansible needs a sudo password,
 use `make play ANSIBLE_ARGS=--ask-become-pass`.
 
-Ansible creates the service user and directories, renders
-`/etc/piddi/piddi.toml`, and validates it, but does not start Piddi. Test it:
+Ansible creates the service user and directories, renders a candidate, and
+validates it against packaged defaults before installing `/etc/piddi/piddi.toml`.
+The currently installed file is not used to fill in missing candidate settings.
+An invalid candidate stops deployment before replacing the existing configuration
+or restarting the service. Candidate validation does not open log files or
+contact Kafka/Handle services. Piddi is not started by default. Test it:
 
 ```console
 sudo runuser -u piddi -- /opt/piddiplatsch/.conda/bin/piddi \
   --config /etc/piddi/piddi.toml --silent consume
 ```
 
-Then set `piddi_enable_service: true` in `custom.yml` and run `make play` again.
+Then set `piddi_enable_service: true` in `deploy/ansible/custom.yml` (create
+it from the optional example if needed) and run `make play` again.
 Check that Piddi is working:
 
 ```console
@@ -71,8 +116,8 @@ Inside the VM, perform the complete deployment as root:
 sudo -i
 git clone https://github.com/ESGF/piddiplatsch.git /opt/piddiplatsch
 cd /opt/piddiplatsch
-cp deploy/ansible/custom.yml.example deploy/ansible/custom.yml
-vim deploy/ansible/custom.yml
+cp etc/esgf-example.toml custom.toml
+vim custom.toml
 make deploy
 ```
 

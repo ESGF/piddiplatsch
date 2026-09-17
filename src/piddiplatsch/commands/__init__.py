@@ -1,24 +1,28 @@
-"""Application command classes."""
+"""Public exports, loaded on demand to keep configuration commands lightweight."""
 
-from piddiplatsch.commands.base import Command, FileBatchCommand, KafkaCommand
-from piddiplatsch.commands.config import ConfigShowCommand, ConfigValidateCommand
-from piddiplatsch.commands.consume import ConsumeCommand
-from piddiplatsch.commands.harvest import HarvestCommand
-from piddiplatsch.commands.map import MapCommand
-from piddiplatsch.commands.publish import PublishCommand
-from piddiplatsch.commands.retry import RetryCommand
-from piddiplatsch.commands.top import TopCommand
+from importlib import import_module
 
-__all__ = [
-    "Command",
-    "ConfigShowCommand",
-    "ConfigValidateCommand",
-    "ConsumeCommand",
-    "FileBatchCommand",
-    "HarvestCommand",
-    "KafkaCommand",
-    "MapCommand",
-    "PublishCommand",
-    "RetryCommand",
-    "TopCommand",
-]
+_EXPORTS = {  # noqa: RUF067 - lazy public re-exports avoid loading network clients
+    "Command": "base",
+    "FileBatchCommand": "base",
+    "KafkaCommand": "base",
+    "ConfigExplainCommand": "config",
+    "ConfigShowCommand": "config",
+    "ConfigValidateCommand": "config",
+    "ConsumeCommand": "consume",
+    "HarvestCommand": "harvest",
+    "MapCommand": "map",
+    "PublishCommand": "publish",
+    "RetryCommand": "retry",
+    "TopCommand": "top",
+}
+
+__all__ = list(_EXPORTS)
+
+
+def __getattr__(name: str):
+    if name not in _EXPORTS:
+        raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+    value = getattr(import_module(f".{_EXPORTS[name]}", __name__), name)
+    globals()[name] = value
+    return value

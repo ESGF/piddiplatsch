@@ -13,25 +13,8 @@
     piddi_os_packages:
       - logrotate
     piddi_enable_service: false
-    piddi_projects:
-      - cmip6
-      - cmip6plus
-      - cmip7
-      - cordex-cmip6
-    piddi_topic: ESGF-PUBLICATIONS
-    piddi_output_dir: /var/lib/piddi
-    piddi_max_errors: 1
-    piddi_log_level: WARNING
-    piddi_log_file: /var/log/piddi/piddi.log
-    piddi_stats_enable_db: true
-    piddi_db_path: /var/lib/piddi/piddi.db
-    piddi_kafka_defaults:
-      bootstrap.servers: localhost:9092
-      group.id: de.dkrz.piddi.production-01
-      security.protocol: SASL_SSL
-      sasl.mechanisms: PLAIN
-    piddi_kafka: {}
-    piddi_config_extra: ""
+    # Shared application settings used by manual runs and deployment.
+    piddi_config_source: "{{ playbook_dir }}/../../custom.toml"
 
   pre_tasks:
     - name: Include variables from custom.yml when present
@@ -41,6 +24,25 @@
         - null.yml
       tags:
         - always
+
+    - name: Require application settings in the shared TOML file
+      ansible.builtin.assert:
+        that:
+          - piddi_projects is not defined
+          - piddi_topic is not defined
+          - piddi_output_dir is not defined
+          - piddi_max_errors is not defined
+          - piddi_log_level is not defined
+          - piddi_log_file is not defined
+          - piddi_stats_enable_db is not defined
+          - piddi_db_path is not defined
+          - piddi_kafka_defaults is not defined
+          - piddi_kafka is not defined
+          - piddi_config_extra is not defined
+        fail_msg: >-
+          Move application settings from custom.yml into the shared custom.toml.
+          See deploy/README.md for the migration mapping. custom.yml now contains
+          deployment controls only.
 
   tasks:
     - name: Install required operating-system packages
@@ -86,16 +88,6 @@
           group: "{{ piddi_group }}"
           mode: "0750"
 
-    - name: Install site configuration
-      ansible.builtin.template:
-        src: templates/piddi.toml.j2
-        dest: /etc/piddi/piddi.toml
-        owner: root
-        group: "{{ piddi_group }}"
-        mode: "0640"
-      no_log: true
-      register: piddi_config
-
     - name: Check the manually installed Piddiplatsch executable
       ansible.builtin.stat:
         path: "{{ piddi_executable }}"
@@ -108,6 +100,25 @@
           - piddi_executable_stat.stat.executable
         fail_msg: >-
           Install Piddiplatsch manually and set piddi_executable in custom.yml.
+
+    - name: Render and validate candidate configuration before installation
+      ansible.builtin.script:
+        cmd: "render_config.py {{ piddi_config_source | quote }}"
+        executable: "{{ piddi_conda_env }}/bin/python"
+      register: piddi_rendered_config
+      changed_when: false
+      check_mode: false
+      no_log: true
+
+    - name: Install site configuration
+      ansible.builtin.copy:
+        content: "{{ piddi_rendered_config.stdout }}"
+        dest: /etc/piddi/piddi.toml
+        owner: root
+        group: "{{ piddi_group }}"
+        mode: "0640"
+      no_log: true
+      register: piddi_config
 
     - name: Inspect the legacy administrator command
       ansible.builtin.stat:
@@ -160,19 +171,8 @@
         - piddi-logrotate.timer
       notify: Reload systemd
 
-    - name: Apply systemd unit changes before validation
+    - name: Apply systemd unit changes before service startup
       ansible.builtin.meta: flush_handlers
-
-    - name: Validate merged Piddiplatsch configuration
-      ansible.builtin.command:
-        argv:
-          - "{{ piddi_executable }}"
-          - --config
-          - /etc/piddi/piddi.toml
-          - config
-          - validate
-      become_user: "{{ piddi_user }}"
-      changed_when: false
 
     - name: Enable the consumer and rotation timer when requested
       ansible.builtin.systemd_service:

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from difflib import get_close_matches
 from typing import Literal
 from urllib.parse import urlsplit
 
@@ -13,6 +14,34 @@ from pydantic import (
 )
 
 
+class TransientConfig(BaseModel):
+    model_config = ConfigDict(extra="allow", allow_inf_nan=False)
+    stop_on_skip: bool = True
+    retries: int = Field(default=3, ge=0)
+    backoff_initial: float = Field(default=0.5, ge=0)
+    backoff_max: float = Field(default=5.0, ge=0)
+    preflight_stac: bool = False
+
+    @model_validator(mode="after")
+    def _check_backoff(self):
+        if self.backoff_max < self.backoff_initial:
+            raise ValueError("backoff_max must be at least backoff_initial")
+        return self
+
+
+class StatsConfig(BaseModel):
+    model_config = ConfigDict(extra="allow", allow_inf_nan=False)
+    interval_seconds: float = Field(default=10, gt=0)
+    summary_interval: int = Field(default=1000, gt=0)
+    enable_db: bool = True
+    db_path: str = "piddi.db"
+    heartbeat_interval_seconds: float = Field(default=5, gt=0)
+    sample_interval_seconds: float = Field(default=15, gt=0)
+    sample_retention_days: float = Field(default=30, ge=0)
+    stale_after_seconds: float = Field(default=15, gt=0)
+    history_minutes: float = Field(default=60, gt=0)
+
+
 class ConsumerConfig(BaseModel):
     model_config = ConfigDict(extra="allow")
 
@@ -20,6 +49,7 @@ class ConsumerConfig(BaseModel):
     topic: str
     output_dir: str | None = None
     max_errors: int | None = None
+    transient: TransientConfig | None = None
 
     @model_validator(mode="before")
     @classmethod
@@ -50,6 +80,26 @@ class KafkaConfig(BaseModel):
     auto_offset_reset: str | None = Field(None, alias="auto.offset.reset")
     enable_auto_commit: bool | None = Field(None, alias="enable.auto.commit")
     session_timeout_ms: int | None = Field(None, alias="session.timeout.ms")
+
+    @model_validator(mode="after")
+    def _check_plain_credentials(self):
+        options = self.model_extra or {}
+        protocol = str(options.get("security.protocol", "")).upper()
+        mechanism = str(
+            options.get("sasl.mechanisms", options.get("sasl.mechanism", "GSSAPI"))
+        ).upper()
+        if protocol in {"SASL_SSL", "SASL_PLAINTEXT"} and mechanism == "PLAIN":
+            missing = [
+                key
+                for key in ("sasl.username", "sasl.password")
+                if not options.get(key)
+            ]
+            if missing:
+                raise ValueError(
+                    "Missing required Kafka settings for SASL PLAIN: "
+                    + ", ".join(missing)
+                )
+        return self
 
     @field_validator("bootstrap_servers")
     @classmethod
@@ -218,6 +268,7 @@ class AppConfig(BaseModel):
     schema_config: SchemaConfig | None = Field(None, alias="schema")
     logging_config: LoggingConfig | None = Field(None, alias="logging")
     plugins: PluginsConfig | None = None
+    stats: StatsConfig | None = None
 
     @model_validator(mode="after")
     def _check_lookup_requirements(self) -> AppConfig:
@@ -248,6 +299,26 @@ class AppConfig(BaseModel):
         return self
 
 
+def _typo_warnings(model: BaseModel, path: str = "") -> list[str]:
+    # Kafka options and project extensions are deliberately open-ended.
+    if isinstance(model, (KafkaConfig, PluginsConfig, ProjectPluginConfig)):
+        return []
+    warnings = []
+    fields = model.__class__.model_fields
+    names = [field.alias or name for name, field in fields.items()]
+    for key in model.model_extra or {}:
+        matches = get_close_matches(key, names, n=1, cutoff=0.85)
+        if matches:
+            warnings.append(
+                f"Unknown setting {path + key!r}; did you mean {path + matches[0]!r}?"
+            )
+    for name, field in fields.items():
+        value = getattr(model, name)
+        if isinstance(value, BaseModel):
+            warnings.extend(_typo_warnings(value, f"{path}{field.alias or name}."))
+    return warnings
+
+
 def validate_config(data: dict) -> tuple[list[str], list[str]]:
     """Validate config using Pydantic models and simple cross-checks.
 
@@ -265,12 +336,25 @@ def validate_config(data: dict) -> tuple[list[str], list[str]]:
             errors.append(f"{loc}: {msg}")
         return errors, warnings
 
-    # warnings
+    from piddiplatsch.config.config import Config
+    from piddiplatsch.core.registry import get_plugins
+
+    resolved = Config()
+    resolved.config_data = data
+    try:
+        selected = get_plugins(cfg.consumer.projects)
+    except ValueError as exc:
+        return [str(exc)], warnings
+    warnings.extend(_typo_warnings(cfg))
     handle_configs = {"legacy": cfg.handle} if cfg.handle else {}
-    if cfg.handles:
-        handle_configs.update(
-            (name, cfg.handles.resolve(name)) for name in cfg.handles.profiles
-        )
+    if cfg.handles and not cfg.handle:
+        names = {resolved.get_handle_profile(plugin.name) for plugin in selected}
+        unknown = names - cfg.handles.profiles.keys()
+        if unknown:
+            return [
+                f"Unknown selected Handle profile: {name!r}" for name in sorted(unknown)
+            ], warnings
+        handle_configs.update((name, cfg.handles.resolve(name)) for name in names)
     for name, handle_config in handle_configs.items():
         if (
             handle_config.username == "300:21.TEST/testuser"
@@ -285,17 +369,10 @@ def validate_config(data: dict) -> tuple[list[str], list[str]]:
                 "[elasticsearch].index is not set; some features may be unavailable"
             )
 
-    # schema strict_mode type handled by Pydantic; add no-op
-
-    # plugins cmip6 hint
-    lp = (
-        cfg.plugins.cmip6.landing_page_url
-        if (cfg.plugins and cfg.plugins.cmip6)
-        else None
+    warnings.extend(
+        f"[plugins.{plugin.name}].landing_page_url not set; landing pages may be missing"
+        for plugin in selected
+        if resolved.get_plugin(plugin.name, "landing_page_url") in (None, "")
     )
-    if lp in (None, ""):
-        warnings.append(
-            "[plugins.cmip6].landing_page_url not set; landing pages may be missing"
-        )
 
     return errors, warnings

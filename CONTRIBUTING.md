@@ -56,7 +56,7 @@ Handle Service.
 ### Config Validation
 
 Validate the loaded configuration (packaged defaults, then the optional site
-config, then `custom.toml` or `--config FILE`). Structural checks only; exits
+config, then `custom.toml` or `--config FILE`). Offline structural and consistency checks; exits
 non-zero on errors:
 
 ```bash
@@ -67,14 +67,20 @@ piddi config validate
 piddi --config tests/config.toml config validate
 ```
 
-Validations include presence and format of `consumer.projects`, `consumer.topic`, `kafka.bootstrap.servers` (comma-separated `host:port`), named Handle profiles and project references, and lookup backend requirements.
+Validations include presence and format of `consumer.projects`, `consumer.topic`, `kafka.bootstrap.servers` (comma-separated `host:port`), named Handle profiles and project references, lookup backend requirements, SASL PLAIN credentials, and retry/monitoring ranges.
+Likely application-key typos produce warnings, as do demo credentials and missing
+landing pages for selected projects. Explicit `--config` files must exist.
 
 ### Makefile: Config Validation Target
 
-Before smoke tests, the Makefile validates both the default config and the test config.
+Before smoke tests, the Makefile validates the ESGF example and test config,
+each layered over packaged defaults. CI uses the same two configurations.
+Packaged defaults alone intentionally omit the site-specific SASL credentials;
+the ESGF example supplies placeholders for offline validation, without requiring
+production secrets or a Kafka connection.
 
 ```bash
-# Validate default + tests/config.toml
+# Validate etc/esgf-example.toml and tests/config.toml with packaged defaults
 make config-validate
 
 # Smoke tests automatically run validation first
