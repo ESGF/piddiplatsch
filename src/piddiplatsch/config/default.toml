@@ -47,9 +47,12 @@ backoff_max = 5.0      # seconds cap
 preflight_stac = false
 
 [kafka]
-# Kafka client configuration. Environment overrides recommended for brokers and group.
+# Set site-specific brokers, group, and credentials in an override file.
 "bootstrap.servers" = "localhost:39092"
 "group.id" = "piddiplatsch-001"
+# ESGF production authentication. Local test Kafka overrides the protocol to PLAINTEXT.
+"security.protocol" = "SASL_SSL"
+"sasl.mechanisms" = "PLAIN"
 "auto.offset.reset" = "earliest"
 "enable.auto.commit" = true
 

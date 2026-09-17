@@ -5,6 +5,26 @@ from piddiplatsch.config.config import Config
 PROJECT_ROOT = Path(__file__).parent.parent
 
 
+def test_site_example_inherits_esgf_authentication():
+    configured = Config()
+    configured.load_user_config(str(PROJECT_ROOT / "etc" / "site-example.toml"))
+
+    assert configured.get("kafka", "security.protocol") == "SASL_SSL"
+    assert configured.get("kafka", "sasl.mechanisms") == "PLAIN"
+    errors, _ = configured.validate()
+    assert errors == []
+
+
+def test_test_config_overrides_production_authentication():
+    configured = Config()
+    configured.load_user_config(str(PROJECT_ROOT / "tests" / "config.toml"))
+
+    assert configured.get("kafka", "security.protocol") == "PLAINTEXT"
+    assert configured.get("kafka", "bootstrap.servers") == "localhost:39092"
+    errors, _ = configured.validate()
+    assert errors == []
+
+
 def test_production_override_is_valid_with_packaged_defaults():
     configured = Config()
     configured.load_user_config(str(PROJECT_ROOT / "etc" / "piddi-production.toml"))

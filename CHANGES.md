@@ -33,6 +33,9 @@ All notable changes to this project are documented here.
   inputs.
 
 ### Changed
+- Kafka defaults now use `SASL_SSL` with `PLAIN` for ESGF production.
+  Local unauthenticated brokers require `security.protocol = "PLAINTEXT"`;
+  `tests/config.toml` supplies this override for Docker test Kafka.
 - Failure and skipped records now store their canonical project, use
   project-scoped paths, and retry through the persisted project. Unresolved and
   legacy records retain the global recovery path and configured selection.

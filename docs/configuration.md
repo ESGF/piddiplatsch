@@ -15,8 +15,11 @@ file; the packaged and site-wide layers are still loaded first.
 
 Copy `etc/site-example.toml` to `custom.toml` and replace its placeholders.
 Set the projects/topic, Kafka connection and consumer group, Handle service and
-credentials, and output directory. Add authentication options from
-`etc/esgf-example.toml` if your Kafka cluster requires them. For service deployment,
+credentials, and output directory. Packaged defaults supply `SASL_SSL` and `PLAIN`
+for authenticated ESGF Kafka; the example supplies Kafka credential placeholders. Match
+these values to your broker; they are connection requirements, not advanced
+tuning. See `etc/esgf-example.toml` for alternative mechanisms and a custom CA.
+For service deployment,
 `etc/piddi-production.toml` provides filesystem paths and Kafka connection placeholders.
 
 You do not need to copy the full packaged defaults. Leave retry delays, monitoring
@@ -132,6 +135,21 @@ Project resolution happens afterwards: shared settings → selected profile or
 project settings. A local file need only contain the individual keys you change.
 
 ## Kafka and project STAC settings
+
+Kafka authentication defaults to `SASL_SSL` with the `PLAIN` mechanism.
+Set broker addresses and credentials in your site/local override. Other
+protocols and mechanisms can still be selected there.
+
+The Docker test cluster uses unauthenticated Kafka. Its `tests/config.toml`
+explicitly overrides the protocol, so run it with
+`piddi --config tests/config.toml consume`. For another local configuration, add:
+
+```toml
+[kafka]
+"security.protocol" = "PLAINTEXT"
+```
+
+Omitting this key inherits `SASL_SSL`; it does not select plaintext automatically.
 
 All additional keys under `[kafka]` are passed to `confluent-kafka`. Dotted
 librdkafka keys must be quoted in TOML, for example

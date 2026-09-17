@@ -81,6 +81,9 @@ piddi consume
 
 You need Kafka for `harvest` and `consume`. A Handle Service (or mock Handle
 server) is required only for `publish` or `consume --publish`.
+Kafka defaults to ESGF authentication (`SASL_SSL` / `PLAIN`); configure your
+brokers and credentials first. For the local Docker test cluster, use
+`piddi --config tests/config.toml consume`, which selects `PLAINTEXT`.
 
 ---
 
@@ -256,7 +259,9 @@ The short production and Vagrant procedure is in
 
 ## 🛠️ Configuration
 
-Start with a small site override; omitted settings inherit packaged defaults:
+For a new setup, start with a small site override; omitted settings inherit
+packaged defaults, including ESGF Kafka authentication (`SASL_SSL` / `PLAIN`).
+Replace the connection and credential placeholders:
 
 ```bash
 cp etc/site-example.toml custom.toml
@@ -280,11 +285,12 @@ settings and override behavior.
 
 ### ESGF Example Config
 
-For non-Docker ESGF Kafka setups, copy the minimal override from [etc/esgf-example.toml](etc/esgf-example.toml) to `custom.toml` and edit your real ESGF options locally (do not commit secrets):
+For further ESGF Kafka options, see [etc/esgf-example.toml](etc/esgf-example.toml).
+Merge its Kafka settings into an existing `custom.toml`; keep your Handle and
+project settings. Keep real credentials in the local file (do not commit secrets):
 
 ```bash
-# Copy example and edit your ESGF Kafka settings
-cp etc/esgf-example.toml custom.toml
+# Edit the existing site override with your ESGF Kafka settings
 vim custom.toml   # set brokers, group.id, SASL, CA path, etc.
 
 # Validate and inspect

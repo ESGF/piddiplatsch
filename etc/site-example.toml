@@ -9,9 +9,14 @@ topic = "CMIP6"
 output_dir = "outputs"
 
 [kafka]
-"bootstrap.servers" = "broker.example.org:9092"
+"bootstrap.servers" = "broker.example.org:9093"
 "group.id" = "piddi-my-site"
-# For Kafka authentication/TLS options, see etc/esgf-example.toml.
+# Inherits security.protocol = "SASL_SSL" and sasl.mechanisms = "PLAIN".
+"client.id" = "YOUR_ESGF_RESOURCE"
+"sasl.username" = "YOUR_KAFKA_USERNAME"
+"sasl.password" = "REPLACE_ME"
+# For other mechanisms or a custom CA, see etc/esgf-example.toml.
+# For local test Kafka, set "security.protocol" = "PLAINTEXT" and use its port.
 
 [handles]
 default = "site"
