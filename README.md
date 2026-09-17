@@ -256,10 +256,10 @@ The short production and Vagrant procedure is in
 
 ## 🛠️ Configuration
 
-Start from the default configuration:
+Start with a small site override; omitted settings inherit packaged defaults:
 
 ```bash
-cp src/piddiplatsch/config/default.toml custom.toml
+cp etc/site-example.toml custom.toml
 vim custom.toml
 ```
 
@@ -268,6 +268,7 @@ The CLI loads packaged defaults, then `/etc/piddi/piddi.toml`, then
 
 ```bash
 piddi config validate
+piddi config explain --project cmip6
 ```
 
 Use `--config PATH` to select a different final override file in place of

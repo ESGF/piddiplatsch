@@ -6,6 +6,7 @@ from pathlib import Path
 import click
 
 from piddiplatsch.commands import (
+    ConfigExplainCommand,
     ConfigShowCommand,
     ConfigValidateCommand,
     ConsumeCommand,
@@ -401,6 +402,16 @@ def config_validate() -> None:
 def config_show(fmt: str, section: str | None, key: str | None) -> None:
     """Print the effective configuration (defaults + overrides)."""
     ConfigShowCommand(fmt=fmt, section=section, key=key).execute()
+
+
+@config_cmd.command("explain")
+@click.option(
+    "--project", required=True, help="Project plugin whose settings to resolve."
+)
+@click.option("--handle-profile", help="Explain using this Handle profile override.")
+def config_explain(project: str, handle_profile: str | None) -> None:
+    """Show resolved project settings and the keys supplying them."""
+    ConfigExplainCommand(project=project, handle_profile=handle_profile).execute()
 
 
 @cli.command("top")

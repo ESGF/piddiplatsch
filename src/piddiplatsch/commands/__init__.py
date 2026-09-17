@@ -1,7 +1,11 @@
 """Application command classes."""
 
 from piddiplatsch.commands.base import Command, FileBatchCommand, KafkaCommand
-from piddiplatsch.commands.config import ConfigShowCommand, ConfigValidateCommand
+from piddiplatsch.commands.config import (
+    ConfigExplainCommand,
+    ConfigShowCommand,
+    ConfigValidateCommand,
+)
 from piddiplatsch.commands.consume import ConsumeCommand
 from piddiplatsch.commands.harvest import HarvestCommand
 from piddiplatsch.commands.map import MapCommand
@@ -11,6 +15,7 @@ from piddiplatsch.commands.top import TopCommand
 
 __all__ = [
     "Command",
+    "ConfigExplainCommand",
     "ConfigShowCommand",
     "ConfigValidateCommand",
     "ConsumeCommand",
