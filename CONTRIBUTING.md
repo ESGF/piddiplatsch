@@ -73,10 +73,14 @@ landing pages for selected projects. Explicit `--config` files must exist.
 
 ### Makefile: Config Validation Target
 
-Before smoke tests, the Makefile validates both the default config and the test config.
+Before smoke tests, the Makefile validates the ESGF example and test config,
+each layered over packaged defaults. CI uses the same two configurations.
+Packaged defaults alone intentionally omit the site-specific SASL credentials;
+the ESGF example supplies placeholders for offline validation, without requiring
+production secrets or a Kafka connection.
 
 ```bash
-# Validate default + tests/config.toml
+# Validate etc/esgf-example.toml and tests/config.toml with packaged defaults
 make config-validate
 
 # Smoke tests automatically run validation first

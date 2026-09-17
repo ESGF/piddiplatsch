@@ -36,6 +36,8 @@ All notable changes to this project are documented here.
   inputs.
 
 ### Changed
+- CI and `make config-validate` validate the complete ESGF example and local
+  test configuration over packaged defaults, which intentionally omit SASL credentials.
 - Configuration inspection skips file logging, so it works with unwritable
   production log paths without creating log files. Ansible validates candidate
   settings before replacing the installed configuration.

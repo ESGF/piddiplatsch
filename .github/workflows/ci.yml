@@ -78,9 +78,11 @@ jobs:
           python -m pip install --upgrade pip
           pip install -e .[dev]
 
-      - name: Config Validation (defaults)
+      # Packaged SASL defaults intentionally omit site-specific credentials.
+      # Validate complete examples offline; no production secrets are needed.
+      - name: Config Validation (ESGF example + defaults)
         run: |
-          python -m piddiplatsch.cli config validate
+          python -m piddiplatsch.cli --config etc/esgf-example.toml config validate
 
       - name: Config Validation (tests/config.toml)
         run: |
