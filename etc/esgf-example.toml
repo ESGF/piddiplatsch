@@ -2,10 +2,10 @@
 # Replace placeholders with your ESGF and Handle service parameters.
 # Keep real credentials out of version control.
 #
-# For production deployment, edit deploy/ansible/custom.yml instead, using
-# custom.yml.example as the starting point. Ansible renders /etc/piddi/piddi.toml
-# and supplies production output, log, and database paths. Do not copy this
-# file over the Ansible-managed configuration.
+# Ansible reads this same custom.toml and installs /etc/piddi/piddi.toml.
+# It adds production output/log/database paths only when omitted here.
+# Optional deploy/ansible/custom.yml contains deployment controls, not a second
+# copy of application settings. See deploy/README.md.
 # Omitted settings inherit packaged defaults; see docs/configuration.md.
 
 [consumer]

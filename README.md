@@ -290,9 +290,10 @@ For an existing `custom.toml`, copy only the settings you need. Comments map
 ESGF Resource/API key/API secret to their Kafka properties. Keep real credentials
 in the local file (do not commit secrets).
 
-For production, configure `deploy/ansible/custom.yml` as described in the
-[deployment guide](deploy/README.md). Ansible generates the site configuration
-and manages production paths.
+For production, Ansible reads this same `custom.toml` and adds production path
+defaults for omitted values. The optional `deploy/ansible/custom.yml` holds only
+deployment controls. See the [deployment guide](deploy/README.md) for setup and
+migration from the previous duplicated YAML application settings.
 
 For a manual run:
 

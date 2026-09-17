@@ -202,8 +202,8 @@ editor settings.
 
 After Piddi is checked out and installed into its Conda environment manually,
 the Ansible playbook configures one service per VM. It renders the site
-configuration from variables in
-`deploy/ansible/custom.yml`, uses
+configuration from the same `custom.toml` used by manual runs, adds defaults
+for omitted production paths, and uses
 `/etc/piddi/piddi.toml`, `/var/lib/piddi`, and `/var/log/piddi/piddi.log` and
 configures systemd plus hourly log rotation. For the short production and
 Vagrant procedures, see [deploy/README.md](../deploy/README.md).

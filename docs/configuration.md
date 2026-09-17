@@ -19,10 +19,12 @@ credentials, and output directory. Packaged defaults supply `SASL_SSL` and `PLAI
 for authenticated ESGF Kafka; the example supplies Kafka credential placeholders. Match
 these values to your broker; they are connection requirements, not advanced
 tuning. See `etc/esgf-example.toml` for alternative mechanisms and a custom CA.
-For production, use `deploy/ansible/custom.yml.example` to create
-`deploy/ansible/custom.yml`. Ansible supplies the production output, logging,
-and database paths and renders `/etc/piddi/piddi.toml`; edit the Ansible
-variables rather than the generated file. See [deployment](../deploy/README.md).
+Ansible uses the same `custom.toml` for production and installs it as
+`/etc/piddi/piddi.toml`, adding production output/log/database path defaults
+only where the TOML omits them. Explicit TOML values take precedence.
+The optional `deploy/ansible/custom.yml` contains only deployment controls;
+Kafka, Handle, project, and mapping values belong in TOML once.
+See [deployment and migration](../deploy/README.md).
 
 You do not need to copy the full packaged defaults. Leave retry delays, monitoring
 intervals, mapping limits, and optional backends inherited until you need to tune them.

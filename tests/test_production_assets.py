@@ -1,9 +1,9 @@
-import json
+import runpy
 from pathlib import Path
 
+import pytest
 import toml
 import yaml
-from jinja2 import Environment, StrictUndefined
 
 from piddiplatsch.config.config import Config
 
@@ -31,18 +31,10 @@ def test_test_config_overrides_production_authentication():
 
 
 def test_ansible_render_matches_esgf_example_and_production_paths(tmp_path):
-    ansible_dir = PROJECT_ROOT / "deploy" / "ansible"
-    variables = yaml.safe_load((ansible_dir / "piddi.yml").read_text())[0]["vars"]
-    variables.update(yaml.safe_load((ansible_dir / "custom.yml.example").read_text()))
-    # TOML output must not use HTML escaping.
-    environment = Environment(undefined=StrictUndefined, autoescape=False)  # noqa: S701
-    # Filters used by the Ansible template for these concrete example values.
-    environment.filters.update(
-        to_json=json.dumps, bool=bool, combine=lambda base, extra: {**base, **extra}
-    )
-    rendered = environment.from_string(
-        (ansible_dir / "templates" / "piddi.toml.j2").read_text()
-    ).render(**variables)
+    render = runpy.run_path(str(PROJECT_ROOT / "deploy/ansible/render_config.py"))[
+        "render_config"
+    ]
+    rendered = render(PROJECT_ROOT / "etc/esgf-example.toml")
     rendered_path = tmp_path / "production.toml"
     rendered_path.write_text(rendered)
     configured = Config()
@@ -63,17 +55,38 @@ def test_ansible_render_matches_esgf_example_and_production_paths(tmp_path):
         assert configured.get_handle(project) == example.get_handle(project)
         assert configured.get_plugin(project) == example.get_plugin(project)
 
-    # The template must preserve a site's optional mechanism and CA overrides.
-    variables["piddi_kafka"].update(
-        {"sasl.mechanisms": "SCRAM-SHA-512", "ssl.ca.location": "/etc/piddi/ca.pem"}
-    )
-    overridden = toml.loads(
-        environment.from_string(
-            (ansible_dir / "templates" / "piddi.toml.j2").read_text()
-        ).render(**variables)
-    )
-    assert overridden["kafka"]["sasl.mechanisms"] == "SCRAM-SHA-512"
-    assert overridden["kafka"]["ssl.ca.location"] == "/etc/piddi/ca.pem"
+
+def test_deployment_preserves_explicit_application_overrides(tmp_path):
+    render = runpy.run_path(str(PROJECT_ROOT / "deploy/ansible/render_config.py"))[
+        "render_config"
+    ]
+    source = tmp_path / "custom.toml"
+    overrides = {
+        "consumer": {"output_dir": "/data/piddi", "projects": ["cmip7"]},
+        "logging": {"file": "", "level": "INFO"},
+        "stats": {"enable_db": False, "db_path": "/data/stats.db"},
+        "kafka": {"sasl.mechanisms": "SCRAM-SHA-512", "ssl.ca.location": "/etc/ca.pem"},
+        "plugins": {"cmip7": {"handle_prefix": "21.OTHER"}},
+    }
+    source.write_text(toml.dumps(overrides))
+    original = source.read_bytes()
+    assert toml.loads(render(source)) == overrides
+    assert source.read_bytes() == original
+    # Rendering another file must not retain values from the previous render.
+    source.write_text("")
+    assert toml.loads(render(source))["consumer"]["output_dir"] == "/var/lib/piddi"
+
+
+def test_deployment_requires_existing_valid_source(tmp_path):
+    render = runpy.run_path(str(PROJECT_ROOT / "deploy/ansible/render_config.py"))[
+        "render_config"
+    ]
+    source = tmp_path / "custom.toml"
+    with pytest.raises(FileNotFoundError):
+        render(source)
+    source.write_text("[invalid")
+    with pytest.raises(toml.TomlDecodeError):
+        render(source)
 
 
 def test_service_uses_production_config_and_silent_progress():
@@ -101,54 +114,32 @@ def test_ansible_deployment_is_safe_by_default():
     assert "Validate merged Piddiplatsch configuration" in playbook
 
 
-def test_ansible_enables_all_current_projects_by_default():
-    playbook = (PROJECT_ROOT / "deploy" / "ansible" / "piddi.yml").read_text()
-
-    assert "piddi_topic: ESGF-PUBLICATIONS" in playbook
-    assert "piddi_stats_enable_db: true" in playbook
-    for project in ("cmip6", "cmip6plus", "cmip7", "cordex-cmip6"):
-        assert f"      - {project}\n" in playbook
-
-
-def test_custom_variables_example_only_contains_site_overrides():
-    example = (PROJECT_ROOT / "deploy" / "ansible" / "custom.yml.example").read_text()
-
-    assert "piddi_topic: ESGF-PUBLICATIONS" in example
-    assert "piddi_kafka:" in example
-    assert "group.id: de.dkrz.test.20260907-01" in example
-    assert "client.id: YOUR_ESGF_RESOURCE" in example
-    assert "sasl.username: YOUR_ESGF_API_KEY" in example
-    assert "sasl.password: YOUR_ESGF_API_SECRET" in example
-    assert "piddi_config_extra:" in example
-    assert '[handles]\n  default = "production"' in example
-    assert "[handles.profiles.production]" in example
-    for setting in (
-        "server_url",
-        "prefix",
-        "username",
-        "password",
-        "verify_https",
-    ):
-        assert f"  {setting} = " in example
-    for project in ("cmip6", "cmip6plus", "cmip7", "cordex-cmip6"):
-        assert f"[plugins.{project}]" in example
-    assert example.count("max_parts = 0") == 4
-    assert "\npiddi_projects:" not in example
-    assert "\npiddi_output_dir:" not in example
-    assert "\npiddi_log_level:" not in example
-
-
-def test_ansible_renders_piddi_configuration_template():
-    playbook = (PROJECT_ROOT / "deploy" / "ansible" / "piddi.yml").read_text()
-    template = (
-        PROJECT_ROOT / "deploy" / "ansible" / "templates" / "piddi.toml.j2"
-    ).read_text()
-
-    assert "templates/piddi.toml.j2" in playbook
-    assert "piddi_projects" in template
-    assert "piddi_stats_enable_db" in template
-    assert "piddi_kafka_defaults | combine(piddi_kafka)" in template
-    assert "piddi_config_extra" in template
+def test_ansible_uses_one_application_config():
+    playbook = yaml.safe_load((PROJECT_ROOT / "deploy/ansible/piddi.yml").read_text())[
+        0
+    ]
+    variables = playbook["vars"]
+    assert variables["piddi_config_source"] == "{{ playbook_dir }}/../../custom.toml"
+    assert "piddi_kafka" not in variables
+    assert "piddi_config_extra" not in variables
+    assert "piddi_projects" not in variables
+    example = yaml.safe_load(
+        (PROJECT_ROOT / "deploy/ansible/custom.yml.example").read_text()
+    )
+    assert example is None  # Optional deployment controls are all commented.
+    tasks = {task["name"]: task for task in playbook["tasks"]}
+    render = tasks["Render shared application settings with production path defaults"]
+    assert render["no_log"] is True
+    assert "piddi_config_source" in render["ansible.builtin.script"]["cmd"]
+    install = tasks["Install site configuration"]
+    assert install["no_log"] is True
+    assert (
+        install["ansible.builtin.copy"]["content"]
+        == "{{ piddi_rendered_config.stdout }}"
+    )
+    guard = playbook["pre_tasks"][1]["ansible.builtin.assert"]
+    assert "piddi_kafka is not defined" in guard["that"]
+    assert "piddi_config_extra is not defined" in guard["that"]
 
 
 def test_playbook_loads_local_custom_overrides_with_fallback():
