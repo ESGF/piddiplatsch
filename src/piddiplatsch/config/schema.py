@@ -241,6 +241,7 @@ class LoggingConfig(BaseModel):
 
 class ProjectPluginConfig(BaseModel):
     model_config = ConfigDict(extra="allow")
+    force_dataset_pid: bool = Field(default=False, strict=True)
     landing_page_url: str | None = None
     handle: str | None = None
     handle_prefix: str | None = Field(default=None, pattern=r"^\S+$")

@@ -364,3 +364,17 @@ def test_plugin_handle_prefix_validation():
     errors, _ = validate_config(cfg)
 
     assert errors == []
+
+
+@pytest.mark.parametrize("value", [True, False, "false", "true", 1, None])
+def test_force_dataset_pid_requires_a_boolean(value):
+    cfg = _base_config()
+    cfg["kafka"] = {"bootstrap.servers": "localhost:39092"}
+    cfg["plugins"] = {"cmip7": {"force_dataset_pid": value}}
+
+    errors, _ = validate_config(cfg)
+
+    if isinstance(value, bool):
+        assert not errors
+    else:
+        assert any("plugins.cmip7.force_dataset_pid" in error for error in errors)

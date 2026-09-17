@@ -253,8 +253,26 @@ All existing settings remain supported. Only override values your site needs.
 | `schema` | `strict_mode` | Reject incomplete or unsupported records; defaults to `true`. |
 | `plugins.<name>` | `handle` | Named Handle profile used by this project. |
 | `plugins.<name>` | `handle_prefix` | Optional prefix overriding the selected Handle profile's prefix for this project. |
+| `plugins.<name>` | `force_dataset_pid` | Default `false`. Generate dataset PIDs from the full STAC item ID, ignoring source dataset PIDs; also updates file parent links. File tracking IDs are preserved. |
 | `plugins.<name>` | `landing_page_url`, `max_parts`, `excluded_asset_keys` | Project-specific Handle-record behavior. |
 | `plugins.<name>.stac` | `base_url`, `timeout`, `collection` | Optional project overrides for the global STAC settings. |
+
+To correct publisher dataset PIDs generated from an unversioned `dataset_id`,
+enable the override only for affected projects in your configuration:
+
+```toml
+[plugins.cmip7]
+force_dataset_pid = true
+```
+
+This applies to mapping, consumption, and retries. Piddi uses its deterministic
+UUIDv3 generator with the complete STAC item `id` (the versioned `instance_id`).
+Source dataset PID fields are ignored, including conflicting compatibility fields.
+File `IS_PART_OF` links point to the generated dataset PID, while file tracking
+IDs and dataset `HAS_PARTS` links retain their existing behavior. The input STAC
+JSON is not modified. This does not create redirects for previously published
+PIDs; existing mapped Handle JSONL must be regenerated to use the new policy.
+The CLI `--force` option remains separate and controls transient failure handling.
 
 ### Advanced tuning and optional services
 

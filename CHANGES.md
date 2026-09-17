@@ -5,6 +5,9 @@ All notable changes to this project are documented here.
 ## [Unreleased]
 
 ### Added
+- Added per-project `force_dataset_pid` to regenerate dataset PIDs from versioned STAC
+  item IDs despite existing source PIDs, keeping file parent links consistent
+  and preserving file tracking IDs. Disabled by default.
 - Configuration explanations now show loaded files, per-setting file origins,
   and resolved output/log/database paths. Validation checks SASL PLAIN credentials
   and retry/monitoring ranges, and suggests corrections for likely key typos.
