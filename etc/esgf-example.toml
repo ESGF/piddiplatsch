@@ -15,9 +15,9 @@
 # Required ESGF Resource identifier
 "client.id" = "YOUR_ESGF_RESOURCE"
 
-# ESGF clusters commonly use SASL over SSL
-"security.protocol" = "SASL_SSL"
-"sasl.mechanisms" = "PLAIN"  # or SCRAM-SHA-256/512 depending on broker
+# Inherits SASL_SSL and PLAIN from packaged defaults.
+# Override if your broker requires another mechanism, for example:
+# "sasl.mechanisms" = "SCRAM-SHA-512"
 "sasl.username" = "esgf_user"
 "sasl.password" = "esgf_pass"
 

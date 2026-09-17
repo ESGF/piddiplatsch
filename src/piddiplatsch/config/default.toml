@@ -53,6 +53,13 @@ preflight_stac = false
 # ESGF production authentication. Local test Kafka overrides the protocol to PLAINTEXT.
 "security.protocol" = "SASL_SSL"
 "sasl.mechanisms" = "PLAIN"
+# Required for the authenticated ESGF connection: set these in your site/local
+# override, keeping real credentials out of this packaged file.
+# "client.id" = "YOUR_ESGF_RESOURCE"
+# "sasl.username" = "YOUR_KAFKA_USERNAME"
+# "sasl.password" = "YOUR_KAFKA_PASSWORD"
+# If your broker uses a custom CA, also set:
+# "ssl.ca.location" = "/path/to/ca.pem"
 "auto.offset.reset" = "earliest"
 "enable.auto.commit" = true
 

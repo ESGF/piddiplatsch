@@ -15,7 +15,9 @@ output_dir = "outputs"
 "client.id" = "YOUR_ESGF_RESOURCE"
 "sasl.username" = "YOUR_KAFKA_USERNAME"
 "sasl.password" = "REPLACE_ME"
-# For other mechanisms or a custom CA, see etc/esgf-example.toml.
+# If your broker uses a custom CA, also set:
+# "ssl.ca.location" = "/path/to/ca.pem"
+# For other authentication mechanisms, see etc/esgf-example.toml.
 # For local test Kafka, set "security.protocol" = "PLAINTEXT" and use its port.
 
 [handles]
