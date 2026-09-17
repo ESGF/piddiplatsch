@@ -125,10 +125,16 @@ class Config:
 
         Projects select profiles with ``plugins.<project>.handle``. Callers may
         explicitly select a profile, otherwise ``handles.default`` is used.
+        A project's ``handle_prefix`` overrides the selected service's prefix,
+        including when a profile is explicitly selected or legacy config is used.
         """
+        overrides = {}
+        prefix = self.get_plugin(project, "handle_prefix") if project else None
+        if prefix is not None:
+            overrides["prefix"] = prefix
         legacy = self.config_data.get("handle")
         if legacy:
-            return legacy
+            return {**legacy, **overrides}
 
         handles = self.config_data.get("handles", {}) or {}
         selected = profile or self.get_handle_profile(project)
@@ -147,7 +153,7 @@ class Config:
         defaults = handles.get("defaults", {}) or {}
         if not isinstance(defaults, dict):
             raise ValueError("[handles.defaults] must be a table")
-        return {**defaults, **profile_config}
+        return {**defaults, **profile_config, **overrides}
 
     def configure_logging(
         self,
