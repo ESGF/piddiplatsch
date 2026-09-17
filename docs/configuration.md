@@ -42,6 +42,7 @@ piddi config show
 | `logging` | `level` | Baseline `DEBUG`, `INFO`, `WARNING`, `ERROR`, or `CRITICAL` level. `WARN` is accepted as an alias. |
 | `logging` | `file` | Log destination. An empty string selects terminal logging. |
 | `plugins.<name>` | `handle` | Named Handle profile used by this project. |
+| `plugins.<name>` | `handle_prefix` | Optional prefix overriding the selected Handle profile's prefix for this project. |
 | `plugins.<name>` | `landing_page_url`, `max_parts`, `excluded_asset_keys` | Project-specific Handle-record behavior. |
 | `plugins.<name>.stac` | `base_url`, `timeout`, `collection` | Optional project overrides for the global STAC settings. |
 | `stats` | `interval_seconds`, `summary_interval` | Statistics reporting intervals. |
@@ -69,6 +70,36 @@ profile with `plugins.<name>.handle`, and `--handle-profile NAME` temporarily
 overrides both settings for `consume`, `map`, `publish`, or `retry`. Existing
 Handle files retain their mapped prefix, so publication still rejects an
 override whose prefix does not match the records.
+
+Plugins can share a service and credentials while using different prefixes:
+
+```toml
+[handles]
+default = "production"
+
+[handles.profiles.production]
+server_url = "https://handles.example.org"
+prefix = "21.DEFAULT"
+username = "shared-user"
+password = "replace-me"
+
+[plugins.cmip6]
+handle_prefix = "21.CMIP6"
+
+[plugins.cmip7]
+handle_prefix = "21.CMIP7"
+```
+
+Both plugins inherit the production profile. A plugin can still select another
+service with `handle = "another-profile"`. Prefix precedence is the plugin's
+`handle_prefix`, then the selected profile's `prefix`, then
+`[handles.defaults].prefix`. Profiles must still provide a fallback prefix,
+either directly or through defaults, for callers without a project override.
+The plugin prefix also applies when `--handle-profile` selects a different
+service or a legacy `[handle]` table supplies the service settings. Mapping,
+JSONL output, immediate publication, and deferred publication all use this
+effective prefix. The shared credentials must have permission to write each
+plugin's prefix.
 
 Keep real credentials in an ignored local override. Configuration examples can
 live under `etc/`. The legacy single

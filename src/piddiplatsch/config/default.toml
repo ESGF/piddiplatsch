@@ -80,6 +80,8 @@ timeout = 10
 # Local mock Handle server. Profiles inherit [handles.defaults] and only need
 # to define values that differ or are specific to the server.
 server_url = "http://localhost:8000"
+# Fallback prefix; [plugins.<name>].handle_prefix can override it while sharing
+# this profile's service and credentials.
 prefix = "21.TEST"
 username = "300:21.TEST/testuser"
 password = "testpass"

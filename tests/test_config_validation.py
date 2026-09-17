@@ -1,3 +1,5 @@
+import pytest
+
 from piddiplatsch.config import config
 from piddiplatsch.config.config import Config
 from piddiplatsch.config.schema import LoggingConfig, LookupConfig, validate_config
@@ -287,6 +289,76 @@ def test_handle_profile_validation_applies_common_defaults():
             "timeout": 10,
         },
         "profiles": {"mock": {"prefix": "21.TEST"}},
+    }
+
+    errors, _ = validate_config(cfg)
+
+    assert errors == []
+
+
+@pytest.mark.parametrize("legacy", [False, True])
+@pytest.mark.parametrize("profile", [None, "alternate"])
+def test_plugins_share_handle_service_with_distinct_prefixes(legacy, profile):
+    shared = _base_config()["handle"]
+    config._set("handle", None, shared if legacy else {})
+    config._set(
+        "handles",
+        None,
+        {
+            "default": "shared",
+            "defaults": shared,
+            "profiles": {
+                "shared": {},
+                "alternate": {"server_url": "https://alternate.example.test"},
+            },
+        },
+    )
+    config._set(
+        "plugins",
+        None,
+        {
+            "cmip6": {"handle_prefix": "21.CMIP6"},
+            "cmip7": {"handle": "shared", "handle_prefix": "21.CMIP7"},
+        },
+    )
+
+    cmip6 = config.get_handle(project="cmip6", profile=profile)
+    cmip7 = config.get_handle(project="cmip7", profile=profile)
+    assert cmip6["prefix"] == "21.CMIP6"
+    assert cmip7["prefix"] == "21.CMIP7"
+    assert cmip6["username"] == cmip7["username"] == shared["username"]
+    expected_url = (
+        "https://alternate.example.test"
+        if profile and not legacy
+        else shared["server_url"]
+    )
+    assert cmip6["server_url"] == cmip7["server_url"] == expected_url
+    assert config.get_handle()["prefix"] == "21.TEST"
+    assert config.get_handle(project="cmip6plus")["prefix"] == "21.TEST"
+    assert shared["prefix"] == "21.TEST"
+
+
+@pytest.mark.parametrize("prefix", ["", " ", "21.INVALID PREFIX", 123])
+def test_plugin_handle_prefix_rejects_invalid_values(prefix):
+    cfg = _base_config()
+    cfg["kafka"] = {"bootstrap.servers": "localhost:39092"}
+    cfg["plugins"] = {"cmip6": {"handle_prefix": prefix}}
+
+    errors, _ = validate_config(cfg)
+
+    assert any("plugins.cmip6.handle_prefix" in error for error in errors)
+
+
+def test_plugin_handle_prefix_validation():
+    cfg = _base_config()
+    cfg["kafka"] = {"bootstrap.servers": "localhost:39092"}
+    cfg["handles"] = {
+        "default": "shared",
+        "profiles": {"shared": cfg.pop("handle")},
+    }
+    cfg["plugins"] = {
+        "cmip6": {"handle_prefix": "21.CMIP6"},
+        "cmip7": {"handle": "shared", "handle_prefix": "21.CMIP7"},
     }
 
     errors, _ = validate_config(cfg)

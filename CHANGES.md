@@ -5,6 +5,8 @@ All notable changes to this project are documented here.
 ## [Unreleased]
 
 ### Added
+- Added `plugins.<name>.handle_prefix` so plugins can share a Handle service
+  profile and credentials while publishing under different prefixes.
 - Added production logging configuration, repeatable `-v` verbosity, explicit
   progress controls, watched log files, and a lightweight systemd/logrotate
   deployment managed by a small Ansible playbook.

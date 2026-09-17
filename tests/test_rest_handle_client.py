@@ -1,10 +1,12 @@
 import base64
+import json
 
 import pytest
 import requests
 import urllib3
 
 from piddiplatsch.config import config
+from piddiplatsch.core.project_records import ProjectDatasetRecord
 from piddiplatsch.handles.api import get_handle_backend
 from piddiplatsch.handles.jsonl_backend import JsonlHandleBackend
 from piddiplatsch.handles.pyhandle_backend import HandleClient
@@ -52,6 +54,52 @@ def make_client(response):
         session=session,
     )
     return client, session
+
+
+@pytest.mark.parametrize("project", ["cmip6", "cmip7"])
+def test_shared_service_uses_plugin_prefix_for_records_and_publication(
+    project, tmp_path, monkeypatch
+):
+    config._set("handle", None, {})
+    config._set(
+        "handles",
+        None,
+        {
+            "default": "shared",
+            "profiles": {
+                "shared": {
+                    "server_url": "https://handles.example.test",
+                    "prefix": "21.FALLBACK",
+                    "username": "shared-user",
+                    "password": "testpass",
+                }
+            },
+        },
+    )
+    config._set(
+        "plugins",
+        None,
+        {
+            "cmip6": {"handle_prefix": "21.CMIP6"},
+            "cmip7": {"handle_prefix": "21.CMIP7"},
+        },
+    )
+
+    class ProjectRecord(ProjectDatasetRecord):
+        plugin_name = project
+
+    prefix = ProjectRecord({}).prefix
+    backend = get_handle_backend(publish=True, project=project)
+    session = FakeSession(FakeResponse({"responseCode": 1}))
+    monkeypatch.setattr(backend.backend, "_session", lambda: session)
+    backend.add("abc", {"URL": "https://example.test/abc"})
+
+    assert prefix == f"21.{project.upper()}"
+    assert session.calls[0][1] == (
+        f"https://handles.example.test/api/handles/{prefix}/abc"
+    )
+    output = next((tmp_path / "outputs" / project / "handles").glob("*.jsonl"))
+    assert json.loads(output.read_text())["handle"] == f"{prefix}/abc"
 
 
 def test_rest_client_suppresses_repeated_warning_when_verification_is_disabled(

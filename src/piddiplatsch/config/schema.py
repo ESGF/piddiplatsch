@@ -193,6 +193,7 @@ class ProjectPluginConfig(BaseModel):
     model_config = ConfigDict(extra="allow")
     landing_page_url: str | None = None
     handle: str | None = None
+    handle_prefix: str | None = Field(default=None, pattern=r"^\S+$")
     stac: StacConfig | None = None
 
 
