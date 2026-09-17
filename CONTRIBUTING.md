@@ -56,7 +56,7 @@ Handle Service.
 ### Config Validation
 
 Validate the loaded configuration (packaged defaults, then the optional site
-config, then `custom.toml` or `--config FILE`). Structural checks only; exits
+config, then `custom.toml` or `--config FILE`). Offline structural and consistency checks; exits
 non-zero on errors:
 
 ```bash
@@ -67,7 +67,9 @@ piddi config validate
 piddi --config tests/config.toml config validate
 ```
 
-Validations include presence and format of `consumer.projects`, `consumer.topic`, `kafka.bootstrap.servers` (comma-separated `host:port`), named Handle profiles and project references, and lookup backend requirements.
+Validations include presence and format of `consumer.projects`, `consumer.topic`, `kafka.bootstrap.servers` (comma-separated `host:port`), named Handle profiles and project references, lookup backend requirements, SASL PLAIN credentials, and retry/monitoring ranges.
+Likely application-key typos produce warnings, as do demo credentials and missing
+landing pages for selected projects. Explicit `--config` files must exist.
 
 ### Makefile: Config Validation Target
 

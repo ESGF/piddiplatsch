@@ -14,7 +14,7 @@ class FakeClock:
         return next(self.values)
 
 
-@patch("piddiplatsch.consumer.ConfluentConsumer")
+@patch("confluent_kafka.Consumer")
 def test_kafka_consumer_stops_after_idle_timeout(consumer_cls):
     client = consumer_cls.return_value
     client.poll.side_effect = [None, None]
@@ -30,7 +30,7 @@ def test_kafka_consumer_stops_after_idle_timeout(consumer_cls):
     client.close.assert_called_once_with()
 
 
-@patch("piddiplatsch.consumer.ConfluentConsumer")
+@patch("confluent_kafka.Consumer")
 def test_kafka_consumer_resets_idle_timeout_after_message(consumer_cls):
     message = MagicMock()
     message.error.return_value = None
@@ -50,7 +50,7 @@ def test_kafka_consumer_resets_idle_timeout_after_message(consumer_cls):
     client.close.assert_called_once_with()
 
 
-@patch("piddiplatsch.consumer.ConfluentConsumer")
+@patch("confluent_kafka.Consumer")
 def test_kafka_consumer_fails_on_reported_error(consumer_cls):
     error = MagicMock()
     message = MagicMock()

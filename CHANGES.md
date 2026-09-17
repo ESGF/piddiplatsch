@@ -5,6 +5,9 @@ All notable changes to this project are documented here.
 ## [Unreleased]
 
 ### Added
+- Configuration explanations now show loaded files, per-setting file origins,
+  and resolved output/log/database paths. Validation checks SASL PLAIN credentials
+  and retry/monitoring ranges, and suggests corrections for likely key typos.
 - Added `plugins.<name>.handle_prefix` so plugins can share a Handle service
   profile and credentials while publishing under different prefixes.
 - Added production logging configuration, repeatable `-v` verbosity, explicit
@@ -33,6 +36,10 @@ All notable changes to this project are documented here.
   inputs.
 
 ### Changed
+- Load the native Kafka client only when consuming Kafka, so configuration
+  commands do not trigger its GIL warning on free-threaded Python.
+- Explicit `--config` paths must exist. Demo Handle credentials and landing-page
+  warnings now focus on selected projects and profiles.
 - Manual runs and Ansible now share `custom.toml` for all application settings.
   Ansible adds omitted production path defaults; its optional YAML contains
   deployment controls only. Old YAML application variables require migration

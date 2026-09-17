@@ -7,7 +7,8 @@ overriding values from the preceding layer:
 2. site-wide `/etc/piddi/piddi.toml`
 3. local `./custom.toml`
 
-Missing site and local files are ignored. Keep development credentials in the
+Missing optional site and local files are ignored. An explicit `--config PATH`
+must name an existing file; a missing file or directory is an error. Keep credentials in the
 local ignored file. `--config PATH` replaces the third layer with the selected
 file; the packaged and site-wide layers are still loaded first.
 
@@ -37,10 +38,24 @@ piddi config explain --project cmip6 --handle-profile production
 ```
 
 `explain` shows the resolved Handle service, prefix, STAC collection, and lookup
-settings, with the configuration keys supplying them. It does not report which
-file supplied a key, and omits username/password fields. Use `config show` for
+settings, with the configuration keys and files supplying them. It lists loaded
+files in precedence order and resolves output, log, and database paths against
+the current working directory. `--log` is reflected as a command-line override;
+terminal logging and disabled database reporting are identified. Username/password
+fields are omitted. The installed production config is attributed to
+`/etc/piddi/piddi.toml`; inspect the source `custom.toml` separately when needed.
+Use `config show` for
 the full merged configuration (including credentials), or narrow it with
 `config show --section consumer`.
+
+`config validate` runs offline. It checks credentials when SASL PLAIN is selected,
+nonnegative retry counts and backoff delays, ordered backoff bounds, and positive
+monitoring intervals. Zero retries/delays and zero sample retention (no pruning)
+remain supported. Likely misspelled application keys produce suggestions;
+arbitrary Kafka options and plugin extensions remain accepted. Demo credential
+and missing landing-page warnings concern only configured projects and the
+Handle profiles they select (`projects = "all"` includes all registered projects).
+These checks do not test broker connectivity or credential validity.
 
 ## Routine operation
 

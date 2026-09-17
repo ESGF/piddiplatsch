@@ -1,4 +1,5 @@
 import logging
+from copy import deepcopy
 from logging.handlers import WatchedFileHandler
 from pathlib import Path
 
@@ -14,6 +15,26 @@ DEFAULT_SITE_CONFIG_PATH = Path("/etc/piddi/piddi.toml")
 class Config:
     def __init__(self):
         self.config_data = self._load_toml(DEFAULT_CONFIG_PATH)
+        self.loaded_files = [str(DEFAULT_CONFIG_PATH.resolve())]
+        self.sources = {}
+        self._record_sources(self.config_data, self.loaded_files[0])
+
+    def _record_sources(self, data, source, prefix=()):
+        for key, value in data.items():
+            path = (*prefix, key)
+            if isinstance(value, dict):
+                self._record_sources(value, source, path)
+            else:
+                self.sources[path] = (source, deepcopy(value))
+
+    def get_source(self, path: tuple[str, ...]) -> str:
+        value = self.config_data
+        for key in path:
+            if not isinstance(value, dict) or key not in value:
+                return "not configured"
+            value = value[key]
+        source, recorded = self.sources.get(path, ("runtime override", None))
+        return source if recorded == value else "runtime override"
 
     def _load_toml(self, path: Path):
         if path.exists():
@@ -35,6 +56,8 @@ class Config:
             if section not in self.config_data:
                 self.config_data[section] = {}
             self.config_data[section][key] = value
+        data = {section: value if key is None else {key: value}}
+        self._record_sources(data, "runtime override")
 
     def load_user_config(self, user_config_path: str | None):
         if user_config_path:
@@ -42,6 +65,11 @@ class Config:
             if user_path.exists():
                 user_data = self._load_toml(user_path)
                 self._merge_dicts(self.config_data, user_data)
+                source = str(user_path.resolve())
+                if source in self.loaded_files:
+                    self.loaded_files.remove(source)
+                self.loaded_files.append(source)
+                self._record_sources(user_data, source)
 
     def load_config_layers(
         self,

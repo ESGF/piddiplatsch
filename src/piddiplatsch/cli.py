@@ -81,6 +81,14 @@ def cli(
     """CLI to interact with Kafka and Handle Service."""
     ctx.ensure_object(dict)
     ctx.obj["verbose"] = progress and not silent
+    if (
+        ctx.get_parameter_source("config_file")
+        == click.core.ParameterSource.COMMANDLINE
+        and not Path(config_file).is_file()
+    ):
+        raise click.BadParameter(
+            "must name an existing configuration file", param_hint="--config"
+        )
     config.load_config_layers(config_file)
     try:
         config.configure_logging(verbosity=verbosity, debug=debug, log=log)
@@ -409,9 +417,16 @@ def config_show(fmt: str, section: str | None, key: str | None) -> None:
     "--project", required=True, help="Project plugin whose settings to resolve."
 )
 @click.option("--handle-profile", help="Explain using this Handle profile override.")
-def config_explain(project: str, handle_profile: str | None) -> None:
+@click.pass_context
+def config_explain(
+    ctx: click.Context, project: str, handle_profile: str | None
+) -> None:
     """Show resolved project settings and the keys supplying them."""
-    ConfigExplainCommand(project=project, handle_profile=handle_profile).execute()
+    ConfigExplainCommand(
+        project=project,
+        handle_profile=handle_profile,
+        log_override=ctx.find_root().params.get("log"),
+    ).execute()
 
 
 @cli.command("top")

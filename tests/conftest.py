@@ -22,6 +22,8 @@ def _isolate_runtime_state(tmp_path, monkeypatch):
     # A developer's ignored ./custom.toml must not affect CLI test results.
     monkeypatch.chdir(tmp_path)
     original_config = deepcopy(_config.config_data)
+    original_sources = deepcopy(_config.sources)
+    original_files = list(_config.loaded_files)
     _config._set("consumer", "output_dir", str(tmp_path / "outputs"))
     _config._set("stats", "enable_db", False)
     _stats.reset()
@@ -29,6 +31,8 @@ def _isolate_runtime_state(tmp_path, monkeypatch):
         yield
     finally:
         _config.config_data = original_config
+        _config.sources = original_sources
+        _config.loaded_files = original_files
         _stats.reset()
 
 

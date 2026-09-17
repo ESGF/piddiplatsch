@@ -2,6 +2,7 @@
 
 import json
 from dataclasses import dataclass
+from pathlib import Path
 
 import click
 import toml
@@ -17,6 +18,7 @@ class ConfigExplainCommand(Command):
 
     project: str
     handle_profile: str | None = None
+    log_override: str | None = None
 
     def execute(self) -> None:
         try:
@@ -32,11 +34,18 @@ class ConfigExplainCommand(Command):
             section = project if key in legacy else f"plugins.{project}"
             return f"{section}.{key}"
 
-        def show(label: str, value, source: str) -> None:
-            click.echo(f"{label}: {json.dumps(value)}  <- {source}")
+        def show(label: str, value, source: str, path=None) -> None:
+            origin = (
+                "command line"
+                if source.startswith("--")
+                else config.get_source(path or tuple(source.split(".")))
+            )
+            click.echo(f"{label}: {json.dumps(value)}  <- {source} ({origin})")
 
         click.echo(f"Project: {project}")
-        click.echo("Sources identify configuration keys, not files.")
+        click.echo("Loaded files (later files override earlier files):")
+        for filename in config.loaded_files:
+            click.echo(f"  {filename}")
         for key in ("topic", "output_dir"):
             show(key, config.get("consumer", key), f"consumer.{key}")
 
@@ -68,7 +77,12 @@ class ConfigExplainCommand(Command):
                 source = f"handles.profiles.{profile}.{key}"
             else:
                 source = f"handles.defaults.{key}"
-            show(f"Handle {key}", handle[key], source)
+            path = (
+                ("handles", "profiles", profile, key)
+                if source == f"handles.profiles.{profile}.{key}"
+                else None
+            )
+            show(f"Handle {key}", handle[key], source, path)
 
         stac = config.get_stac(project)
         project_stac = plugin.get("stac") or {}
@@ -81,10 +95,29 @@ class ConfigExplainCommand(Command):
             show(f"STAC {key}", stac.get(key), source)
         for key in ("enabled", "backend"):
             show(f"Lookup {key}", config.get("lookup", key), f"lookup.{key}")
+        self._explain_paths(show)
         click.echo(
             "Publication: consume writes JSONL; --publish enables immediate delivery."
         )
         click.echo("Deferred publish always uses REST. Credential fields are omitted.")
+
+    def _explain_paths(self, show) -> None:
+        for label, section, key in (
+            ("Output path", "consumer", "output_dir"),
+            ("Log path", "logging", "file"),
+            ("Database path", "stats", "db_path"),
+        ):
+            value = config.get(section, key)
+            if section == "logging" and self.log_override is not None:
+                show(label, str(Path(self.log_override).resolve()), "--log")
+                continue
+            resolved = (
+                str(Path(value).resolve())
+                if value
+                else "terminal" if section == "logging" else None
+            )
+            show(label, resolved, f"{section}.{key}")
+        click.echo(f"Database enabled: {json.dumps(config.get('stats', 'enable_db'))}")
 
 
 @dataclass(kw_only=True)
