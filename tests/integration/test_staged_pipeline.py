@@ -86,3 +86,37 @@ def test_map_replays_dump_without_kafka_or_handle_service(
     assert result.failed == 0
     assert source.read_text(encoding="utf-8") == original
     assert list((output_dir / "cmip6" / "handles").glob("handles_*.jsonl"))
+
+
+def test_map_force_dataset_pid_corrects_dataset_and_file_parent(
+    tmp_path, testdata_path
+):
+    from piddiplatsch.utils.models import item_pid, parse_pid
+
+    config._set("consumer", "output_dir", str(tmp_path / "outputs"))
+    config._set(
+        "plugins", "cmip7", {**config.get_plugin("cmip7"), "force_dataset_pid": True}
+    )
+    message = _sample(testdata_path, "cmip7")
+    item = message["data"]["payload"]["item"]
+    source = tmp_path / "raw.jsonl"
+    original = json.dumps(message) + "\n"
+    source.write_text(original)
+
+    result = map_dump_files([source], projects=["cmip7"])
+
+    assert result.succeeded == 1
+    assert result.failed == 0
+    output_files = list((tmp_path / "outputs/cmip7/handles").glob("*.jsonl"))
+    assert len(output_files) == 1
+    records = [json.loads(line) for line in output_files[0].read_text().splitlines()]
+    dataset, file = records
+    generated = f"21.TEST/{item_pid(item['id'])}"
+    asset = next(iter(item["assets"].values()))
+    file_handle = f"21.TEST/{parse_pid(asset['cmip7:tracking_id'])}"
+    assert dataset["handle"] == generated
+    assert dataset["URL"].endswith(f"/{generated}")
+    assert json.loads(dataset["data"]["HAS_PARTS"]) == [f"hdl:{file_handle}"]
+    assert file["handle"] == file_handle
+    assert file["data"]["IS_PART_OF"] == f"hdl:{generated}"
+    assert source.read_text() == original

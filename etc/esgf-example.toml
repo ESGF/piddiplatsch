@@ -53,5 +53,8 @@ max_parts = 0
 
 [plugins.cmip7]
 max_parts = 0
+# Set true in custom.toml for affected projects to correct publisher dataset PIDs
+# generated from dataset_id instead of versioned instance_id. Defaults to false.
+force_dataset_pid = false
 
 # Plain consume writes JSONL. Use consume --publish for immediate delivery.

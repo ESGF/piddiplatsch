@@ -51,6 +51,7 @@ def _source_pid(container: dict[str, Any], fields: tuple[str, ...]) -> str | Non
 
 class BaseProjectRecord(BaseRecord):
     plugin_name: ClassVar[str]
+    dataset_pid_fields: ClassVar[tuple[str, ...]]
 
     def __init__(
         self,
@@ -102,6 +103,12 @@ class BaseProjectRecord(BaseRecord):
         return _mapping(self.item.get("properties"), "properties")
 
     @cached_property
+    def source_dataset_pid(self) -> str | None:
+        if config.get_plugin(self.plugin_name, "force_dataset_pid", False):
+            return None
+        return _source_pid(self.properties, self.dataset_pid_fields)
+
+    @cached_property
     def url(self) -> str:
         return f"{self.landing_page_url}/{self.prefix}/{self.pid}"
 
@@ -124,7 +131,7 @@ class ProjectDatasetRecord(BaseProjectRecord):
 
     @cached_property
     def pid(self) -> str:
-        value = _source_pid(self.properties, self.dataset_pid_fields)
+        value = self.source_dataset_pid
         if value:
             logging.info(
                 "Using existing dataset pid: pid=%s, ds_id=%s", value, self.item_id
@@ -326,9 +333,7 @@ class ProjectFileRecord(BaseProjectRecord):
 
     @cached_property
     def parent(self) -> str:
-        value = _source_pid(self.properties, self.dataset_pid_fields) or item_pid(
-            self.item_id
-        )
+        value = self.source_dataset_pid or item_pid(self.item_id)
         return build_handle(value, as_uri=True, prefix=self.prefix)
 
     @cached_property
