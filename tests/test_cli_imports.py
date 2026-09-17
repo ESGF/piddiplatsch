@@ -1,4 +1,4 @@
-"""Configuration commands must work without loading the native Kafka client."""
+"""Configuration commands must work without loading Kafka or HTTP clients."""
 
 import os
 import subprocess  # noqa: S404 - fresh interpreter required for import isolation
@@ -17,7 +17,7 @@ import pytest
         ["config", "show", "--section", "consumer"],
     ],
 )
-def test_config_commands_do_not_import_kafka(tmp_path, command):
+def test_config_commands_do_not_import_network_clients(tmp_path, command):
     source_root = Path(__file__).resolve().parents[1] / "src"
     config_path = Path(__file__).resolve().parent / "config.toml"
     # A fresh process is essential: other tests may already have imported Kafka.
@@ -25,12 +25,12 @@ def test_config_commands_do_not_import_kafka(tmp_path, command):
 import importlib.abc
 import sys
 
-class BlockKafka(importlib.abc.MetaPathFinder):
+class BlockNetworkClients(importlib.abc.MetaPathFinder):
     def find_spec(self, fullname, path=None, target=None):
-        if fullname == "confluent_kafka" or fullname.startswith("confluent_kafka."):
-            raise AssertionError("Configuration command attempted to import Kafka")
+        if fullname.split(".")[0] in {"confluent_kafka", "requests", "urllib3", "brotli", "brotlicffi", "_brotli"}:
+            raise AssertionError("Configuration command attempted to import a network client: " + fullname)
 
-sys.meta_path.insert(0, BlockKafka())
+sys.meta_path.insert(0, BlockNetworkClients())
 from piddiplatsch.cli import cli
 cli.main(args=sys.argv[1:], standalone_mode=False)
 assert "confluent_kafka" not in sys.modules

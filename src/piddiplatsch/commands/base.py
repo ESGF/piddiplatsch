@@ -11,7 +11,6 @@ import click
 
 from piddiplatsch.commands.helper import resolve_dated_input
 from piddiplatsch.config import config
-from piddiplatsch.consumer import start_consumer
 from piddiplatsch.monitoring.progress import (
     STREAM_PROGRESS_LEGEND,
     BaseProgress,
@@ -92,6 +91,8 @@ class KafkaCommand(Command, ABC):
         monitor_db: bool = False,
         handle_profile: str | None = None,
     ) -> None:
+        from piddiplatsch.consumer import start_consumer
+
         progress = self.progress(title=title, stream=True)
         with progress:
             start_consumer(

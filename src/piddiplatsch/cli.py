@@ -5,17 +5,7 @@ from pathlib import Path
 
 import click
 
-from piddiplatsch.commands import (
-    ConfigExplainCommand,
-    ConfigShowCommand,
-    ConfigValidateCommand,
-    ConsumeCommand,
-    HarvestCommand,
-    MapCommand,
-    PublishCommand,
-    RetryCommand,
-    TopCommand,
-)
+from piddiplatsch import commands
 from piddiplatsch.commands.helper import DATE_FORMATS, parse_date_selector
 from piddiplatsch.config import config
 
@@ -135,7 +125,7 @@ def consume(
     handle_profile: str | None,
 ) -> None:
     """Harvest and map Kafka messages, deferring publication by default."""
-    ConsumeCommand(
+    commands.ConsumeCommand(
         verbose=ctx.obj["verbose"],
         publish=publish,
         force=force,
@@ -164,7 +154,7 @@ def consume(
 @click.pass_context
 def harvest(ctx: click.Context, idle_timeout: float, limit: int | None) -> None:
     """Harvest Kafka messages into raw JSONL without mapping."""
-    HarvestCommand(
+    commands.HarvestCommand(
         verbose=ctx.obj["verbose"], idle_timeout=idle_timeout, limit=limit
     ).execute()
 
@@ -228,7 +218,7 @@ def map_messages(
     handle_profile: str | None,
 ) -> None:
     """Map raw message JSONL through plugins into Handle JSONL."""
-    MapCommand(
+    commands.MapCommand(
         verbose=ctx.obj["verbose"],
         paths=path,
         input_date=input_date,
@@ -313,7 +303,7 @@ def publish(
     The source files are never changed. Re-running a file is safe because the
     Handle REST client publishes with overwrite enabled.
     """
-    PublishCommand(
+    commands.PublishCommand(
         verbose=ctx.obj["verbose"],
         paths=path,
         input_date=input_date,
@@ -367,7 +357,7 @@ def retry(
     inputs, invoke the processing pipeline, and optionally remove source files
     when `--delete-after` is set and all items succeed.
     """
-    RetryCommand(
+    commands.RetryCommand(
         verbose=ctx.obj["verbose"],
         paths=path,
         delete_after=delete_after,
@@ -390,7 +380,7 @@ def config_cmd() -> None:
 @config_cmd.command("validate")
 def config_validate() -> None:
     """Validate the loaded configuration file and defaults."""
-    ConfigValidateCommand().execute()
+    commands.ConfigValidateCommand().execute()
 
 
 # command config show
@@ -409,7 +399,7 @@ def config_validate() -> None:
 @click.option("--key", type=str, help="Show a specific key within section.")
 def config_show(fmt: str, section: str | None, key: str | None) -> None:
     """Print the effective configuration (defaults + overrides)."""
-    ConfigShowCommand(fmt=fmt, section=section, key=key).execute()
+    commands.ConfigShowCommand(fmt=fmt, section=section, key=key).execute()
 
 
 @config_cmd.command("explain")
@@ -422,7 +412,7 @@ def config_explain(
     ctx: click.Context, project: str, handle_profile: str | None
 ) -> None:
     """Show resolved project settings and the keys supplying them."""
-    ConfigExplainCommand(
+    commands.ConfigExplainCommand(
         project=project,
         handle_profile=handle_profile,
         log_override=ctx.find_root().params.get("log"),
@@ -474,7 +464,7 @@ def top(
 ) -> None:
     """Watch current processing progress, separated by project."""
     stats_config = config.get("stats", {})
-    TopCommand(
+    commands.TopCommand(
         verbose=ctx.obj["verbose"],
         db_path=db_path or Path(stats_config.get("db_path", "piddi.db")),
         project=project,

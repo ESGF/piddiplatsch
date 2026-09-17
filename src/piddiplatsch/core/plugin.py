@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Protocol
+from typing import TYPE_CHECKING, Protocol
 
-from .processing import BaseProcessor
+if TYPE_CHECKING:
+    from .processing import BaseProcessor
 
 
 class ProcessorFactory(Protocol):

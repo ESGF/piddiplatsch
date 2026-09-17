@@ -36,6 +36,8 @@ All notable changes to this project are documented here.
   inputs.
 
 ### Changed
+- Configuration commands load command and plugin metadata without importing
+  HTTP clients or Brotli; processing implementations load only when needed.
 - Load the native Kafka client only when consuming Kafka, so configuration
   commands do not trigger its GIL warning on free-threaded Python.
 - Explicit `--config` paths must exist. Demo Handle credentials and landing-page

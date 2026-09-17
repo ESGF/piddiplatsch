@@ -84,7 +84,7 @@ class TestCLIBasics:
 class TestConsumeCommand:
     """Test consume command."""
 
-    @patch("piddiplatsch.cli.ConsumeCommand")
+    @patch("piddiplatsch.commands.ConsumeCommand")
     def test_cli_delegates_to_command(self, command_cls, runner):
         result = runner.invoke(
             cli,
@@ -120,7 +120,7 @@ class TestConsumeCommand:
         assert "--project" in result.output
         assert "--all-projects" in result.output
 
-    @patch("piddiplatsch.commands.base.start_consumer")
+    @patch("piddiplatsch.consumer.start_consumer")
     def test_consume_basic(self, mock_start_consumer, runner):
         """Test consume command calls start_consumer."""
         runner.invoke(cli, ["consume"])
@@ -130,7 +130,7 @@ class TestConsumeCommand:
         assert call_kwargs["publish"] is False
         assert call_kwargs["monitor_db"] is True
 
-    @patch("piddiplatsch.commands.base.start_consumer")
+    @patch("piddiplatsch.consumer.start_consumer")
     def test_consume_with_publish(self, mock_start_consumer, runner):
         runner.invoke(cli, ["consume", "--publish"])
         assert mock_start_consumer.called
@@ -138,7 +138,7 @@ class TestConsumeCommand:
         assert call_kwargs["dump_messages"] is True
         assert call_kwargs["publish"] is True
 
-    @patch("piddiplatsch.commands.base.start_consumer")
+    @patch("piddiplatsch.consumer.start_consumer")
     def test_consume_is_verbose_by_default(self, mock_start_consumer, runner):
         """Test consume command shows progress by default."""
         result = runner.invoke(cli, ["consume"])
@@ -149,7 +149,7 @@ class TestConsumeCommand:
         assert call_kwargs.get("verbose") is True
         assert isinstance(call_kwargs["progress"], Progress)
 
-    @patch("piddiplatsch.commands.base.start_consumer")
+    @patch("piddiplatsch.consumer.start_consumer")
     def test_consume_silent_disables_progress(self, mock_start_consumer, runner):
         result = runner.invoke(cli, ["--silent", "consume"])
 
@@ -158,7 +158,7 @@ class TestConsumeCommand:
         assert call_kwargs["verbose"] is False
         assert isinstance(call_kwargs["progress"], NoOpProgress)
 
-    @patch("piddiplatsch.commands.base.start_consumer")
+    @patch("piddiplatsch.consumer.start_consumer")
     def test_consume_with_several_projects(self, mock_start_consumer, runner):
         result = runner.invoke(
             cli,
@@ -167,13 +167,13 @@ class TestConsumeCommand:
         assert result.exit_code == 0
         assert mock_start_consumer.call_args.kwargs["projects"] == ("cmip6", "cmip7")
 
-    @patch("piddiplatsch.commands.base.start_consumer")
+    @patch("piddiplatsch.consumer.start_consumer")
     def test_consume_with_all_projects(self, mock_start_consumer, runner):
         result = runner.invoke(cli, ["consume", "--all-projects"])
         assert result.exit_code == 0
         assert mock_start_consumer.call_args.kwargs["projects"] == "all"
 
-    @patch("piddiplatsch.commands.base.start_consumer")
+    @patch("piddiplatsch.consumer.start_consumer")
     def test_consume_rejects_named_and_all_projects(self, mock_start_consumer, runner):
         result = runner.invoke(
             cli,
@@ -192,7 +192,7 @@ class TestHarvestCommand:
         assert "--idle-timeout" in result.output
         assert "--limit" in result.output
 
-    @patch("piddiplatsch.commands.base.start_consumer")
+    @patch("piddiplatsch.consumer.start_consumer")
     def test_harvest_dumps_without_mapping(self, mock_start_consumer, runner):
         result = runner.invoke(cli, ["harvest"])
         assert result.exit_code == 0
@@ -204,21 +204,21 @@ class TestHarvestCommand:
         assert kwargs["limit"] is None
         assert kwargs["monitor_db"] is False
 
-    @patch("piddiplatsch.commands.base.start_consumer")
+    @patch("piddiplatsch.consumer.start_consumer")
     def test_harvest_passes_idle_timeout(self, mock_start_consumer, runner):
         result = runner.invoke(cli, ["harvest", "--idle-timeout", "2.5"])
 
         assert result.exit_code == 0
         assert mock_start_consumer.call_args.kwargs["idle_timeout"] == 2.5
 
-    @patch("piddiplatsch.commands.base.start_consumer")
+    @patch("piddiplatsch.consumer.start_consumer")
     def test_harvest_passes_limit(self, mock_start_consumer, runner):
         result = runner.invoke(cli, ["harvest", "--limit", "10"])
 
         assert result.exit_code == 0
         assert mock_start_consumer.call_args.kwargs["limit"] == 10
 
-    @patch("piddiplatsch.commands.base.start_consumer")
+    @patch("piddiplatsch.consumer.start_consumer")
     def test_harvest_rejects_non_positive_limit(self, mock_start_consumer, runner):
         result = runner.invoke(cli, ["harvest", "--limit", "0"])
 
@@ -226,7 +226,7 @@ class TestHarvestCommand:
         assert "Invalid value for '--limit'" in result.output
         mock_start_consumer.assert_not_called()
 
-    @patch("piddiplatsch.commands.base.start_consumer")
+    @patch("piddiplatsch.consumer.start_consumer")
     def test_harvest_with_verbose_uses_stream_progress(
         self, mock_start_consumer, runner
     ):
@@ -954,7 +954,7 @@ class TestPublishCommand:
 class TestCLIOptions:
     """Test global CLI options."""
 
-    @patch("piddiplatsch.commands.base.start_consumer")
+    @patch("piddiplatsch.consumer.start_consumer")
     def test_debug_flag(self, mock_start_consumer, runner):
         """Test --debug flag."""
         runner.invoke(cli, ["--debug", "consume"])
@@ -962,7 +962,7 @@ class TestCLIOptions:
         assert mock_start_consumer.called
 
     @patch("piddiplatsch.cli.config.configure_logging")
-    @patch("piddiplatsch.cli.ConsumeCommand")
+    @patch("piddiplatsch.commands.ConsumeCommand")
     def test_repeated_verbose_controls_logging(
         self, command_cls, configure_logging, runner
     ):
@@ -973,7 +973,7 @@ class TestCLIOptions:
         assert command_cls.call_args.kwargs["verbose"] is False
 
     @patch("piddiplatsch.cli.config.configure_logging")
-    @patch("piddiplatsch.cli.ConsumeCommand")
+    @patch("piddiplatsch.commands.ConsumeCommand")
     def test_debug_and_silent_remain_aliases(
         self, command_cls, configure_logging, runner
     ):
@@ -983,14 +983,14 @@ class TestCLIOptions:
         configure_logging.assert_called_once_with(verbosity=0, debug=True, log=None)
         assert command_cls.call_args.kwargs["verbose"] is False
 
-    @patch("piddiplatsch.commands.base.start_consumer")
+    @patch("piddiplatsch.consumer.start_consumer")
     def test_log_file_option(self, mock_start_consumer, runner, tmp_path):
         """Test --log option."""
         log_file = tmp_path / "test.log"
         runner.invoke(cli, ["--log", str(log_file), "consume"])
         assert mock_start_consumer.called
 
-    @patch("piddiplatsch.commands.base.start_consumer")
+    @patch("piddiplatsch.consumer.start_consumer")
     @patch("piddiplatsch.cli.config.load_config_layers")
     def test_default_config_file(
         self, mock_load_config_layers, mock_start_consumer, runner
@@ -1001,7 +1001,7 @@ class TestCLIOptions:
         assert result.exit_code == 0
         mock_load_config_layers.assert_called_once_with("custom.toml")
 
-    @patch("piddiplatsch.commands.base.start_consumer")
+    @patch("piddiplatsch.consumer.start_consumer")
     @patch("piddiplatsch.cli.config.load_config_layers")
     def test_config_file_option(
         self, mock_load_config_layers, mock_start_consumer, runner, tmp_path
