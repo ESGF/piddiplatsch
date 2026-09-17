@@ -397,9 +397,18 @@ def config_validate() -> None:
 )
 @click.option("--section", type=str, help="Show only a specific section.")
 @click.option("--key", type=str, help="Show a specific key within section.")
-def config_show(fmt: str, section: str | None, key: str | None) -> None:
-    """Print the effective configuration (defaults + overrides)."""
-    commands.ConfigShowCommand(fmt=fmt, section=section, key=key).execute()
+@click.option(
+    "--show-secrets",
+    is_flag=True,
+    help="Include credential values (hidden by default).",
+)
+def config_show(
+    fmt: str, section: str | None, key: str | None, show_secrets: bool
+) -> None:
+    """Print the effective configuration with recognized secrets redacted."""
+    commands.ConfigShowCommand(
+        fmt=fmt, section=section, key=key, show_secrets=show_secrets
+    ).execute()
 
 
 @config_cmd.command("explain")

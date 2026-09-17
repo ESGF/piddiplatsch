@@ -9,6 +9,7 @@ import toml
 
 from piddiplatsch.commands.base import Command
 from piddiplatsch.config import config
+from piddiplatsch.config.redaction import redact_config
 from piddiplatsch.core.registry import get_plugin
 
 
@@ -145,6 +146,7 @@ class ConfigShowCommand(Command):
     fmt: str = "toml"
     section: str | None = None
     key: str | None = None
+    show_secrets: bool = False
 
     def execute(self) -> None:
         if self.key and not self.section:
@@ -162,6 +164,8 @@ class ConfigShowCommand(Command):
         else:
             data = config.config_data
 
+        if not self.show_secrets:
+            data = redact_config(data)
         output = (
             json.dumps(data, indent=2, sort_keys=True)
             if self.fmt.lower() == "json"

@@ -36,6 +36,9 @@ All notable changes to this project are documented here.
   inputs.
 
 ### Changed
+- `config show` redacts recognized credential fields and URL credentials by
+  default in TOML and JSON, including filtered views. Use `--show-secrets`
+  to explicitly include the original values.
 - Configuration commands load command and plugin metadata without importing
   HTTP clients or Brotli; processing implementations load only when needed.
 - Load the native Kafka client only when consuming Kafka, so configuration

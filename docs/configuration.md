@@ -44,9 +44,21 @@ the current working directory. `--log` is reflected as a command-line override;
 terminal logging and disabled database reporting are identified. Username/password
 fields are omitted. The installed production config is attributed to
 `/etc/piddi/piddi.toml`; inspect the source `custom.toml` separately when needed.
-Use `config show` for
-the full merged configuration (including credentials), or narrow it with
-`config show --section consumer`.
+Use `config show` for the merged configuration, or narrow it with
+`config show --section consumer`. Recognized credential fields (including
+usernames, passwords, tokens, API keys, and private keys) display as
+`***` by default, including nested plugin settings. Embedded URL
+credentials and recognized secret query parameters are also redacted.
+This applies to TOML/JSON output and to section/key filters. Runtime settings
+are unchanged. Custom extension secrets should use descriptive credential keys
+so they can be recognized.
+
+To explicitly include the original credential values:
+
+```bash
+piddi config show --show-secrets
+piddi config show --format json --show-secrets
+```
 
 `config validate` runs offline. It checks credentials when SASL PLAIN is selected,
 nonnegative retry counts and backoff delays, ordered backoff bounds, and positive

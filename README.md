@@ -322,10 +322,11 @@ Exits non-zero on errors; prints warnings when applicable.
 ### Show Effective Config
 
 ```bash
-piddi config show           # TOML
+piddi config show           # TOML; recognized credentials are redacted
 piddi config show --format json
 piddi config show --section consumer
 piddi config show --section kafka --key group.id
+piddi config show --show-secrets  # explicitly include credential values
 ```
 
 Prints the merged defaults + your overrides for quick inspection.
