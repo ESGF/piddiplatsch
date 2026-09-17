@@ -88,7 +88,9 @@ def test_map_replays_dump_without_kafka_or_handle_service(
     assert list((output_dir / "cmip6" / "handles").glob("handles_*.jsonl"))
 
 
-def test_map_force_dataset_pid_corrects_dataset_and_file_parent(tmp_path, testdata_path):
+def test_map_force_dataset_pid_corrects_dataset_and_file_parent(
+    tmp_path, testdata_path
+):
     from piddiplatsch.utils.models import item_pid, parse_pid
 
     config._set("consumer", "output_dir", str(tmp_path / "outputs"))

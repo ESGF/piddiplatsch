@@ -31,7 +31,9 @@ def make_item(record_type):
         },
         "assets": {
             "data": {
-                record_type.file_record.tracking_id_fields[0]: f"hdl:21.TEST/{FILE_PID}",
+                record_type.file_record.tracking_id_fields[
+                    0
+                ]: f"hdl:21.TEST/{FILE_PID}",
                 "href": "https://example.org/tas.nc",
             },
         },
@@ -94,7 +96,9 @@ def test_force_bypasses_conflicting_dataset_fields_only():
 
     config._set("plugins", "cmip6", {"force_dataset_pid": True})
     assert CMIP6DatasetRecord(item).pid == item_pid(ITEM_ID)
-    assert CMIP6DatasetRecord.file_record(item, "data").parent.endswith(item_pid(ITEM_ID))
+    assert CMIP6DatasetRecord.file_record(item, "data").parent.endswith(
+        item_pid(ITEM_ID)
+    )
 
     item["assets"]["data"]["tracking_id"] = "conflicting-file-pid"
     with pytest.raises(ValueError, match="Conflicting source PID"):
