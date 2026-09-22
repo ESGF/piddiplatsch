@@ -3,3 +3,5 @@ channels:
   - conda-forge
 dependencies:
   - quarto >=1.6,<2
+  # npm installs the optional DeckTape PDF exporter inside this environment.
+  - nodejs >=22,<23

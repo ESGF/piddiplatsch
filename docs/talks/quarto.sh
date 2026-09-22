@@ -36,4 +36,17 @@ if [ -z "${QUARTO_CHROMIUM:-}" ] && [ -x "/Applications/Google Chrome.app/Conten
     export QUARTO_CHROMIUM="/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
 fi
 
+# Reuse the local PDF exporter's browser for Mermaid on other systems.
+if [ -z "${QUARTO_CHROMIUM:-}" ] && [ -x "$talks_dir/.conda/bin/decktape" ]; then
+    quarto_browser=$(PUPPETEER_CACHE_DIR="${PUPPETEER_CACHE_DIR:-$talks_dir/.cache/puppeteer}" \
+        "$talks_dir/.conda/bin/node" -e '
+          const {createRequire} = require("node:module");
+          const load = createRequire(process.argv[1]);
+          console.log(load("puppeteer").executablePath({headless: "shell"}));
+        ' "$talks_dir/.conda/lib/node_modules/decktape/package.json")
+    if [ -x "$quarto_browser" ]; then
+        export QUARTO_CHROMIUM="$quarto_browser"
+    fi
+fi
+
 exec quarto "$@"
