@@ -1,0 +1,52 @@
+#!/bin/sh
+# Prefer the isolated talks environment; otherwise use Quarto from PATH.
+set -eu
+talks_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+cd "$talks_dir"
+
+if [ -x "$talks_dir/.conda/bin/quarto" ]; then
+    quarto_prefix="$talks_dir/.conda"
+    PATH="$quarto_prefix/bin:$PATH"
+    export PATH
+elif ! command -v quarto >/dev/null 2>&1; then
+    echo "Slides: Quarto is missing. Run 'make -C docs/talks install' or add Quarto to PATH." >&2
+    exit 1
+else
+    quarto_prefix="${CONDA_PREFIX:-}"
+fi
+
+# Conda packages Quarto's tools separately. Set their paths even before activation.
+if [ -n "$quarto_prefix" ] && [ "$(command -v quarto)" = "$quarto_prefix/bin/quarto" ]; then
+    export QUARTO_DENO="$quarto_prefix/bin/deno"
+    export QUARTO_PANDOC="$quarto_prefix/bin/pandoc"
+    export QUARTO_ESBUILD="$quarto_prefix/bin/esbuild"
+    export QUARTO_DART_SASS="$quarto_prefix/bin/sass"
+    export QUARTO_SHARE_PATH="$quarto_prefix/share/quarto"
+    export QUARTO_CONDA_PREFIX="$quarto_prefix"
+    if [ "$(uname)" = Darwin ]; then
+        export QUARTO_DENO_DOM="$quarto_prefix/lib/deno_dom.dylib"
+    else
+        export QUARTO_DENO_DOM="$quarto_prefix/lib/deno_dom.so"
+    fi
+fi
+
+# Reuse Chrome on macOS for Mermaid prerendering; other platforms can set
+# QUARTO_CHROMIUM or use Quarto's explicitly installed Chromium.
+if [ -z "${QUARTO_CHROMIUM:-}" ] && [ -x "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" ]; then
+    export QUARTO_CHROMIUM="/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
+fi
+
+# Reuse the local PDF exporter's browser for Mermaid on other systems.
+if [ -z "${QUARTO_CHROMIUM:-}" ] && [ -x "$talks_dir/.conda/bin/decktape" ]; then
+    quarto_browser=$(PUPPETEER_CACHE_DIR="${PUPPETEER_CACHE_DIR:-$talks_dir/.cache/puppeteer}" \
+        "$talks_dir/.conda/bin/node" -e '
+          const {createRequire} = require("node:module");
+          const load = createRequire(process.argv[1]);
+          console.log(load("puppeteer").executablePath({headless: "shell"}));
+        ' "$talks_dir/.conda/lib/node_modules/decktape/package.json")
+    if [ -x "$quarto_browser" ]; then
+        export QUARTO_CHROMIUM="$quarto_browser"
+    fi
+fi
+
+exec quarto "$@"

@@ -1,0 +1,7 @@
+/.conda/
+/.quarto/
+/_build/
+/overview_files/
+/.cache/
+
+**/*.quarto_ipynb

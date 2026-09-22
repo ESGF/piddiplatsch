@@ -1,0 +1,432 @@
+---
+title: Piddiplatsch
+subtitle: Persistent identifiers for ESGF-NG publication records
+author: "Carsten Ehbrecht, Katharina Berger (DKRZ)"
+---
+
+## What is Piddi? {.name-slide}
+
+::: columns
+::: {.column width="62%"}
+
+**Piddiplatsch maintains persistent identifiers (PIDs) for ESGF publication records.**
+
+- Named after **Pittiplatsch**, the curious TV puppet known as **Pitti**.
+- **PID** gives “Piddiplatsch” its wordplay.
+- **`piddi`** is the command-line tool, echoing “Pitti”.
+
+*Curious by nature. Persistent by design.*
+
+[Pittiplatsch on Wikipedia](https://en.wikipedia.org/wiki/Pittiplatsch)
+:::
+
+::: {.column width="34%"}
+[![](assets/pittiplatsch.jpg){fig-alt="Pittiplatsch statue sitting on a railing in Erfurt" .pitti-photo}](https://commons.wikimedia.org/wiki/File:Pittiplatsch.jpg)
+
+::: {.photo-credit}
+Pittiplatsch statue in Erfurt. Photo: [Freddy123Hamster](https://commons.wikimedia.org/wiki/File:Pittiplatsch.jpg),
+[CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/).
+:::
+:::
+:::
+
+::: notes
+The project name explanation and motto come from the repository README.md.
+The PID pun is phonetic. Character background:
+https://en.wikipedia.org/wiki/Pittiplatsch.
+The image used by that article is hosted on Wikimedia Commons:
+https://commons.wikimedia.org/wiki/File:Pittiplatsch.jpg.
+The image links to its description page, which includes the author and license.
+The local copy is Wikimedia's 960-pixel thumbnail, displayed without cropping.
+It shows a statue of the character, not the original television puppet.
+:::
+
+## Piddi and ESGF-NG
+
+**Project plugins map STAC publication records to validated Handle records.**
+
+- Connects the ESGF-NG publication stream (with Kafka) to persistent identifier services.
+- Prepares dataset and file records, including their relationships.
+- Built-in plugins: **CMIP6, CMIP6Plus, CMIP7, and CORDEX-CMIP6**.
+- Used in production at DKRZ; open source under Apache-2.0.
+
+CLI: **`harvest` → `map` + validation → `publish`**, linked by **JSONL**.
+
+[ESGF/piddiplatsch](https://github.com/ESGF/piddiplatsch)
+
+::: notes
+ESGF is the Earth System Grid Federation. STAC is the SpatioTemporal Asset
+Catalog specification. PID means persistent identifier. Introduce Piddi as the
+link between publication events and the Handle System, not a data publisher.
+Source: repository README.md.
+:::
+
+## Piddi in ESGF-NG {.architecture-slide}
+
+```{mermaid}
+%%{init: {"theme":"base","fontFamily":"Arial","fontSize":24,"themeVariables":{"fontSize":"24px","primaryColor":"#eef5f9","primaryBorderColor":"#457b9d","lineColor":"#457b9d"},"flowchart":{"htmlLabels":false,"curve":"linear"}}}%%
+flowchart LR
+    DN["Data nodes<br/>Files + publishing tools"] -->|STAC events| K["Publication API<br/>+ Kafka stream"]
+    K --> STAC["Catalog consumers<br/>STAC East / West"]
+    STAC -->|discovery| U["Users / clients"]
+    DN -->|data access| U
+    K --> P["Piddi<br/>Plugins + JSONL"]
+    STAC -.->|lookup| P
+    P -->|publish| H["Handle Service<br/>Dataset + file PIDs"]
+    classDef focus fill:#457b9d,color:#fff,stroke:#24465c,stroke-width:3px;
+    class P focus;
+```
+
+**Piddi maintains PIDs alongside catalog indexing; data files stay on data nodes.**
+
+::: notes
+Simplified logical view, not a deployment topology. The data-node box groups file hosting and publishing tools; the publication
+box groups the transaction API and Kafka. Catalog consumers and their STAC
+catalogs are grouped together. Catalog consumers and
+Piddi independently consume publication events. Piddi may query STAC to recover
+an item for PATCH processing or perform optional version lookup; STAC is not an
+extra mandatory hop between Kafka and Piddi. Data access bypasses Piddi.
+Sources: docs/architecture.md, docs/configuration.md;
+https://github.com/ESGF/ESGF-Playground;
+https://github.com/ESGF/stac-transaction-api;
+https://talks.osgeo.org/foss4g-2026/talk/BDZP9T/.
+:::
+
+## Dataset and file identifiers
+
+::: columns
+::: {.column width="50%"}
+### Dataset Handle
+
+- Identifies a published dataset version.
+- Records metadata and access information.
+- Links to its file Handles with `HAS_PARTS`.
+:::
+::: {.column width="50%"}
+### File Handle
+
+- Uses the file's tracking identifier.
+- Records file metadata and checksums.
+- Links to the dataset with `IS_PART_OF`.
+:::
+:::
+
+Project adapters resolve source PIDs; shared mapping builds the Handle records.
+
+::: notes
+The four project families declare their namespaced PID and tracking-ID fields.
+CMIP6 also accepts known legacy fields. The optional force_dataset_pid policy
+generates dataset identifiers from the full versioned STAC item ID; file
+tracking identifiers remain unchanged. Avoid implying identifiers are always
+newly minted by Piddi. Sources: docs/architecture.md and docs/configuration.md.
+:::
+
+## Project plugins: shared workflow, project rules {.plugins-slide}
+
+```{mermaid}
+%%{init: {"theme":"base","fontFamily":"Arial","fontSize":24,"themeVariables":{"fontSize":"24px","primaryColor":"#eef5f9","primaryBorderColor":"#457b9d","lineColor":"#457b9d"},"flowchart":{"htmlLabels":false,"curve":"linear"}}}%%
+flowchart LR
+    R["Project router"] --> C6["cmip6"]
+    R --> CP["cmip6plus"]
+    R --> C7["cmip7"]
+    R --> CX["cordex-cmip6"]
+    C6 --> V["Shared mapping<br/>+ Handle validation"]
+    CP --> V
+    C7 --> V
+    CX --> V
+    V --> O["Per-project<br/>Handle JSONL"]
+```
+
+- **Plugins own** project identity, PID fields, and project-specific behavior.
+- **Core shares** routing, mapping machinery, validation, and JSONL persistence.
+- Select one, several, or all built-in plugins; each event reaches at most one.
+
+::: notes
+Plugins are explicitly registered Python modules through PluginSpec, not
+currently external packages discovered at runtime. Thin project adapters share
+StacProjectProcessor and Pydantic Handle output models. CMIP6 version lookup is
+an example of project-specific behavior. Unselected and unknown projects are
+filtered and counted. Source: docs/architecture.md.
+:::
+
+## Three commands, connected by JSONL
+
+| Command | Input | Work and output |
+| --- | --- | --- |
+| **`harvest`** | Kafka events | Save raw messages as **JSONL** |
+| **`map`** | Raw JSONL | Route to plugins, map + validate → **Handle JSONL** |
+| **`publish`** | Handle JSONL | Write to Handle Service → **receipt JSONL** |
+
+```bash
+piddi harvest --limit 100
+piddi map --date last --project cmip6
+piddi publish --project cmip6 --date last --limit 100
+```
+
+**JSONL = one JSON record per line:** inspect, retain, and replay each stage.
+
+::: notes
+Examples assume installed Piddi and configured site credentials; these code
+blocks are never executed by Quarto. last selects the greatest valid date in
+the relevant files. publish performs real Handle writes when run.
+Map checks the publication envelope and consumed field shapes, then validates
+the generated Handle records with Pydantic. It does not validate the complete
+STAC schema. Schema strictness is configurable; it defaults to true.
+Harvest preserves all raw events before project selection. Map writes one
+Handle batch per project; publish each project's batch separately.
+consume is the convenience path combining harvest and map; --publish enables
+direct publication. Sources: README.md, docs/architecture.md,
+docs/configuration.md.
+:::
+
+## Using Piddiplatsch
+
+Configure Kafka and Handle credentials in `custom.toml`, then check the setup:
+
+```bash
+piddi config validate
+piddi config explain --project cmip6
+```
+
+Prepare a small batch and inspect its Handle records:
+
+```bash
+piddi harvest --limit 100
+piddi map --date last --project cmip6
+```
+
+Publish up to 100 prepared Handles when ready:
+
+```bash
+piddi publish --project cmip6 --date last --limit 100
+```
+
+::: notes
+The outlook follows; the appendix supports operational questions.
+Configuration, architecture, and deployment guides live in the repository.
+Examples assume Piddi is installed. Configuration validation is offline;
+harvest requires Kafka and publish performs real Handle writes. Inspect the
+Handle JSONL path produced by map before publication. last refers to the latest
+dated input file, so use explicit paths when selecting a particular batch.
+:::
+
+## Outlook: a STAC lookup DB for Rook {.outlook-slide}
+
+**Proposed extension:** reuse Piddi's plugin architecture beyond the PID service.
+
+```{mermaid}
+%%{init: {"theme":"base","fontFamily":"Arial","fontSize":24,"themeVariables":{"fontSize":"24px","primaryColor":"#eef5f9","primaryBorderColor":"#457b9d","lineColor":"#457b9d"},"flowchart":{"htmlLabels":false,"curve":"linear"}}}%%
+flowchart LR
+    K["ESGF-NG Kafka"] --> P["Piddi<br/>New Rook plugin"]
+    P -->|update| DB[("Local STAC lookup DB<br/>PostgreSQL")]
+    DB -->|dataset locations| B["Rook WPS broker<br/>Select a site"]
+    B -->|delegate workflow| O["Rook orchestrate<br/>Execute near the data"]
+    B -.->|missing / stale| S["Global STAC<br/>Fallback lookup"]
+    classDef focus fill:#457b9d,color:#fff,stroke:#24465c,stroke-width:3px;
+    class P focus;
+```
+
+- **Origin:** Piddi was built to maintain persistent identifiers via Handle services.
+- **Extension:** a Rook plugin could maintain dataset-to-site and local-asset lookups.
+- **Benefit:** the broker could choose a processing site using a local database.
+
+::: notes
+This is an outlook, not an implemented Rook plugin or an existing generic output
+backend. It follows the Rook/WPS federation design discussed in the task
+“Integrate Rook with STAC”, including its proposal to reuse Piddiplatsch.
+Today's plugins are project adapters for PID mapping; extending their contract
+and adding a database writer would be implementation work.
+
+Each Rook site would maintain a Rook-specific PostgreSQL database derived from
+STAC publication events. It would contain global dataset placement (dataset to
+sites) and local asset information (dataset to files or aggregations). It would
+not replace the global STAC catalogs. Publication, update, replica, and retraction
+events would need to keep the lookup current; retained JSONL could support replay.
+
+The diagram's DB-to-broker arrow represents lookup results. The broker queries
+the local database and uses global STAC as the authoritative fallback for
+missing or stale information. It selects where the workflow runs and delegates
+directly to the selected site's orchestrate process, which performs the work.
+Kafka consumption stays in Piddi, outside the WPS request path.
+Source for the existing extension boundary: docs/architecture.md.
+The summary closes the overview; the appendix supports operational questions.
+:::
+
+## Summary {.summary-slide}
+
+```{mermaid}
+%%{init: {"theme":"base","fontFamily":"Arial","fontSize":24,"themeVariables":{"fontSize":"24px","primaryColor":"#eef5f9","primaryBorderColor":"#457b9d","lineColor":"#457b9d"},"flowchart":{"htmlLabels":false,"curve":"linear","nodeSpacing":40,"rankSpacing":45}}}%%
+flowchart LR
+    K["ESGF-NG<br/>Kafka stream"] --> H["harvest"]
+    H -->|raw JSONL| M["map + validation<br/>Project plugins"]
+    M -->|Handle JSONL| P["publish"]
+    P --> PID["Today<br/>Dataset + file PIDs"]
+    M -.->|proposed Rook plugin| DB[("Outlook<br/>Local STAC lookup DB")]
+    DB -.-> B["Rook broker<br/>Select a processing site"]
+    classDef core fill:#457b9d,color:#fff,stroke:#24465c,stroke-width:2px;
+    classDef current fill:#e4f1ea,color:#203b2c,stroke:#54836a,stroke-width:2px;
+    classDef proposed fill:#fff4df,color:#5c4520,stroke:#b38a43,stroke-width:2px,stroke-dasharray:6 4;
+    class H,M,P core;
+    class PID current;
+    class DB,B proposed;
+```
+
+**Shared core, project plugins, replayable JSONL.**
+
+CMIP6 · CMIP6Plus · CMIP7 · CORDEX-CMIP6
+
+[github.com/ESGF/piddiplatsch](https://github.com/ESGF/piddiplatsch)
+
+::: notes
+Close with the existing PID workflow and its reusable project-plugin structure.
+The Rook lookup database is a proposed extension, not a shipped feature.
+Solid arrows show the existing PID workflow. The dashed amber branch shows
+the proposed extension; its database writer and plugin contract still need to
+be implemented. The Rook branch reuses event handling and project knowledge,
+not the existing Handle publication command.
+The appendix is available for configuration, consumer-group, and recovery questions.
+:::
+
+## Appendix: configuration
+
+Packaged defaults → site configuration → local override
+
+```text
+src/piddiplatsch/config/default.toml
+/etc/piddi/piddi.toml
+./custom.toml
+```
+
+```bash
+piddi config validate
+piddi config explain --project cmip6
+```
+
+- `--config PATH` replaces the final local override.
+- Named Handle profiles hold service settings and credentials.
+- Keep real credentials in ignored local configuration.
+
+::: notes
+Validation runs offline; it does not test connectivity or credential validity.
+Source: docs/configuration.md.
+:::
+
+## Appendix: consumer groups
+
+**Kafka assigns partitions before Piddi filters projects.**
+
+| Process arrangement | Consumer group choice |
+| --- | --- |
+| One process, several projects | One group |
+| Separate processes for different projects | Distinct groups |
+
+Sharing a group between separate CMIP6 and CMIP7 consumers can send an event to
+the process that filters it out.
+
+Changing project selection requires an explicit offset or replay decision.
+
+::: notes
+This follows Kafka partition assignment and Piddi's downstream filtering.
+Source: docs/architecture.md, Kafka consumer groups.
+:::
+
+## Appendix: output and recovery
+
+::: {.small}
+```text
+outputs/
+  dump/dump_messages_<date>.jsonl
+  <project>/
+    handles/handles_<date>.jsonl
+    failures/r<N>/failed_items_<date>.jsonl
+    skipped/skipped_items_<date>.jsonl
+  published/<run-scoped receipt>.jsonl
+```
+:::
+
+- `map` reprocesses raw dumps with the chosen project selection.
+- `retry` writes `retry_handles_<timestamp>.jsonl` in the project's handles folder.
+- `publish` preserves its inputs and reports each attempted Handle's outcome.
+
+::: notes
+Unresolved projects retain global failure/skipped directories. Plan retention
+for dumps, Handles, failures, logs, and receipts. Sources: README.md and
+docs/operations.md.
+:::
+
+## Appendix: recovery with `retry`
+
+Remap a saved failure file after fixing the underlying problem:
+
+```bash
+piddi retry outputs/cmip6/failures/r0/failed_items_2026-09-22.jsonl
+```
+
+Inspect the recovered Handle JSONL, then publish **the path printed by `retry`**:
+
+```bash
+# Example output path; use the timestamp from your retry run.
+piddi publish --project cmip6 \
+  outputs/cmip6/handles/retry_handles_2026-09-22_14-30-00-123456.jsonl
+```
+
+`retry` prepares a separate batch; publication is explicit. Logs and JSONL
+receipts record publication outcomes.
+
+::: notes
+Deferred publication retries transient failures with backoff, continues after
+individual Handle failures, and exits non-zero if any Handle failed. A saved
+immutable batch can be rerun with overwrite semantics. This is not an
+exactly-once delivery claim. Sources: README.md and docs/operations.md.
+The failure path and recovered-batch timestamp are illustrative; select an
+existing failure or skipped file and use the exact output path printed by retry.
+:::
+
+## Appendix: service mode and Ansible
+
+**Continuous harvest + map:** the systemd service prepares Handle JSONL.
+
+```bash
+# Command run by the service (publication remains a separate step).
+piddi --config /etc/piddi/piddi.toml --silent consume
+```
+
+On a prepared Linux host, configure `custom.toml`, then deploy:
+
+```bash
+cd /opt/piddiplatsch
+make deploy  # create/update .conda, install Piddi, run Ansible
+```
+
+After a manual trial, set `piddi_enable_service: true` in
+`deploy/ansible/custom.yml`, then enable and inspect the service:
+
+```bash
+make play  # Ansible-only configuration and service startup
+systemctl status piddi
+piddi top
+```
+
+::: notes
+Source: deploy/README.md, Makefile, and
+ deploy/ansible/templates/piddi.service.j2.
+Prerequisites: Linux with systemd, Conda installed, a checkout under
+/opt/piddiplatsch, and ansible-core available. Run deployment as root or with
+passwordless sudo; use make play ANSIBLE_ARGS=--ask-become-pass if needed.
+Prepare custom.toml from etc/esgf-example.toml only for a new installation;
+keep an existing site configuration. Create deploy/ansible/custom.yml from
+custom.yml.example if deployment controls are not already present.
+
+make deploy installs the application and applies Ansible. Ansible creates the
+service account, runtime directories, systemd unit, and log rotation. It validates
+the candidate configuration before installing /etc/piddi/piddi.toml. The service
+is not started by default; first run a manual trial as the piddi service user,
+then explicitly enable it with piddi_enable_service and make play.
+
+Default production paths are /var/lib/piddi for JSONL and the statistics database,
+and /var/log/piddi/piddi.log for logs, unless custom.toml overrides them.
+The unit runs consume without --publish: it harvests, maps, and writes JSONL;
+Handle publication is still an explicit separate operation. Use make play for
+later configuration changes rather than editing the generated site file.
+These are presentation examples, not commands executed during the slide build.
+:::
