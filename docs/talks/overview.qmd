@@ -1,13 +1,13 @@
 ---
 title: Piddiplatsch
-subtitle: Persistent identifiers for ESGF publication records
+subtitle: Persistent identifiers for ESGF-NG publication records
 ---
 
 ## Piddiplatsch in ESGF
 
 **A Kafka consumer that maps STAC publication records to Handle PIDs.**
 
-- Connects the ESGF publication stream to persistent identifier services.
+- Connects the ESGF-NG publication stream (with Kafka) to persistent identifier services.
 - Prepares dataset and file records, including their relationships.
 - Supports CMIP6, CMIP6Plus, CMIP7, and CORDEX-CMIP6.
 - Used in production at DKRZ; open source under Apache-2.0.
@@ -21,13 +21,50 @@ link between publication events and the Handle System, not a data publisher.
 Source: repository README.md.
 :::
 
+## Why “Piddiplatsch”? {.name-slide}
+
+::: columns
+::: {.column width="62%"}
+
+- Inspired by **Pittiplatsch**, the curious, mischievous puppet from German
+  children's television, also known as **Pitti**.
+- **PID** means persistent identifier: “Piddiplatsch” is a playful nod to the
+  project's purpose.
+- **`piddi`**, the CLI name, echoes the nickname “Pitti”.
+
+*Curious by nature. Persistent by design.*
+
+[Pittiplatsch on Wikipedia](https://en.wikipedia.org/wiki/Pittiplatsch)
+:::
+
+::: {.column width="34%"}
+[![](assets/pittiplatsch.jpg){fig-alt="Pittiplatsch statue sitting on a railing in Erfurt" .pitti-photo}](https://commons.wikimedia.org/wiki/File:Pittiplatsch.jpg)
+
+::: {.photo-credit}
+Pittiplatsch statue in Erfurt. Photo: [Freddy123Hamster](https://commons.wikimedia.org/wiki/File:Pittiplatsch.jpg),
+[CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/).
+:::
+:::
+:::
+
+::: notes
+The project name explanation and motto come from the repository README.md.
+The PID pun is phonetic. Character background:
+https://en.wikipedia.org/wiki/Pittiplatsch.
+The image used by that article is hosted on Wikimedia Commons:
+https://commons.wikimedia.org/wiki/File:Pittiplatsch.jpg.
+The image links to its description page, which includes the author and license.
+The local copy is Wikimedia's 960-pixel thumbnail, displayed without cropping.
+It shows a statue of the character, not the original television puppet.
+:::
+
 ## Publication workflow
 
-::: {.flow aria-label="Kafka events flow through project mapping and Handle JSONL to the Handle Service"}
+::: {.flow aria-label="The ESGF-NG publication stream with Kafka flows through project mapping and Handle JSONL to the Handle Service"}
 ::: {.stage}
-**Kafka**
+**ESGF-NG**
 
-Publication events
+Publication stream (Kafka)
 :::
 ::: {.arrow aria-hidden="true"}
 →

@@ -27,4 +27,7 @@ $code-block-bg: #eef5f9;
   .flow .arrow { color: #457b9d; }
   .small { font-size: 0.8em; }
   .columns { gap: 1.5em; }
+  .name-slide .pitti-photo { height: 510px; width: auto; max-width: 100%; object-fit: contain; margin: 0; }
+  .name-slide .photo-credit { font-size: 0.55em; line-height: 1.3; }
+  .name-slide .column > p:has(.pitti-photo) { margin: 0; }
 }

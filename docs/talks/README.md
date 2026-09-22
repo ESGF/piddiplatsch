@@ -1,9 +1,13 @@
 # Piddiplatsch overview slides
 
 Edit [`overview.qmd`](overview.qmd) directly. It is the canonical slide source;
-there is no Markdown conversion step. The title and seven overview slides are
+there is no Markdown conversion step. The title and eight overview slides are
 followed by three operational appendix slides. Speaker notes identify the
 repository documentation behind the content.
+The name explanation displays Pittiplatsch's Wikipedia image from a local asset,
+with links to Wikipedia and Wikimedia Commons and the photographer and license.
+The photo is embedded in the generated HTML for offline viewing; its source and
+license are documented in [`assets/README.md`](assets/README.md).
 
 ## Requirements
 
