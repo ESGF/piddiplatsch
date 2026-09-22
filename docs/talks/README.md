@@ -1,7 +1,7 @@
 # Piddiplatsch overview slides
 
 Edit [`overview.qmd`](overview.qmd) directly. It is the canonical slide source;
-there is no Markdown conversion step. The title and nine overview slides are
+there is no Markdown conversion step. The title and ten overview slides are
 followed by three operational appendix slides. Speaker notes identify the
 repository documentation behind the content.
 The name explanation displays Pittiplatsch's Wikipedia image from a local asset,
@@ -42,9 +42,10 @@ The overview emphasizes the built-in project plugins and the
 `harvest → map + validation → publish` workflow with JSONL between stages.
 The ESGF-NG Mermaid diagram is a simplified logical architecture, with sources
 and the scope of mapping validation documented in the slide notes.
-The final outlook slide illustrates a proposed Rook plugin maintaining a local
+The outlook slide illustrates a proposed Rook plugin maintaining a local
 PostgreSQL STAC lookup database for the Rook/WPS broker. It distinguishes this
 future extension from the existing PID workflow.
+A summary closes the overview before the operational appendix.
 
 ## Build and present
 

@@ -248,7 +248,42 @@ missing or stale information. It selects where the workflow runs and delegates
 directly to the selected site's orchestrate process, which performs the work.
 Kafka consumption stays in Piddi, outside the WPS request path.
 Source for the existing extension boundary: docs/architecture.md.
-End the overview here; the appendix supports operational questions.
+The summary closes the overview; the appendix supports operational questions.
+:::
+
+## Summary {.summary-slide}
+
+```{mermaid}
+%%{init: {"theme":"base","fontFamily":"Arial","fontSize":24,"themeVariables":{"fontSize":"24px","primaryColor":"#eef5f9","primaryBorderColor":"#457b9d","lineColor":"#457b9d"},"flowchart":{"htmlLabels":false,"curve":"linear","nodeSpacing":40,"rankSpacing":45}}}%%
+flowchart LR
+    K["ESGF-NG<br/>Kafka stream"] --> H["harvest"]
+    H -->|raw JSONL| M["map + validation<br/>Project plugins"]
+    M -->|Handle JSONL| P["publish"]
+    P --> PID["Today<br/>Dataset + file PIDs"]
+    M -.->|proposed Rook plugin| DB[("Outlook<br/>Local STAC lookup DB")]
+    DB -.-> B["Rook broker<br/>Select a processing site"]
+    classDef core fill:#457b9d,color:#fff,stroke:#24465c,stroke-width:2px;
+    classDef current fill:#e4f1ea,color:#203b2c,stroke:#54836a,stroke-width:2px;
+    classDef proposed fill:#fff4df,color:#5c4520,stroke:#b38a43,stroke-width:2px,stroke-dasharray:6 4;
+    class H,M,P core;
+    class PID current;
+    class DB,B proposed;
+```
+
+**Shared core, project plugins, replayable JSONL.**
+
+CMIP6 · CMIP6Plus · CMIP7 · CORDEX-CMIP6
+
+[github.com/ESGF/piddiplatsch](https://github.com/ESGF/piddiplatsch)
+
+::: notes
+Close with the existing PID workflow and its reusable project-plugin structure.
+The Rook lookup database is a proposed extension, not a shipped feature.
+Solid arrows show the existing PID workflow. The dashed amber branch shows
+the proposed extension; its database writer and plugin contract still need to
+be implemented. The Rook branch reuses event handling and project knowledge,
+not the existing Handle publication command.
+The appendix is available for configuration, consumer-group, and recovery questions.
 :::
 
 ## Appendix: configuration
