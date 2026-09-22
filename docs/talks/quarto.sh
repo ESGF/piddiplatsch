@@ -30,4 +30,10 @@ if [ -n "$quarto_prefix" ] && [ "$(command -v quarto)" = "$quarto_prefix/bin/qua
     fi
 fi
 
+# Reuse Chrome on macOS for Mermaid prerendering; other platforms can set
+# QUARTO_CHROMIUM or use Quarto's explicitly installed Chromium.
+if [ -z "${QUARTO_CHROMIUM:-}" ] && [ -x "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" ]; then
+    export QUARTO_CHROMIUM="/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
+fi
+
 exec quarto "$@"

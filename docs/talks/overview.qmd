@@ -5,14 +5,16 @@ subtitle: Persistent identifiers for ESGF-NG publication records
 
 ## Piddiplatsch in ESGF
 
-**A Kafka consumer that maps STAC publication records to Handle PIDs.**
+**Project plugins map STAC publication records to validated Handle records.**
 
 - Connects the ESGF-NG publication stream (with Kafka) to persistent identifier services.
 - Prepares dataset and file records, including their relationships.
-- Supports CMIP6, CMIP6Plus, CMIP7, and CORDEX-CMIP6.
+- Built-in plugins: **CMIP6, CMIP6Plus, CMIP7, and CORDEX-CMIP6**.
 - Used in production at DKRZ; open source under Apache-2.0.
 
-CLI: **`piddi`** · [ESGF/piddiplatsch](https://github.com/ESGF/piddiplatsch)
+CLI: **`harvest` → `map` + validation → `publish`**, linked by **JSONL**.
+
+[ESGF/piddiplatsch](https://github.com/ESGF/piddiplatsch)
 
 ::: notes
 ESGF is the Earth System Grid Federation. STAC is the SpatioTemporal Asset
@@ -58,48 +60,35 @@ The local copy is Wikimedia's 960-pixel thumbnail, displayed without cropping.
 It shows a statue of the character, not the original television puppet.
 :::
 
-## Publication workflow
+## Piddi in ESGF-NG {.architecture-slide}
 
-::: {.flow aria-label="The ESGF-NG publication stream with Kafka flows through project mapping and Handle JSONL to the Handle Service"}
-::: {.stage}
-**ESGF-NG**
+```{mermaid}
+%%{init: {"theme":"base","fontFamily":"Arial","fontSize":24,"themeVariables":{"fontSize":"24px","primaryColor":"#eef5f9","primaryBorderColor":"#457b9d","lineColor":"#457b9d"},"flowchart":{"htmlLabels":false,"curve":"linear"}}}%%
+flowchart LR
+    DN["Data nodes<br/>Files + publishing tools"] -->|STAC events| K["Publication API<br/>+ Kafka stream"]
+    K --> STAC["Catalog consumers<br/>STAC East / West"]
+    STAC -->|discovery| U["Users / clients"]
+    DN -->|data access| U
+    K --> P["Piddi<br/>Plugins + JSONL"]
+    STAC -.->|lookup| P
+    P -->|publish| H["Handle Service<br/>Dataset + file PIDs"]
+    classDef focus fill:#457b9d,color:#fff,stroke:#24465c,stroke-width:3px;
+    class P focus;
+```
 
-Publication stream (Kafka)
-:::
-::: {.arrow aria-hidden="true"}
-→
-:::
-::: {.stage}
-**Piddi**
-
-Route and map
-:::
-::: {.arrow aria-hidden="true"}
-→
-:::
-::: {.stage}
-**JSONL**
-
-Prepared Handles
-:::
-::: {.arrow aria-hidden="true"}
-→
-:::
-::: {.stage}
-**Handle Service**
-
-Publish explicitly
-:::
-:::
-
-- Raw messages are saved before project routing for replay and audit.
-- `piddi consume` prepares Handle JSONL by default.
-- `piddi publish` sends a saved batch; `consume --publish` sends immediately.
+**Piddi maintains PIDs alongside catalog indexing; data files stay on data nodes.**
 
 ::: notes
-The raw dump is global. Prepared Handle files are project-scoped. Direct
-publication also writes JSONL before contacting a Handle backend.
-Sources: docs/architecture.md and docs/configuration.md.
+Simplified logical view, not a deployment topology. The data-node box groups file hosting and publishing tools; the publication
+box groups the transaction API and Kafka. Catalog consumers and their STAC
+catalogs are grouped together. Catalog consumers and
+Piddi independently consume publication events. Piddi may query STAC to recover
+an item for PATCH processing or perform optional version lookup; STAC is not an
+extra mandatory hop between Kafka and Piddi. Data access bypasses Piddi.
+Sources: docs/architecture.md, docs/configuration.md;
+https://github.com/ESGF/ESGF-Playground;
+https://github.com/ESGF/stac-transaction-api;
+https://talks.osgeo.org/foss4g-2026/talk/BDZP9T/.
 :::
 
 ## Dataset and file identifiers
@@ -131,49 +120,62 @@ tracking identifiers remain unchanged. Avoid implying identifiers are always
 newly minted by Piddi. Sources: docs/architecture.md and docs/configuration.md.
 :::
 
-## One stream, several projects
+## Project plugins: shared workflow, project rules {.plugins-slide}
 
-| Built-in plugin | Publication project |
-| --- | --- |
-| `cmip6` | CMIP6 |
-| `cmip6plus` | CMIP6Plus |
-| `cmip7` | CMIP7 |
-| `cordex-cmip6` | CORDEX-CMIP6 |
+```{mermaid}
+%%{init: {"theme":"base","fontFamily":"Arial","fontSize":24,"themeVariables":{"fontSize":"24px","primaryColor":"#eef5f9","primaryBorderColor":"#457b9d","lineColor":"#457b9d"},"flowchart":{"htmlLabels":false,"curve":"linear"}}}%%
+flowchart LR
+    R["Project router"] --> C6["cmip6"]
+    R --> CP["cmip6plus"]
+    R --> C7["cmip7"]
+    R --> CX["cordex-cmip6"]
+    C6 --> V["Shared mapping<br/>+ Handle validation"]
+    CP --> V
+    C7 --> V
+    CX --> V
+    V --> O["Per-project<br/>Handle JSONL"]
+```
 
-- One process can select one, several, or all registered plugins.
-- Each event reaches at most one selected project processor.
-- Unselected and unknown projects are filtered and counted.
+- **Plugins own** project identity, PID fields, and project-specific behavior.
+- **Core shares** routing, mapping machinery, validation, and JSONL persistence.
+- Select one, several, or all built-in plugins; each event reaches at most one.
 
 ::: notes
-Plugins are explicitly registered Python modules, not dynamically discovered
-third-party extensions. They share the envelope, mapping workflow, and Handle
-output models. Separate processes selecting different projects must use
-different Kafka consumer groups. Source: docs/architecture.md.
+Plugins are explicitly registered Python modules through PluginSpec, not
+currently external packages discovered at runtime. Thin project adapters share
+StacProjectProcessor and Pydantic Handle output models. CMIP6 version lookup is
+an example of project-specific behavior. Unselected and unknown projects are
+filtered and counted. Source: docs/architecture.md.
 :::
 
-## Staged processing
+## Three commands, connected by JSONL
 
-Save publication events, then replay them through selected project mappings:
+| Command | Input | Work and output |
+| --- | --- | --- |
+| **`harvest`** | Kafka events | Save raw messages as **JSONL** |
+| **`map`** | Raw JSONL | Route to plugins, map + validate → **Handle JSONL** |
+| **`publish`** | Handle JSONL | Write to Handle Service → **receipt JSONL** |
 
 ```bash
 piddi harvest --limit 100
 piddi map --date last --project cmip6
-```
-
-Inspect the prepared batch, then publish it explicitly:
-
-```bash
 piddi publish --project cmip6 --date last --limit 100
 ```
 
-Or combine harvesting and mapping with **`piddi consume`**.
+**JSONL = one JSON record per line:** inspect, retain, and replay each stage.
 
 ::: notes
-Examples assume Piddi is installed and site configuration is already in place.
-They are displayed as text, never executed by this presentation. last means the
-greatest valid date found for the relevant dump or project Handle files.
-The publish example performs real Handle writes when run with live credentials.
-Sources: README.md and docs/configuration.md.
+Examples assume installed Piddi and configured site credentials; these code
+blocks are never executed by Quarto. last selects the greatest valid date in
+the relevant files. publish performs real Handle writes when run.
+Map checks the publication envelope and consumed field shapes, then validates
+the generated Handle records with Pydantic. It does not validate the complete
+STAC schema. Schema strictness is configurable; it defaults to true.
+Harvest preserves all raw events before project selection. Map writes one
+Handle batch per project; publish each project's batch separately.
+consume is the convenience path combining harvest and map; --publish enables
+direct publication. Sources: README.md, docs/architecture.md,
+docs/configuration.md.
 :::
 
 ## Recovery and operational visibility

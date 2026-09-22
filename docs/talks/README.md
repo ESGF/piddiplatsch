@@ -11,7 +11,7 @@ license are documented in [`assets/README.md`](assets/README.md).
 
 ## Requirements
 
-Quarto 1.6–1.x is the only build requirement. Install its tools into an isolated
+Quarto 1.6–1.x and Chrome/Chromium are required. Install Quarto into an isolated
 environment using the requirements in [`environment.yml`](environment.yml):
 
 ```sh
@@ -24,9 +24,24 @@ application environment. Alternatively, use an existing Quarto installation on
 `PATH`. The wrapper prefers the local talks environment when present and supplies
 the split tool paths required by Conda's Quarto packages.
 
-No Python packages, Node/npm installation, Chromium, DeckTape, or TeX setup is
-needed for this deck. The workflow diagram uses HTML/CSS. Code examples are
-displayed only; rendering never runs `piddi` or contacts Kafka or Handle services.
+Mermaid diagrams are authored directly in `overview.qmd` and prerendered to
+embedded PNG images for offline HTML viewing. Quarto needs Chrome/Chromium for
+this step. The wrapper reuses Google Chrome on macOS; on other systems set
+`QUARTO_CHROMIUM` to an installed browser executable, or explicitly install one:
+
+```sh
+make -C docs/talks install-browser
+```
+
+That optional installation downloads Chromium to Quarto's tool location; it does
+not change the Piddi environment. No Python packages, Node/npm installation,
+DeckTape, or TeX setup is needed. Code examples are displayed only; rendering
+never runs `piddi` or contacts Kafka or Handle services.
+
+The overview emphasizes the built-in project plugins and the
+`harvest → map + validation → publish` workflow with JSONL between stages.
+The ESGF-NG Mermaid diagram is a simplified logical architecture, with sources
+and the scope of mapping validation documented in the slide notes.
 
 ## Build and present
 
@@ -66,7 +81,8 @@ white background, blue headings, and Arial typography.
 make -C docs/talks slides-clean
 ```
 
-Cleanup removes only this folder's `_build/` and `.quarto/`; sources and the
+Cleanup removes only this folder's `_build/`, `.quarto/`, and generated
+`overview_files/`; sources and the
 isolated environment remain. The root Makefile, application requirements,
 root README, and deployment configuration are unchanged.
 

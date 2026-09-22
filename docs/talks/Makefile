@@ -1,11 +1,12 @@
 # Independent of the application and deployment Makefile.
 # Run from this folder or use make -C docs/talks.
 .DEFAULT_GOAL := help
-.PHONY: help install slides slides-html preview slides-clean
+.PHONY: help install install-browser slides slides-html preview slides-clean
 
 help:
 	@echo "Piddiplatsch overview presentation targets:"
 	@echo "  install       Create/update the isolated docs/talks/.conda environment"
+	@echo "  install-browser Install Quarto Chromium for Mermaid if no browser exists"
 	@echo "  slides-html   Build standalone Reveal.js HTML in _build/overview.html"
 	@echo "  slides        Alias for slides-html (HTML only)"
 	@echo "  preview       Preview with automatic reload"
@@ -22,6 +23,9 @@ install:
 
 slides: slides-html
 
+install-browser:
+	sh quarto.sh install chromium
+
 slides-html:
 	sh quarto.sh render --to revealjs
 
@@ -29,4 +33,4 @@ preview:
 	sh quarto.sh preview --to revealjs
 
 slides-clean:
-	rm -rf -- _build .quarto
+	rm -rf -- _build .quarto overview_files

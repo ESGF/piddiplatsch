@@ -8,6 +8,7 @@ format:
   revealjs:
     theme: [default, theme.scss]
     embed-resources: true
+    mermaid-format: png
     width: 1600
     height: 900
     margin: 0.08
