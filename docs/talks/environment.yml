@@ -1,0 +1,5 @@
+# Presentation requirements only; never update the piddi runtime environment.
+channels:
+  - conda-forge
+dependencies:
+  - quarto >=1.6,<2

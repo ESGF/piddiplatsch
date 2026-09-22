@@ -1,0 +1,5 @@
+/.conda/
+/.quarto/
+/_build/
+
+**/*.quarto_ipynb

@@ -1,0 +1,238 @@
+---
+title: Piddiplatsch
+subtitle: Persistent identifiers for ESGF publication records
+---
+
+## Piddiplatsch in ESGF
+
+**A Kafka consumer that maps STAC publication records to Handle PIDs.**
+
+- Connects the ESGF publication stream to persistent identifier services.
+- Prepares dataset and file records, including their relationships.
+- Supports CMIP6, CMIP6Plus, CMIP7, and CORDEX-CMIP6.
+- Used in production at DKRZ; open source under Apache-2.0.
+
+CLI: **`piddi`** · [ESGF/piddiplatsch](https://github.com/ESGF/piddiplatsch)
+
+::: notes
+ESGF is the Earth System Grid Federation. STAC is the SpatioTemporal Asset
+Catalog specification. PID means persistent identifier. Introduce Piddi as the
+link between publication events and the Handle System, not a data publisher.
+Source: repository README.md.
+:::
+
+## Publication workflow
+
+::: {.flow aria-label="Kafka events flow through project mapping and Handle JSONL to the Handle Service"}
+::: {.stage}
+**Kafka**
+
+Publication events
+:::
+::: {.arrow aria-hidden="true"}
+→
+:::
+::: {.stage}
+**Piddi**
+
+Route and map
+:::
+::: {.arrow aria-hidden="true"}
+→
+:::
+::: {.stage}
+**JSONL**
+
+Prepared Handles
+:::
+::: {.arrow aria-hidden="true"}
+→
+:::
+::: {.stage}
+**Handle Service**
+
+Publish explicitly
+:::
+:::
+
+- Raw messages are saved before project routing for replay and audit.
+- `piddi consume` prepares Handle JSONL by default.
+- `piddi publish` sends a saved batch; `consume --publish` sends immediately.
+
+::: notes
+The raw dump is global. Prepared Handle files are project-scoped. Direct
+publication also writes JSONL before contacting a Handle backend.
+Sources: docs/architecture.md and docs/configuration.md.
+:::
+
+## Dataset and file identifiers
+
+::: columns
+::: {.column width="50%"}
+### Dataset Handle
+
+- Identifies a published dataset version.
+- Records metadata and access information.
+- Links to its file Handles with `HAS_PARTS`.
+:::
+::: {.column width="50%"}
+### File Handle
+
+- Uses the file's tracking identifier.
+- Records file metadata and checksums.
+- Links to the dataset with `IS_PART_OF`.
+:::
+:::
+
+Project adapters resolve source PIDs; shared mapping builds the Handle records.
+
+::: notes
+The four project families declare their namespaced PID and tracking-ID fields.
+CMIP6 also accepts known legacy fields. The optional force_dataset_pid policy
+generates dataset identifiers from the full versioned STAC item ID; file
+tracking identifiers remain unchanged. Avoid implying identifiers are always
+newly minted by Piddi. Sources: docs/architecture.md and docs/configuration.md.
+:::
+
+## One stream, several projects
+
+| Built-in plugin | Publication project |
+| --- | --- |
+| `cmip6` | CMIP6 |
+| `cmip6plus` | CMIP6Plus |
+| `cmip7` | CMIP7 |
+| `cordex-cmip6` | CORDEX-CMIP6 |
+
+- One process can select one, several, or all registered plugins.
+- Each event reaches at most one selected project processor.
+- Unselected and unknown projects are filtered and counted.
+
+::: notes
+Plugins are explicitly registered Python modules, not dynamically discovered
+third-party extensions. They share the envelope, mapping workflow, and Handle
+output models. Separate processes selecting different projects must use
+different Kafka consumer groups. Source: docs/architecture.md.
+:::
+
+## Staged processing
+
+Save publication events, then replay them through selected project mappings:
+
+```bash
+piddi harvest --limit 100
+piddi map --date last --project cmip6
+```
+
+Inspect the prepared batch, then publish it explicitly:
+
+```bash
+piddi publish --project cmip6 --date last --limit 100
+```
+
+Or combine harvesting and mapping with **`piddi consume`**.
+
+::: notes
+Examples assume Piddi is installed and site configuration is already in place.
+They are displayed as text, never executed by this presentation. last means the
+greatest valid date found for the relevant dump or project Handle files.
+The publish example performs real Handle writes when run with live credentials.
+Sources: README.md and docs/configuration.md.
+:::
+
+## Recovery and operational visibility
+
+- **Replay:** retain the raw stream independently of project selection.
+- **Recover:** save failed and skipped records for inspection and retry.
+- **Audit:** keep prepared Handle JSONL and publication receipts.
+- **Observe:** report progress, per-project statistics, and structured outcomes.
+
+`piddi retry` prepares a separate recovered batch for explicit publication.
+
+::: notes
+Deferred publication retries transient failures with backoff, continues after
+individual Handle failures, and exits non-zero if any Handle failed. A saved
+immutable batch can be rerun with overwrite semantics. This is not an
+exactly-once delivery claim. Sources: README.md and docs/operations.md.
+:::
+
+## Using Piddiplatsch
+
+1. Configure Kafka, project selection, and a named Handle profile.
+2. Validate configuration and prepare a small batch.
+3. Inspect the output before publishing.
+4. Run continuously with logs, retained output, and a recovery procedure.
+
+**Project and documentation:**
+[github.com/ESGF/piddiplatsch](https://github.com/ESGF/piddiplatsch)
+
+::: notes
+End the short overview here. The appendix supports operational questions.
+Configuration, architecture, and deployment guides live in the repository.
+:::
+
+## Appendix: configuration
+
+Packaged defaults → site configuration → local override
+
+```text
+src/piddiplatsch/config/default.toml
+/etc/piddi/piddi.toml
+./custom.toml
+```
+
+```bash
+piddi config validate
+piddi config explain --project cmip6
+```
+
+- `--config PATH` replaces the final local override.
+- Named Handle profiles hold service settings and credentials.
+- Keep real credentials in ignored local configuration.
+
+::: notes
+Validation runs offline; it does not test connectivity or credential validity.
+Source: docs/configuration.md.
+:::
+
+## Appendix: consumer groups
+
+**Kafka assigns partitions before Piddi filters projects.**
+
+| Process arrangement | Consumer group choice |
+| --- | --- |
+| One process, several projects | One group |
+| Separate processes for different projects | Distinct groups |
+
+Sharing a group between separate CMIP6 and CMIP7 consumers can send an event to
+the process that filters it out.
+
+Changing project selection requires an explicit offset or replay decision.
+
+::: notes
+This follows Kafka partition assignment and Piddi's downstream filtering.
+Source: docs/architecture.md, Kafka consumer groups.
+:::
+
+## Appendix: output and recovery
+
+::: {.small}
+```text
+outputs/
+  dump/dump_messages_<date>.jsonl
+  <project>/
+    handles/handles_<date>.jsonl
+    failures/r<N>/failed_items_<date>.jsonl
+    skipped/skipped_items_<date>.jsonl
+  published/<run-scoped receipt>.jsonl
+```
+:::
+
+- `map` reprocesses raw dumps with the chosen project selection.
+- `retry` writes `retry_handles_<timestamp>.jsonl` in the project's handles folder.
+- `publish` preserves its inputs and reports each attempted Handle's outcome.
+
+::: notes
+Unresolved projects retain global failure/skipped directories. Plan retention
+for dumps, Handles, failures, logs, and receipts. Sources: README.md and
+docs/operations.md.
+:::
