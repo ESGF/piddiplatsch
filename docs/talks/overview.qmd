@@ -205,8 +205,50 @@ exactly-once delivery claim. Sources: README.md and docs/operations.md.
 [github.com/ESGF/piddiplatsch](https://github.com/ESGF/piddiplatsch)
 
 ::: notes
-End the short overview here. The appendix supports operational questions.
+The outlook follows; the appendix supports operational questions.
 Configuration, architecture, and deployment guides live in the repository.
+:::
+
+## Outlook: a STAC lookup DB for Rook {.outlook-slide}
+
+**Proposed extension:** reuse Piddi's plugin architecture beyond the PID service.
+
+```{mermaid}
+%%{init: {"theme":"base","fontFamily":"Arial","fontSize":24,"themeVariables":{"fontSize":"24px","primaryColor":"#eef5f9","primaryBorderColor":"#457b9d","lineColor":"#457b9d"},"flowchart":{"htmlLabels":false,"curve":"linear"}}}%%
+flowchart LR
+    K["ESGF-NG Kafka"] --> P["Piddi<br/>New Rook plugin"]
+    P -->|update| DB[("Local STAC lookup DB<br/>PostgreSQL")]
+    DB -->|dataset locations| B["Rook WPS broker<br/>Select a site"]
+    B -->|delegate workflow| O["Rook orchestrate<br/>Execute near the data"]
+    B -.->|missing / stale| S["Global STAC<br/>Fallback lookup"]
+    classDef focus fill:#457b9d,color:#fff,stroke:#24465c,stroke-width:3px;
+    class P focus;
+```
+
+- **Origin:** Piddi was built to maintain persistent identifiers via Handle services.
+- **Extension:** a Rook plugin could maintain dataset-to-site and local-asset lookups.
+- **Benefit:** the broker could choose a processing site using a local database.
+
+::: notes
+This is an outlook, not an implemented Rook plugin or an existing generic output
+backend. It follows the Rook/WPS federation design discussed in the task
+“Integrate Rook with STAC”, including its proposal to reuse Piddiplatsch.
+Today's plugins are project adapters for PID mapping; extending their contract
+and adding a database writer would be implementation work.
+
+Each Rook site would maintain a Rook-specific PostgreSQL database derived from
+STAC publication events. It would contain global dataset placement (dataset to
+sites) and local asset information (dataset to files or aggregations). It would
+not replace the global STAC catalogs. Publication, update, replica, and retraction
+events would need to keep the lookup current; retained JSONL could support replay.
+
+The diagram's DB-to-broker arrow represents lookup results. The broker queries
+the local database and uses global STAC as the authoritative fallback for
+missing or stale information. It selects where the workflow runs and delegates
+directly to the selected site's orchestrate process, which performs the work.
+Kafka consumption stays in Piddi, outside the WPS request path.
+Source for the existing extension boundary: docs/architecture.md.
+End the overview here; the appendix supports operational questions.
 :::
 
 ## Appendix: configuration
