@@ -1,8 +1,9 @@
 # Piddiplatsch overview slides
 
 Edit [`overview.qmd`](overview.qmd) directly. It is the canonical slide source;
-there is no Markdown conversion step. The title and ten overview slides are
-followed by three operational appendix slides. Speaker notes identify the
+there is no Markdown conversion step. A title slide and nine overview slides are
+followed by five operational appendix slides. After the title, “What is Piddi?”
+introduces the photo and name, followed by “Piddi and ESGF-NG”. Speaker notes identify the
 repository documentation behind the content.
 The name explanation displays Pittiplatsch's Wikipedia image from a local asset,
 with links to Wikipedia and Wikimedia Commons and the photographer and license.
@@ -45,7 +46,8 @@ and the scope of mapping validation documented in the slide notes.
 The outlook slide illustrates a proposed Rook plugin maintaining a local
 PostgreSQL STAC lookup database for the Rook/WPS broker. It distinguishes this
 future extension from the existing PID workflow.
-A summary closes the overview before the operational appendix.
+A summary closes the overview before the operational appendix, which covers
+configuration, consumer groups, output, retry, and service deployment with Ansible.
 
 ## Build and present
 

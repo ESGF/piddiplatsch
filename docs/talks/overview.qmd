@@ -1,38 +1,19 @@
 ---
 title: Piddiplatsch
 subtitle: Persistent identifiers for ESGF-NG publication records
+author: "Carsten Ehbrecht, Katharina Berger (DKRZ)"
 ---
 
-## Piddiplatsch in ESGF
-
-**Project plugins map STAC publication records to validated Handle records.**
-
-- Connects the ESGF-NG publication stream (with Kafka) to persistent identifier services.
-- Prepares dataset and file records, including their relationships.
-- Built-in plugins: **CMIP6, CMIP6Plus, CMIP7, and CORDEX-CMIP6**.
-- Used in production at DKRZ; open source under Apache-2.0.
-
-CLI: **`harvest` → `map` + validation → `publish`**, linked by **JSONL**.
-
-[ESGF/piddiplatsch](https://github.com/ESGF/piddiplatsch)
-
-::: notes
-ESGF is the Earth System Grid Federation. STAC is the SpatioTemporal Asset
-Catalog specification. PID means persistent identifier. Introduce Piddi as the
-link between publication events and the Handle System, not a data publisher.
-Source: repository README.md.
-:::
-
-## Why “Piddiplatsch”? {.name-slide}
+## What is Piddi? {.name-slide}
 
 ::: columns
 ::: {.column width="62%"}
 
-- Inspired by **Pittiplatsch**, the curious, mischievous puppet from German
-  children's television, also known as **Pitti**.
-- **PID** means persistent identifier: “Piddiplatsch” is a playful nod to the
-  project's purpose.
-- **`piddi`**, the CLI name, echoes the nickname “Pitti”.
+**Piddiplatsch maintains persistent identifiers (PIDs) for ESGF publication records.**
+
+- Named after **Pittiplatsch**, the curious TV puppet known as **Pitti**.
+- **PID** gives “Piddiplatsch” its wordplay.
+- **`piddi`** is the command-line tool, echoing “Pitti”.
 
 *Curious by nature. Persistent by design.*
 
@@ -58,6 +39,26 @@ https://commons.wikimedia.org/wiki/File:Pittiplatsch.jpg.
 The image links to its description page, which includes the author and license.
 The local copy is Wikimedia's 960-pixel thumbnail, displayed without cropping.
 It shows a statue of the character, not the original television puppet.
+:::
+
+## Piddi and ESGF-NG
+
+**Project plugins map STAC publication records to validated Handle records.**
+
+- Connects the ESGF-NG publication stream (with Kafka) to persistent identifier services.
+- Prepares dataset and file records, including their relationships.
+- Built-in plugins: **CMIP6, CMIP6Plus, CMIP7, and CORDEX-CMIP6**.
+- Used in production at DKRZ; open source under Apache-2.0.
+
+CLI: **`harvest` → `map` + validation → `publish`**, linked by **JSONL**.
+
+[ESGF/piddiplatsch](https://github.com/ESGF/piddiplatsch)
+
+::: notes
+ESGF is the Earth System Grid Federation. STAC is the SpatioTemporal Asset
+Catalog specification. PID means persistent identifier. Introduce Piddi as the
+link between publication events and the Handle System, not a data publisher.
+Source: repository README.md.
 :::
 
 ## Piddi in ESGF-NG {.architecture-slide}
@@ -178,35 +179,35 @@ direct publication. Sources: README.md, docs/architecture.md,
 docs/configuration.md.
 :::
 
-## Recovery and operational visibility
-
-- **Replay:** retain the raw stream independently of project selection.
-- **Recover:** save failed and skipped records for inspection and retry.
-- **Audit:** keep prepared Handle JSONL and publication receipts.
-- **Observe:** report progress, per-project statistics, and structured outcomes.
-
-`piddi retry` prepares a separate recovered batch for explicit publication.
-
-::: notes
-Deferred publication retries transient failures with backoff, continues after
-individual Handle failures, and exits non-zero if any Handle failed. A saved
-immutable batch can be rerun with overwrite semantics. This is not an
-exactly-once delivery claim. Sources: README.md and docs/operations.md.
-:::
-
 ## Using Piddiplatsch
 
-1. Configure Kafka, project selection, and a named Handle profile.
-2. Validate configuration and prepare a small batch.
-3. Inspect the output before publishing.
-4. Run continuously with logs, retained output, and a recovery procedure.
+Configure Kafka and Handle credentials in `custom.toml`, then check the setup:
 
-**Project and documentation:**
-[github.com/ESGF/piddiplatsch](https://github.com/ESGF/piddiplatsch)
+```bash
+piddi config validate
+piddi config explain --project cmip6
+```
+
+Prepare a small batch and inspect its Handle records:
+
+```bash
+piddi harvest --limit 100
+piddi map --date last --project cmip6
+```
+
+Publish up to 100 prepared Handles when ready:
+
+```bash
+piddi publish --project cmip6 --date last --limit 100
+```
 
 ::: notes
 The outlook follows; the appendix supports operational questions.
 Configuration, architecture, and deployment guides live in the repository.
+Examples assume Piddi is installed. Configuration validation is offline;
+harvest requires Kafka and publish performs real Handle writes. Inspect the
+Handle JSONL path produced by map before publication. last refers to the latest
+dated input file, so use explicit paths when selecting a particular batch.
 :::
 
 ## Outlook: a STAC lookup DB for Rook {.outlook-slide}
@@ -351,4 +352,81 @@ outputs/
 Unresolved projects retain global failure/skipped directories. Plan retention
 for dumps, Handles, failures, logs, and receipts. Sources: README.md and
 docs/operations.md.
+:::
+
+## Appendix: recovery with `retry`
+
+Remap a saved failure file after fixing the underlying problem:
+
+```bash
+piddi retry outputs/cmip6/failures/r0/failed_items_2026-09-22.jsonl
+```
+
+Inspect the recovered Handle JSONL, then publish **the path printed by `retry`**:
+
+```bash
+# Example output path; use the timestamp from your retry run.
+piddi publish --project cmip6 \
+  outputs/cmip6/handles/retry_handles_2026-09-22_14-30-00-123456.jsonl
+```
+
+`retry` prepares a separate batch; publication is explicit. Logs and JSONL
+receipts record publication outcomes.
+
+::: notes
+Deferred publication retries transient failures with backoff, continues after
+individual Handle failures, and exits non-zero if any Handle failed. A saved
+immutable batch can be rerun with overwrite semantics. This is not an
+exactly-once delivery claim. Sources: README.md and docs/operations.md.
+The failure path and recovered-batch timestamp are illustrative; select an
+existing failure or skipped file and use the exact output path printed by retry.
+:::
+
+## Appendix: service mode and Ansible
+
+**Continuous harvest + map:** the systemd service prepares Handle JSONL.
+
+```bash
+# Command run by the service (publication remains a separate step).
+piddi --config /etc/piddi/piddi.toml --silent consume
+```
+
+On a prepared Linux host, configure `custom.toml`, then deploy:
+
+```bash
+cd /opt/piddiplatsch
+make deploy  # create/update .conda, install Piddi, run Ansible
+```
+
+After a manual trial, set `piddi_enable_service: true` in
+`deploy/ansible/custom.yml`, then enable and inspect the service:
+
+```bash
+make play  # Ansible-only configuration and service startup
+systemctl status piddi
+piddi top
+```
+
+::: notes
+Source: deploy/README.md, Makefile, and
+ deploy/ansible/templates/piddi.service.j2.
+Prerequisites: Linux with systemd, Conda installed, a checkout under
+/opt/piddiplatsch, and ansible-core available. Run deployment as root or with
+passwordless sudo; use make play ANSIBLE_ARGS=--ask-become-pass if needed.
+Prepare custom.toml from etc/esgf-example.toml only for a new installation;
+keep an existing site configuration. Create deploy/ansible/custom.yml from
+custom.yml.example if deployment controls are not already present.
+
+make deploy installs the application and applies Ansible. Ansible creates the
+service account, runtime directories, systemd unit, and log rotation. It validates
+the candidate configuration before installing /etc/piddi/piddi.toml. The service
+is not started by default; first run a manual trial as the piddi service user,
+then explicitly enable it with piddi_enable_service and make play.
+
+Default production paths are /var/lib/piddi for JSONL and the statistics database,
+and /var/log/piddi/piddi.log for logs, unless custom.toml overrides them.
+The unit runs consume without --publish: it harvests, maps, and writes JSONL;
+Handle publication is still an explicit separate operation. Use make play for
+later configuration changes rather than editing the generated site file.
+These are presentation examples, not commands executed during the slide build.
 :::
