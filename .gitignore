@@ -196,3 +196,6 @@ piddi.db-wal
 
 # VS Code
 .vscode/
+
+# MacOS
+.DS_Store
