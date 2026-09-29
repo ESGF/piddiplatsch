@@ -1,11 +1,11 @@
 # Independent of the application and deployment Makefile.
-# Run from this folder or use make -C docs/talks.
+# Run from this folder or use make -C talks.
 .DEFAULT_GOAL := help
 .PHONY: help install install-browser install-pdf slides slides-html slides-pdf preview slides-clean
 
 help:
 	@echo "Piddiplatsch overview presentation targets:"
-	@echo "  install       Create/update the isolated docs/talks/.conda environment"
+	@echo "  install       Create/update the isolated talks/.conda environment"
 	@echo "  install-browser Install Quarto Chromium for Mermaid if no browser exists"
 	@echo "  install-pdf   Install local slide tools, DeckTape and its browser"
 	@echo "  slides-html   Build standalone Reveal.js HTML in _build/overview.html"

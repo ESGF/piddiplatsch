@@ -37,9 +37,9 @@ docs-serve: docs ## build and serve the complete documentation and HTML slides
 	python -m http.server 8000 --bind 127.0.0.1 --directory site
 
 docs: docs-html ## build the complete documentation site, including HTML slides
-	$(MAKE) -C docs/talks slides-html
+	$(MAKE) -C talks slides-html
 	mkdir -p site/talks
-	cp docs/talks/_build/overview.html site/talks/overview.html
+	cp talks/_build/overview.html site/talks/overview.html
 
 pages: docs ## alias for the complete documentation build
 

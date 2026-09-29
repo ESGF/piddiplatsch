@@ -9,7 +9,7 @@ if [ -x "$talks_dir/.conda/bin/quarto" ]; then
     PATH="$quarto_prefix/bin:$PATH"
     export PATH
 elif ! command -v quarto >/dev/null 2>&1; then
-    echo "Slides: Quarto is missing. Run 'make -C docs/talks install' or add Quarto to PATH." >&2
+    echo "Slides: Quarto is missing. Run 'make -C talks install' or add Quarto to PATH." >&2
     exit 1
 else
     quarto_prefix="${CONDA_PREFIX:-}"

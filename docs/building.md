@@ -1,11 +1,16 @@
 # Building the documentation
 
 MkDocs builds the documentation from `docs/`. Quarto builds the overview slides
-separately from `docs/talks/overview.qmd`. Both are published as one GitHub Pages
+separately from `talks/overview.qmd`. Both are published as one GitHub Pages
 site:
 
 - Documentation: <https://esgf.github.io/piddiplatsch/>
 - Slides: <https://esgf.github.io/piddiplatsch/talks/overview.html>
+
+The top-level `talks/` directory owns the slide sources, assets, Quarto settings,
+and its own Makefile. Build slides independently with `make -C talks slides-html`.
+The root Makefile delegates to that build and combines its output with MkDocs;
+`docs/talks.md` is the normal documentation page linking to the published deck.
 
 ## Local documentation
 
@@ -32,7 +37,7 @@ build.
 ## Combined site and slides
 
 Install Quarto and Chrome/Chromium using the
-[slide tooling instructions](https://github.com/ESGF/piddiplatsch/blob/main/docs/talks/README.md).
+[slide tooling instructions](https://github.com/ESGF/piddiplatsch/blob/main/talks/README.md).
 With the documentation environment still active, run:
 
 ```sh
@@ -48,7 +53,7 @@ complete site; rerun it after edits. `make pages` remains an alias for `make doc
 Running `make docs-html` or `mkdocs serve` builds only the Markdown documentation;
 use `make docs` to restore the complete output in `site/`.
 
-PDF export remains available locally via `make -C docs/talks slides-pdf`; the
+PDF export remains available locally via `make -C talks slides-pdf`; the
 Pages workflow publishes the HTML deck only.
 
 ## GitHub Pages

@@ -17,11 +17,11 @@ DeckTape 3.16.1 and Node.js 22. Install the base tools into an isolated
 environment using the requirements in [`environment.yml`](environment.yml):
 
 ```sh
-make -C docs/talks install
+make -C talks install
 ```
 
 This requires Conda and network access, and creates or updates only
-`docs/talks/.conda`. It does not install Piddiplatsch or change the active
+`talks/.conda`. It does not install Piddiplatsch or change the active
 application environment. Alternatively, use an existing Quarto installation on
 `PATH`. The wrapper prefers the local talks environment when present and supplies
 the split tool paths required by Conda's Quarto packages.
@@ -32,7 +32,7 @@ this step. The wrapper reuses Google Chrome on macOS; on other systems set
 `QUARTO_CHROMIUM` to an installed browser executable, or explicitly install one:
 
 ```sh
-make -C docs/talks install-browser
+make -C talks install-browser
 ```
 
 That optional installation downloads Chromium to Quarto's tool location; it does
@@ -44,11 +44,11 @@ never runs `piddi` or contacts Kafka or Handle services.
 To install the PDF exporter and its Puppeteer browser, as in Woodpecker:
 
 ```sh
-make -C docs/talks install-pdf
+make -C talks install-pdf
 ```
 
-This updates only `docs/talks/.conda` and installs DeckTape there. Its browser
-is downloaded into `docs/talks/.cache/puppeteer`, also ignored by Git. Quarto
+This updates only `talks/.conda` and installs DeckTape there. Its browser
+is downloaded into `talks/.cache/puppeteer`, also ignored by Git. Quarto
 can reuse that browser for Mermaid. Installation requires network access; builds
 use installed tools. An existing environment with Quarto, Node, DeckTape, and
 its browser can also build both formats without installing local tools.
@@ -66,19 +66,19 @@ configuration, consumer groups, output, retry, and service deployment with Ansib
 ## Build and present
 
 The repository's `make docs` target combines the MkDocs documentation and this
-HTML deck for GitHub Pages. See [Building the documentation](../building.md)
+HTML deck for GitHub Pages. See [Building the documentation](../docs/building.md)
 for local preview and workflow setup. The published deck lives at
 <https://esgf.github.io/piddiplatsch/talks/overview.html>.
 
 From the repository root:
 
 ```sh
-make -C docs/talks slides-html  # standalone HTML only
-make -C docs/talks slides-pdf   # rebuild HTML, then export PDF
-make -C docs/talks slides       # both HTML and PDF
+make -C talks slides-html  # standalone HTML only
+make -C talks slides-pdf   # rebuild HTML, then export PDF
+make -C talks slides       # both HTML and PDF
 ```
 
-Open `docs/talks/_build/overview.html` in a browser. The configured
+Open `talks/_build/overview.html` in a browser. The configured
 [Quarto Reveal.js format](https://quarto.org/docs/presentations/revealjs/)
 embeds scripts and styles in the HTML so the deck can be shared as one file.
 External documentation links require network access. Use the arrow keys to
@@ -88,12 +88,12 @@ and restrictions on local files may affect speaker view).
 For automatic reload while editing:
 
 ```sh
-make -C docs/talks preview
+make -C talks preview
 ```
 
-The same targets work after `cd docs/talks`. PDF export uses DeckTape to capture
+The same targets work after `cd talks`. PDF export uses DeckTape to capture
 the Reveal.js HTML at 1600 × 900, with one page per slide, including the appendix.
-Share `docs/talks/_build/overview.pdf`; the photo and Mermaid diagrams are
+Share `talks/_build/overview.pdf`; the photo and Mermaid diagrams are
 included. The HTML remains available for interactive presenting and speaker
 notes. There is no PowerPoint target. `theme.scss` follows Woodpecker's
 white background, blue headings, and Arial typography.
@@ -108,7 +108,7 @@ white background, blue headings, and Arial typography.
   tools. All are ignored by Git.
 
 ```sh
-make -C docs/talks slides-clean
+make -C talks slides-clean
 ```
 
 Cleanup removes only this folder's `_build/`, `.quarto/`, and generated
@@ -118,5 +118,5 @@ isolated environment and downloaded browser remain.
 After edits, rebuild and inspect every HTML slide and PDF page for wrapping and
 clipping. Keep
 CLI examples and project support aligned with the repository's
-[architecture](../architecture.md), [configuration](../configuration.md), and
-[operations](../operations.md) documentation.
+[architecture](../docs/architecture.md), [configuration](../docs/configuration.md), and
+[operations](../docs/operations.md) documentation.

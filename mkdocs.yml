@@ -16,9 +16,7 @@ nav:
   - Talks: talks.md
   - Building the documentation: building.md
 
-# Quarto builds the deck separately. Never copy its tools, caches, or sources
-# into the public MkDocs site.
+# Internal maintenance notes and diagnostic output are not public docs.
 exclude_docs: |
-  /talks/
   /GITHUB_TRANSFER_CHECKLIST.md
   /errors_dc_04.txt
