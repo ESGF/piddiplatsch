@@ -7,18 +7,13 @@ edit_uri: edit/main/docs/
 theme:
   name: mkdocs
 
-# The slide HTML is added after MkDocs finishes, so it is not a source page.
-validation:
-  nav:
-    not_found: info
-
 nav:
   - Home: index.md
   - Architecture: architecture.md
   - Configuration: configuration.md
   - Operations: operations.md
   - Kafka notes: README_kafka.md
-  - Overview slides: talks/overview.html
+  - Talks: talks.md
   - Building the documentation: building.md
 
 # Quarto builds the deck separately. Never copy its tools, caches, or sources

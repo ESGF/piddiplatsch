@@ -65,7 +65,7 @@ configuration, consumer groups, output, retry, and service deployment with Ansib
 
 ## Build and present
 
-The repository's `make pages` target combines the MkDocs documentation and this
+The repository's `make docs` target combines the MkDocs documentation and this
 HTML deck for GitHub Pages. See [Building the documentation](../building.md)
 for local preview and workflow setup. The published deck lives at
 <https://esgf.github.io/piddiplatsch/talks/overview.html>.

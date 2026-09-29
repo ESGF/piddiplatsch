@@ -23,23 +23,25 @@ endef
 export PRINT_HELP_PYSCRIPT
 
 .DEFAULT_GOAL := help
-.PHONY: conda deploy play docs docs-serve pages
+.PHONY: conda deploy play docs docs-html docs-serve pages
 
 help: ## print this help message. (Default)
 	@python -c "$$PRINT_HELP_PYSCRIPT" < $(MAKEFILE_LIST)
 
 ## Build targets:
 
-docs: ## build the MkDocs documentation (install requirements-docs.txt first)
+docs-html: ## build MkDocs only (install the optional .[docs] dependencies first)
 	python -m mkdocs build --strict
 
-docs-serve: ## preview the MkDocs documentation with live reload
-	python -m mkdocs serve
+docs-serve: docs ## build and serve the complete documentation and HTML slides
+	python -m http.server 8000 --bind 127.0.0.1 --directory site
 
-pages: docs ## build the combined GitHub Pages documentation and HTML slides
+docs: docs-html ## build the complete documentation site, including HTML slides
 	$(MAKE) -C docs/talks slides-html
 	mkdir -p site/talks
 	cp docs/talks/_build/overview.html site/talks/overview.html
+
+pages: docs ## alias for the complete documentation build
 
 install: ## install application
 	@echo "Installing application ..."

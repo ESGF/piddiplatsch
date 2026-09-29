@@ -10,20 +10,24 @@ site:
 ## Local documentation
 
 From the repository root, create an isolated Python environment and install the
-documentation requirements:
+optional documentation dependencies from `pyproject.toml`, as in Woodpecker:
 
 ```sh
 python3 -m venv .venv-docs
 . .venv-docs/bin/activate
-python -m pip install -r requirements-docs.txt
-make docs
-make docs-serve
+python -m pip install -e ".[docs]"
+make docs-html
 ```
 
-`make docs` runs a strict MkDocs build into `site/`. `make docs-serve` starts
-MkDocs' live preview; use the URL printed in the terminal. Neither command needs
-Piddiplatsch, Kafka, or Handle services. The slides link is available in the
-combined build only.
+The `docs` extra adds MkDocs to the normal package installation. Quarto and
+Chrome/Chromium are separate, non-Python tools; they are installed as described
+below and explicitly by the Pages workflow. No Kafka or Handle services are
+contacted during builds.
+
+`make docs-html` runs a strict MkDocs-only build into `site/`. For live reload
+while editing Markdown, run `python -m mkdocs serve` and use its printed URL.
+The Talks page is included, but its HTML deck is available only in the complete
+build.
 
 ## Combined site and slides
 
@@ -32,15 +36,17 @@ Install Quarto and Chrome/Chromium using the
 With the documentation environment still active, run:
 
 ```sh
-make pages
-python -m http.server 8000 --directory site
+make docs
+make docs-serve
 ```
 
-Open <http://localhost:8000/>. `make pages` builds MkDocs first, renders the
+Open <http://localhost:8000/> and select **Talks**. `make docs` builds MkDocs first, renders the
 standalone Reveal.js HTML, and copies it to `site/talks/overview.html`. Quarto
 embeds the images, diagrams, scripts, and styles. Source files, tool environments,
-and caches are excluded from the site. Running `make docs` again cleans `site/`,
-so run `make pages` to restore the combined output.
+and caches are excluded from the site. `make docs-serve` rebuilds and serves the
+complete site; rerun it after edits. `make pages` remains an alias for `make docs`.
+Running `make docs-html` or `mkdocs serve` builds only the Markdown documentation;
+use `make docs` to restore the complete output in `site/`.
 
 PDF export remains available locally via `make -C docs/talks slides-pdf`; the
 Pages workflow publishes the HTML deck only.

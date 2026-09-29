@@ -11,7 +11,7 @@ persistent identifiers with the Handle System. Its staged workflow is
 - [Deployment](https://github.com/ESGF/piddiplatsch/blob/main/deploy/README.md):
   Linux service setup with Ansible.
 
-Open **Overview slides** in the navigation for an introduction to Piddi and its
+Visit [Talks](talks.md) for an introduction to Piddi and its
 ESGF-NG workflow. The deck includes an operational appendix and speaker notes.
 
 See [Building the documentation](building.md) to preview or publish this site

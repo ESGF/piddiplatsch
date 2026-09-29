@@ -27,10 +27,10 @@ jobs:
         with:
           python-version: "3.11"
           cache: pip
-          cache-dependency-path: requirements-docs.txt
+          cache-dependency-path: pyproject.toml
 
-      - name: Install MkDocs
-        run: python -m pip install -r requirements-docs.txt
+      - name: Install package and documentation dependencies
+        run: python -m pip install -e ".[docs]"
 
       - name: Set up Quarto
         uses: quarto-dev/quarto-actions/setup@v2
@@ -41,7 +41,7 @@ jobs:
         run: quarto install chromium --no-prompt
 
       - name: Build documentation and slides
-        run: make pages
+        run: make docs
 
       - name: Configure GitHub Pages
         if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
