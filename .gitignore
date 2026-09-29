@@ -132,6 +132,7 @@ celerybeat.pid
 .vagrant/
 .env
 .venv
+.venv-docs/
 .conda/
 env/
 venv/

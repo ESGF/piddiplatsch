@@ -65,6 +65,11 @@ configuration, consumer groups, output, retry, and service deployment with Ansib
 
 ## Build and present
 
+The repository's `make pages` target combines the MkDocs documentation and this
+HTML deck for GitHub Pages. See [Building the documentation](../building.md)
+for local preview and workflow setup. The published deck lives at
+<https://esgf.github.io/piddiplatsch/talks/overview.html>.
+
 From the repository root:
 
 ```sh
@@ -108,8 +113,7 @@ make -C docs/talks slides-clean
 
 Cleanup removes only this folder's `_build/`, `.quarto/`, and generated
 `overview_files/`; sources and the
-isolated environment and downloaded browser remain. The root Makefile, application requirements,
-root README, and deployment configuration are unchanged.
+isolated environment and downloaded browser remain.
 
 After edits, rebuild and inspect every HTML slide and PDF page for wrapping and
 clipping. Keep

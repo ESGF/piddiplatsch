@@ -25,7 +25,7 @@ Ansible uses the same `custom.toml` for production and installs it as
 only where the TOML omits them. Explicit TOML values take precedence.
 The optional `deploy/ansible/custom.yml` contains only deployment controls;
 Kafka, Handle, project, and mapping values belong in TOML once.
-See [deployment and migration](../deploy/README.md).
+See [deployment and migration](https://github.com/ESGF/piddiplatsch/blob/main/deploy/README.md).
 
 You do not need to copy the full packaged defaults. Leave retry delays, monitoring
 intervals, mapping limits, and optional backends inherited until you need to tune them.

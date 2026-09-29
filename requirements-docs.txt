@@ -1,0 +1,2 @@
+# Documentation only; no application dependencies are needed.
+mkdocs==1.6.1
