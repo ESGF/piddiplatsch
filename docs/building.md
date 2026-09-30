@@ -42,6 +42,7 @@ With the documentation environment still active, run:
 
 ```sh
 make docs
+make docs-check
 make docs-serve
 ```
 
@@ -50,6 +51,8 @@ standalone Reveal.js HTML, and copies it to `site/talks/overview.html`. Quarto
 embeds the images, diagrams, scripts, and styles. Source files, tool environments,
 and caches are excluded from the site. `make docs-serve` rebuilds and serves the
 complete site; rerun it after edits. `make pages` remains an alias for `make docs`.
+`make docs-check` checks the required pages and relative links/assets in the
+assembled site, including the HTML slide link. CI runs this before uploading.
 Running `make docs-html` or `mkdocs serve` builds only the Markdown documentation;
 use `make docs` to restore the complete output in `site/`.
 

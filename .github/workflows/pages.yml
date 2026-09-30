@@ -40,8 +40,8 @@ jobs:
       - name: Install Chromium for Mermaid diagrams
         run: quarto install chromium --no-prompt
 
-      - name: Build documentation and slides
-        run: make docs
+      - name: Build and check documentation and slides
+        run: make docs docs-check
 
       - name: Configure GitHub Pages
         if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
