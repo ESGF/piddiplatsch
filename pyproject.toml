@@ -32,12 +32,16 @@ dependencies = [
 ]
 
 [project.urls]
+Documentation = "https://esgf.github.io/piddiplatsch/"
 Homepage = "https://github.com/ESGF/piddiplatsch"
 Repository = "https://github.com/ESGF/piddiplatsch"
 Issues = "https://github.com/ESGF/piddiplatsch/issues"
 Changelog = "https://github.com/ESGF/piddiplatsch/blob/main/CHANGES.md"
 
 [project.optional-dependencies]
+docs = [
+  "mkdocs==1.6.1",
+]
 dev = [
   "pip >=24.2.0",
   "build >=1.2.0",

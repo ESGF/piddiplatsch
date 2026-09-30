@@ -206,7 +206,7 @@ configuration from the same `custom.toml` used by manual runs, adds defaults
 for omitted production paths, and uses
 `/etc/piddi/piddi.toml`, `/var/lib/piddi`, and `/var/log/piddi/piddi.log` and
 configures systemd plus hourly log rotation. For the short production and
-Vagrant procedures, see [deploy/README.md](../deploy/README.md).
+Vagrant procedures, see [deploy/README.md](https://github.com/ESGF/piddiplatsch/blob/main/deploy/README.md).
 
 Mount an external data disk at `/var/lib/piddi`; the systemd service waits for a
 configured mount. If several isolated Piddi installations share one VM, prefer

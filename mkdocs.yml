@@ -1,0 +1,22 @@
+site_name: Piddiplatsch
+site_description: ESGF publication records and persistent identifiers
+site_url: https://esgf.github.io/piddiplatsch/
+repo_url: https://github.com/ESGF/piddiplatsch
+edit_uri: edit/main/docs/
+
+theme:
+  name: mkdocs
+
+nav:
+  - Home: index.md
+  - Architecture: architecture.md
+  - Configuration: configuration.md
+  - Operations: operations.md
+  - Kafka notes: README_kafka.md
+  - Talks: talks.md
+  - Building the documentation: building.md
+
+# Internal maintenance notes and diagnostic output are not public docs.
+exclude_docs: |
+  /GITHUB_TRANSFER_CHECKLIST.md
+  /errors_dc_04.txt

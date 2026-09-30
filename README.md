@@ -1,5 +1,9 @@
 # Piddiplatsch
 
+[Documentation](https://esgf.github.io/piddiplatsch/) ·
+[Overview slides](https://esgf.github.io/piddiplatsch/talks/overview.html) ·
+[Documentation build instructions](docs/building.md)
+
 [![Build Status](https://github.com/ESGF/piddiplatsch/actions/workflows/ci.yml/badge.svg)](https://github.com/ESGF/piddiplatsch/actions)
 [![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 [![Python Version](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)

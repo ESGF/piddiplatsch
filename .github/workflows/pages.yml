@@ -1,0 +1,86 @@
+name: Documentation and slides
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pages-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: pyproject.toml
+
+      - name: Install package and documentation dependencies
+        run: python -m pip install -e ".[docs]"
+
+      - name: Set up Quarto
+        uses: quarto-dev/quarto-actions/setup@v2
+        with:
+          version: "1.9.38"
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Install DeckTape and its headless browser
+        run: npm install --global decktape@3.16.1
+
+      - name: Check headless browser for Mermaid
+        run: |
+          browser=$(node -e '
+            const {createRequire} = require("node:module");
+            const load = createRequire(process.argv[1] + "/decktape/package.json");
+            console.log(load("puppeteer").executablePath({headless: "shell"}));
+          ' "$(npm root --global)")
+          "$browser" --version
+          echo "QUARTO_CHROMIUM=$browser" >> "$GITHUB_ENV"
+
+      - name: Build and check documentation and slides
+        timeout-minutes: 5
+        run: make docs docs-check
+
+      - name: Configure GitHub Pages
+        if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+        uses: actions/configure-pages@v5
+
+      - name: Upload combined site
+        if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+        uses: actions/upload-pages-artifact@v4
+        with:
+          path: site
+
+  deploy:
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
