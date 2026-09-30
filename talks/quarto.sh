@@ -30,13 +30,15 @@ if [ -n "$quarto_prefix" ] && [ "$(command -v quarto)" = "$quarto_prefix/bin/qua
 fi
 
 # Prefer the PDF exporter's headless browser for Mermaid, as in Woodpecker.
-if [ -z "${QUARTO_CHROMIUM:-}" ] && [ -n "$quarto_prefix" ] && [ -x "$quarto_prefix/bin/decktape" ]; then
-    quarto_browser=$(PUPPETEER_CACHE_DIR="${PUPPETEER_CACHE_DIR:-$quarto_prefix/.cache/puppeteer}" \
-        "$quarto_prefix/bin/node" -e '
+if [ -z "${QUARTO_CHROMIUM:-}" ] && command -v node >/dev/null 2>&1 && command -v npm >/dev/null 2>&1; then
+    if [ -n "$quarto_prefix" ] && [ "$(command -v npm)" = "$quarto_prefix/bin/npm" ]; then
+        export PUPPETEER_CACHE_DIR="${PUPPETEER_CACHE_DIR:-$quarto_prefix/.cache/puppeteer}"
+    fi
+    quarto_browser=$(node -e '
           const {createRequire} = require("node:module");
-          const load = createRequire(process.argv[1]);
+          const load = createRequire(process.argv[1] + "/decktape/package.json");
           console.log(load("puppeteer").executablePath({headless: "shell"}));
-        ' "$quarto_prefix/lib/node_modules/decktape/package.json")
+        ' "$(npm root --global)" 2>/dev/null) || quarto_browser=""
     if [ -x "$quarto_browser" ]; then
         export QUARTO_CHROMIUM="$quarto_browser"
     fi

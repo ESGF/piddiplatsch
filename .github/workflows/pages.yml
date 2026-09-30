@@ -37,10 +37,26 @@ jobs:
         with:
           version: "1.9.38"
 
-      - name: Install Chromium for Mermaid diagrams
-        run: quarto install chromium --no-prompt
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Install DeckTape and its headless browser
+        run: npm install --global decktape@3.16.1
+
+      - name: Check headless browser for Mermaid
+        run: |
+          browser=$(node -e '
+            const {createRequire} = require("node:module");
+            const load = createRequire(process.argv[1] + "/decktape/package.json");
+            console.log(load("puppeteer").executablePath({headless: "shell"}));
+          ' "$(npm root --global)")
+          "$browser" --version
+          echo "QUARTO_CHROMIUM=$browser" >> "$GITHUB_ENV"
 
       - name: Build and check documentation and slides
+        timeout-minutes: 5
         run: make docs docs-check
 
       - name: Configure GitHub Pages
