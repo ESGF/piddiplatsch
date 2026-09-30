@@ -13,45 +13,40 @@ license are documented in [`assets/README.md`](assets/README.md).
 ## Requirements
 
 Quarto 1.6–1.x and Chrome/Chromium are required for HTML. PDF export adds
-DeckTape 3.16.1 and Node.js 22. Install the base tools into an isolated
-environment using the requirements in [`environment.yml`](environment.yml):
+DeckTape 3.16.1 and Node.js 22. Install all slide tools into the existing `piddi`
+Conda environment:
 
 ```sh
+conda activate piddi
 make -C talks install
 ```
 
-This requires Conda and network access, and creates or updates only
-`talks/.conda`. It does not install Piddiplatsch or change the active
-application environment. Alternatively, use an existing Quarto installation on
-`PATH`. The wrapper prefers the local talks environment when present and supplies
-the split tool paths required by Conda's Quarto packages.
+The installer requires the selected Conda environment to be active and network
+access. Like Woodpecker, it installs directly into the active prefix. It adds Quarto and Node/npm
+from [`environment.yml`](environment.yml) to `piddi` without pruning its
+application dependencies. It then installs DeckTape via npm into that same
+Conda prefix and downloads Puppeteer's browser into
+`$CONDA_PREFIX/.cache/puppeteer`. It does not create a separate `talks/.conda`.
+The `piddi` environment must already exist.
 
-Mermaid diagrams are authored directly in `overview.qmd` and prerendered to
-embedded PNG images for offline HTML viewing. Quarto needs Chrome/Chromium for
-this step. The wrapper reuses Google Chrome on macOS; on other systems set
-`QUARTO_CHROMIUM` to an installed browser executable, or explicitly install one:
+For a differently named application environment, use
+activate it and use `make -C talks install CONDA_ENV=my-piddi`. Use the same `CONDA_ENV` override
+when building without activation, or activate that environment first.
 
-```sh
-make -C talks install-browser
-```
+`install-env` adds only the Conda packages. `install-pdf` and `install-browser`
+run the complete installation, including the shared PDF/Mermaid browser.
+Running `conda env update` directly does not install DeckTape or its browser.
+No TeX setup is needed.
 
-That optional installation downloads Chromium to Quarto's tool location; it does
-not change the Piddi environment. The base environment includes Node/npm for
-the optional PDF exporter; HTML builds do not require DeckTape. No Python
-packages or TeX setup is needed. Code examples are displayed only; rendering
-never runs `piddi` or contacts Kafka or Handle services.
+The wrappers use tools on `PATH`, including an activated Conda environment or
+the standalone Quarto installation in CI. If the tool is missing from `PATH`,
+they run it through `conda run -n piddi`. They supply Conda's split Quarto tool
+paths and the browser cache location automatically.
 
-To install the PDF exporter and its Puppeteer browser, as in Woodpecker:
-
-```sh
-make -C talks install-pdf
-```
-
-This updates only `talks/.conda` and installs DeckTape there. Its browser
-is downloaded into `talks/.cache/puppeteer`, also ignored by Git. Quarto
-can reuse that browser for Mermaid. Installation requires network access; builds
-use installed tools. An existing environment with Quarto, Node, DeckTape, and
-its browser can also build both formats without installing local tools.
+Mermaid diagrams are prerendered to embedded PNG images for offline viewing.
+Quarto prefers the installed Puppeteer browser, with Chrome on macOS as a fallback; set
+`QUARTO_CHROMIUM` to select another browser. Code examples are displayed only;
+rendering never runs `piddi` or contacts Kafka or Handle services.
 
 The overview emphasizes the built-in project plugins and the
 `harvest → map + validation → publish` workflow with JSONL between stages.
@@ -104,8 +99,8 @@ white background, blue headings, and Arial typography.
 - `_quarto.yml`: HTML format, explicit render list, and output location.
 - `theme.scss`: presentation styling.
 - `environment.yml`, `quarto.sh`, `decktape.sh`, `Makefile`: independent build tooling.
-- `_build/`: generated HTML and PDF; `.quarto/`, `.cache/`, `.conda/`: caches and
-  tools. All are ignored by Git.
+- `_build/`: generated HTML and PDF; `.quarto/`: render cache. Both are ignored
+  by Git. Installed tools and the browser live in the `piddi` Conda environment.
 
 ```sh
 make -C talks slides-clean
@@ -113,7 +108,7 @@ make -C talks slides-clean
 
 Cleanup removes only this folder's `_build/`, `.quarto/`, and generated
 `overview_files/`; sources and the
-isolated environment and downloaded browser remain.
+`piddi` environment and downloaded browser remain.
 
 After edits, rebuild and inspect every HTML slide and PDF page for wrapping and
 clipping. Keep

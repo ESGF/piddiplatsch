@@ -1,7 +1,10 @@
-# Presentation requirements only; never update the piddi runtime environment.
+# Additional slide tools for the existing piddi environment.
+# make install adds DeckTape via npm and its browser inside the same prefix.
+# Do not use --prune: application dependencies must be retained.
+name: piddi
 channels:
   - conda-forge
 dependencies:
   - quarto >=1.6,<2
-  # npm installs the optional DeckTape PDF exporter inside this environment.
+  # Includes npm for the DeckTape PDF exporter installed by the talks Makefile.
   - nodejs >=22,<23

@@ -53,8 +53,9 @@ complete site; rerun it after edits. `make pages` remains an alias for `make doc
 Running `make docs-html` or `mkdocs serve` builds only the Markdown documentation;
 use `make docs` to restore the complete output in `site/`.
 
-PDF export remains available locally via `make -C talks slides-pdf`; the
-Pages workflow publishes the HTML deck only.
+After `conda activate piddi`, `make -C talks install` adds all slide tools to the existing `piddi`
+Conda environment: Quarto and Node/npm, then DeckTape and its Puppeteer browser. Export locally with
+`make -C talks slides-pdf`; the Pages workflow publishes the HTML deck only.
 
 ## GitHub Pages
 
