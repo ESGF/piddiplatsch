@@ -12,6 +12,11 @@ and its own Makefile. Build slides independently with `make -C talks slides-html
 The root Makefile delegates to that build and combines its output with MkDocs;
 `docs/talks.md` is the normal documentation page linking to the published deck.
 
+The [Quick guide](quick-guide.md) renders the repository README through the
+`docs/quick-guide.md` symlink to `../README.md`. Edit the root README to update
+both versions, and keep its links valid on GitHub and the published site.
+Advanced recovery instructions live separately in [Recovery & retry](recovery.md).
+
 ## Local documentation
 
 From the repository root, create an isolated Python environment and install the

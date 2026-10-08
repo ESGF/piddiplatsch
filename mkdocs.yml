@@ -9,9 +9,12 @@ theme:
 
 nav:
   - Home: index.md
+  - Quick guide: quick-guide.md
   - Architecture: architecture.md
   - Configuration: configuration.md
   - Operations: operations.md
+  - Advanced:
+      - Recovery & retry: recovery.md
   - Kafka notes: README_kafka.md
   - Talks: talks.md
   - Building the documentation: building.md
