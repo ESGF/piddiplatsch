@@ -19,6 +19,10 @@ Advanced recovery instructions live separately in [Recovery & retry](recovery.md
 
 ## Local documentation
 
+`make develop` installs both the development tools and MkDocs. If you already
+ran it before MkDocs was included, rerun it in your active environment, then
+run `make docs-html`.
+
 From the repository root, create an isolated Python environment and install the
 optional documentation dependencies from `pyproject.toml`, as in Woodpecker:
 
