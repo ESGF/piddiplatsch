@@ -1,61 +1,21 @@
+"""Kafka polling and lifecycle for the consume and harvest commands."""
+
 import json
 import logging
 import signal
 import sys
 import time
-from contextlib import closing
+from contextlib import closing, nullcontext
 from enum import StrEnum
-from itertools import chain
-from pathlib import Path
 
 from piddiplatsch.config import config
-from piddiplatsch.core.routing import ProjectRouter
+from piddiplatsch.core.pipeline import ProcessingPipeline, build_processing_target
 from piddiplatsch.exceptions import MaxErrorsExceededError, StopOnTransientSkipError
-from piddiplatsch.helpers import find_jsonl
-from piddiplatsch.jsonl_stream import iter_jsonl_records
-from piddiplatsch.monitoring.progress import BaseProgress, get_progress
+from piddiplatsch.monitoring.progress import BaseProgress
 from piddiplatsch.monitoring.stats import CounterKey, stats
-from piddiplatsch.persist.dump import DumpRecorder
-from piddiplatsch.persist.recovery import FailureRecorder
-from piddiplatsch.persist.skipped import SkipRecorder
-from piddiplatsch.result import FeedResult, ProcessingResult
+from piddiplatsch.result import ProcessingResult
 
 logger = logging.getLogger(__name__)
-
-
-def configured_projects() -> list[str] | str:
-    """Return the configured project plugin selection."""
-    consumer_cfg = config.get("consumer", {})
-    projects = consumer_cfg.get("projects")
-    if projects is None:
-        raise ValueError("No projects configured; set [consumer].projects")
-    return projects
-
-
-def build_processing_target(
-    *,
-    processor=None,
-    projects: list[str] | tuple[str, ...] | str | None = None,
-    publish: bool = False,
-    handle_profile: str | None = None,
-    handle_output_filename: str | None = None,
-):
-    """Build a project router or use an explicitly supplied processing object."""
-    if processor is not None and projects is not None:
-        raise ValueError("Specify either processor or projects, not both")
-    if processor is not None:
-        if isinstance(processor, str):
-            raise TypeError(
-                "String processor selection is not supported; use projects or a processing object"
-            )
-        return processor
-    selection = configured_projects() if projects is None else projects
-    return ProjectRouter(
-        selection,
-        publish=publish,
-        handle_profile=handle_profile,
-        processor_kwargs={"handle_output_filename": handle_output_filename},
-    )
 
 
 class StopCause(StrEnum):
@@ -66,28 +26,7 @@ class StopCause(StrEnum):
     TRANSIENT_EXTERNAL = "transient_external_failure"
 
 
-# ----------------------------
-# Base Consumer
-# ----------------------------
-
-
-class BaseConsumer:
-    """Abstract base consumer interface."""
-
-    def consume(self):
-        """
-        Yield tuples of (key, value) messages.
-        Must be implemented by subclasses.
-        """
-        raise NotImplementedError
-
-
-# ----------------------------
-# Kafka Consumer
-# ----------------------------
-
-
-class KafkaConsumer(BaseConsumer):
+class KafkaConsumer:
     """Kafka consumer wrapper."""
 
     def __init__(
@@ -142,27 +81,6 @@ class KafkaConsumer(BaseConsumer):
             self.consumer.close()
 
 
-# ----------------------------
-# Direct Consumer (for tests / recovery)
-# ----------------------------
-
-
-class DirectConsumer(BaseConsumer):
-    """Feed messages directly without Kafka."""
-
-    def __init__(self, messages):
-        """
-        messages: iterable of (key, value) tuples
-        """
-        self.messages = messages
-        self.consumed = 0
-
-    def consume(self):
-        for message in self.messages:
-            self.consumed += 1
-            yield message
-
-
 class HarvestProcessor:
     """Accept raw messages after they have been dumped."""
 
@@ -176,279 +94,20 @@ class HarvestProcessor:
         return ProcessingResult(key=key, success=True)
 
 
-# ----------------------------
-# Consumer Pipeline
-# ----------------------------
-
-
-class ConsumerPipeline:
-    """Coordinates consumption, message processing, and stats."""
-
-    def __init__(
-        self,
-        consumer: BaseConsumer,
-        processor,
-        *,
-        dump_messages=False,
-        verbose=False,
-        progress: BaseProgress | None = None,
-        max_errors=-1,
-        publish: bool = False,
-        force: bool = False,
-        failure_dir: Path | None = None,
-        limit: int | None = None,
-    ):
-        """
-        consumer: instance of BaseConsumer (KafkaConsumer or DirectConsumer)
-        processor: processor name
-        """
-        self.consumer = consumer
-        # String names remain supported for direct/test callers. Runtime
-        # ingestion passes a ProjectRouter or another processing object.
-        self.processor = build_processing_target(
-            processor=processor,
-            publish=publish,
-        )
-        self.dump_messages = dump_messages
-        self.max_errors = int(max_errors)
-        if limit is not None and limit <= 0:
-            raise ValueError("limit must be positive")
-        self.limit = limit
-        self.force = force
-        self.failure_dir = failure_dir
-        consumer_cfg = config.get("consumer", {})
-        transient_cfg = consumer_cfg.get("transient", {})
-        # Prefer new key `stop_on_skip`, fallback to legacy `stop_on_transient_skip`
-        self.stop_on_transient_skip = bool(
-            transient_cfg.get(
-                "stop_on_skip",
-                transient_cfg.get(
-                    "stop_on_transient_skip",
-                    consumer_cfg.get("stop_on_transient_skip", True),
-                ),
-            )
-        )
-        self.stats = stats
-        self._owns_progress = progress is None
-        self.progress = progress or get_progress(f"{self.processor}", use_tqdm=verbose)
-
-    def run(self):
-        logger.info("Starting consumer pipeline...")
-        processed = 0
-        for key, value in self.consumer.consume():
-            result = self._safe_process_message(key, value)
-
-            self.stats.record_result(result)
-
-            if result.skipped:
-                self.stats.skip(message=f"message={key}")
-                try:
-                    SkipRecorder(project=result.plugin).record(
-                        key, value, reason=result.skip_reason
-                    )
-                except Exception:
-                    logger.exception(f"Failed to persist skipped message {key}")
-
-                if result.transient_skip:
-                    self.stats.external_fail(message=f"message={key}")
-                    if self.stop_on_transient_skip and not self.force:
-                        raise StopOnTransientSkipError(
-                            f"Transient external failure encountered (key={key}); stopping as per policy"
-                        )
-            if result.patched:
-                self.stats.patch(message=f"message={key}")
-
-            if self.progress:
-                self.progress.refresh()
-
-            self._check_success()
-            processed += 1
-            if self.limit is not None and processed >= self.limit:
-                logger.info("Harvest limit reached (%d messages)", self.limit)
-                break
-
-    def _check_success(self):
-        if self.max_errors >= 0 and self.stats.errors >= self.max_errors:
-            raise MaxErrorsExceededError(
-                f"Max error limit reached ({self.stats.errors}/{self.max_errors})"
-            )
-
-    def _safe_process_message(self, key, value):
-        try:
-            logger.debug(f"Processing message: {key}")
-            if self.dump_messages:
-                DumpRecorder().record(key, value)
-            return self.processor.process(key, value)
-        except Exception as e:
-            logger.exception(f"Error processing message {key}")
-            infos = value.get("__infos__", {}) or {}
-            retries = infos.get("retries", value.get("retries", 0))
-            reason = str(e)
-            project = self._project_for_message(value)
-            FailureRecorder(root_dir=self.failure_dir, project=project).record(
-                key, value, retries=retries, reason=reason
-            )
-            return ProcessingResult(
-                key=key,
-                success=False,
-                error=reason,
-                project=project,
-                plugin=project,
-            )
-
-    def _project_for_message(self, value: dict) -> str | None:
-        resolver = getattr(self.processor, "plugin_name_for", None)
-        if not callable(resolver):
-            return None
-        try:
-            return resolver(value)
-        except Exception:
-            logger.debug("Could not resolve project for failed message", exc_info=True)
-            return None
-
-    def stop(self, cause: StopCause = StopCause.MANUAL):
-        logger.warning(f"Stopping consumer (cause: {cause.value})...")
-        self.stats._log_stats()
-        self.close_progress()
-        logger.info(
-            f"Total messages: {self.stats.messages}, total errors: {self.stats.errors}, "
-            f"handles: {self.stats[CounterKey.HANDLES]}, skipped: {self.stats.skipped_messages}, "
-            f"filtered: {self.stats.filtered_messages}"
-        )
-        failed = cause in {StopCause.MAX_ERRORS, StopCause.TRANSIENT_EXTERNAL}
-        self.stats.close(
-            status="failed" if failed else "stopped",
-            error_summary=cause.value if failed else None,
-        )
-
-    def close_progress(self) -> None:
-        """Close progress created by this pipeline, leaving injected progress to its owner."""
-        if self._owns_progress:
-            self.progress.close()
-
-
-# ----------------------------
-# Direct helpers for testing / recovery
-# ----------------------------
-
-
-def feed_messages_direct(
-    messages,
-    processor=None,
-    projects: list[str] | tuple[str, ...] | str | None = None,
-    publish=False,
-    failure_dir: Path | None = None,
-    force: bool = False,
-    verbose: bool = False,
-    progress: BaseProgress | None = None,
-    handle_profile: str | None = None,
-    handle_output_filename: str | None = None,
-) -> FeedResult:
-    consumer = DirectConsumer(messages)
-    target = build_processing_target(
-        processor=processor,
-        projects=projects,
-        publish=publish,
-        handle_profile=handle_profile,
-        handle_output_filename=handle_output_filename,
+def _stop_pipeline(pipeline: ProcessingPipeline, cause: StopCause = StopCause.MANUAL):
+    logger.warning(f"Stopping consumer (cause: {cause.value})...")
+    pipeline.stats._log_stats()
+    pipeline.close_progress()
+    logger.info(
+        f"Total messages: {pipeline.stats.messages}, total errors: {pipeline.stats.errors}, "
+        f"handles: {pipeline.stats[CounterKey.HANDLES]}, skipped: {pipeline.stats.skipped_messages}, "
+        f"filtered: {pipeline.stats.filtered_messages}"
     )
-    pipeline = ConsumerPipeline(
-        consumer,
-        processor=target,
-        publish=publish,
-        failure_dir=failure_dir,
-        force=force,
-        verbose=verbose,
-        progress=progress,
+    failed = cause in {StopCause.MAX_ERRORS, StopCause.TRANSIENT_EXTERNAL}
+    pipeline.stats.close(
+        status="failed" if failed else "stopped",
+        error_summary=cause.value if failed else None,
     )
-
-    # Track stats before run
-    messages_before = pipeline.stats.messages
-    errors_before = pipeline.stats.errors
-    skipped_before = pipeline.stats.skipped_messages
-    filtered_before = pipeline.stats.filtered_messages
-
-    try:
-        pipeline.run()
-    finally:
-        pipeline.close_progress()
-
-    # Calculate delta from pipeline stats
-    processed = pipeline.stats.messages - messages_before
-    failed = pipeline.stats.errors - errors_before
-    skipped = pipeline.stats.skipped_messages - skipped_before
-    filtered = pipeline.stats.filtered_messages - filtered_before
-    succeeded = processed - skipped - filtered
-
-    return FeedResult(
-        total=consumer.consumed,
-        succeeded=succeeded,
-        failed=failed,
-        skipped=skipped,
-        filtered=filtered,
-    )
-
-
-def map_dump_files(
-    paths: list[Path] | tuple[Path, ...],
-    *,
-    projects: list[str] | tuple[str, ...] | str | None = None,
-    limit: int | None = None,
-    offset: int = 0,
-    force: bool = False,
-    verbose: bool = False,
-    progress: BaseProgress | None = None,
-    handle_profile: str | None = None,
-) -> FeedResult:
-    """Map saved raw-message JSONL through project plugins without Kafka."""
-    if limit is not None and limit < 1:
-        raise ValueError("limit must be at least 1")
-    if offset < 0:
-        raise ValueError("offset cannot be negative")
-
-    with closing(
-        iter_jsonl_records(find_jsonl(paths), offset=offset, limit=limit)
-    ) as records:
-        # Peek only one record so empty selections still skip processor setup.
-        first = next(records, None)
-        if first is None:
-            return FeedResult()
-        target = build_processing_target(
-            projects=projects,
-            handle_profile=handle_profile,
-        )
-        if not force:
-            target.preflight_check(stop_on_transient_skip=True)
-        messages = (
-            (f"{path}:{line_number}", record)
-            for path, line_number, record in chain((first,), records)
-        )
-        return feed_messages_direct(
-            messages,
-            processor=target,
-            force=force,
-            verbose=verbose,
-            progress=progress,
-            handle_profile=handle_profile,
-        )
-
-
-def feed_test_files(
-    testfile_paths,
-    projects: list[str] | tuple[str, ...] | str = ("cmip6",),
-):
-    messages = []
-    for path in testfile_paths:
-        if isinstance(path, str):
-            path = Path(path)
-        with path.open("r", encoding="utf-8") as f:
-            messages.append((path.name, json.load(f)))
-    feed_messages_direct(messages, projects=projects)
-
-
-# ----------------------------
-# CLI / Dispatcher entrypoint
-# ----------------------------
 
 
 def start_consumer(
@@ -515,45 +174,47 @@ def start_consumer(
     # Subscribe only after project selection, plugin construction, and preflight
     # have succeeded. Invalid selections must not create an orphaned consumer.
     if direct_messages is not None:
-        consumer = DirectConsumer(direct_messages)
+        input_context = nullcontext(direct_messages)
     elif topic and kafka_cfg:
         consumer = KafkaConsumer(topic, kafka_cfg, idle_timeout=idle_timeout)
+        input_context = closing(consumer.consume())
     else:
         raise ValueError("Either Kafka config or direct_messages must be provided")
 
-    pipeline = ConsumerPipeline(
-        consumer,
-        proc_instance,
-        dump_messages=dump_messages,
-        verbose=verbose,
-        progress=progress,
-        max_errors=max_errors,
-        publish=publish,
-        force=force,
-        limit=limit,
-    )
+    with input_context as messages:
+        pipeline = ProcessingPipeline(
+            messages,
+            proc_instance,
+            dump_messages=dump_messages,
+            verbose=verbose,
+            progress=progress,
+            max_errors=max_errors,
+            publish=publish,
+            force=force,
+            limit=limit,
+        )
 
-    def sigint_handler(sig, frame):
-        logger.warning("Received SIGINT. Gracefully shutting down.")
-        pipeline.stop(cause=StopCause.SIGINT)
-        sys.exit(0)
+        def sigint_handler(sig, frame):
+            logger.warning("Received SIGINT. Gracefully shutting down.")
+            _stop_pipeline(pipeline, cause=StopCause.SIGINT)
+            sys.exit(0)
 
-    signal.signal(signal.SIGINT, sigint_handler)
+        signal.signal(signal.SIGINT, sigint_handler)
 
-    try:
-        pipeline.run()
-    except MaxErrorsExceededError as e:
-        logger.error(str(e))
-        pipeline.stop(cause=StopCause.MAX_ERRORS)
-        sys.exit(1)
-    except StopOnTransientSkipError as e:
-        logger.error(str(e))
-        pipeline.stop(cause=StopCause.TRANSIENT_EXTERNAL)
-        sys.exit(1)
-    except KeyboardInterrupt:
-        logger.warning("Consumer interrupted.")
-        pipeline.stop(cause=StopCause.KEYBOARD_INTERRUPT)
-        sys.exit(0)
-    else:
-        pipeline.close_progress()
-        stats.close(status="completed")
+        try:
+            pipeline.run()
+        except MaxErrorsExceededError as e:
+            logger.error(str(e))
+            _stop_pipeline(pipeline, cause=StopCause.MAX_ERRORS)
+            sys.exit(1)
+        except StopOnTransientSkipError as e:
+            logger.error(str(e))
+            _stop_pipeline(pipeline, cause=StopCause.TRANSIENT_EXTERNAL)
+            sys.exit(1)
+        except KeyboardInterrupt:
+            logger.warning("Consumer interrupted.")
+            _stop_pipeline(pipeline, cause=StopCause.KEYBOARD_INTERRUPT)
+            sys.exit(0)
+        else:
+            pipeline.close_progress()
+            stats.close(status="completed")

@@ -5,6 +5,7 @@ from itertools import groupby, islice
 from pathlib import Path
 
 from piddiplatsch.config import config
+from piddiplatsch.core.pipeline import process_messages
 from piddiplatsch.exceptions import JsonlReadError
 from piddiplatsch.helpers import find_jsonl, utc_now
 from piddiplatsch.jsonl_stream import iter_jsonl_records
@@ -67,7 +68,7 @@ class RetryRunner:
 
     Example:
         from pathlib import Path
-        from piddiplatsch.persist.retry import RetryRunner
+        from piddiplatsch.runners.retry import RetryRunner
 
         runner = RetryRunner(
             projects=["cmip6"],
@@ -107,8 +108,6 @@ class RetryRunner:
 
     def run_file(self, jsonl_path: Path) -> RetryResult:
         """Retry failed items from a JSONL file by reprocessing them through the pipeline."""
-        from piddiplatsch.consumer import feed_messages_direct
-
         result = RetryResult()
         self.logger.info(
             "Retrying messages from %s using %s", jsonl_path, self.projects
@@ -134,7 +133,7 @@ class RetryRunner:
                             if len(result.errors) < 100:
                                 result.errors.append(str(error))
                         continue
-                    partial = feed_messages_direct(
+                    partial = process_messages(
                         entries,
                         projects=[project] if project else self.projects,
                         publish=self.publish,

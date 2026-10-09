@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 
 from piddiplatsch.config import config
-from piddiplatsch.consumer import ConsumerPipeline, DirectConsumer
+from piddiplatsch.core.pipeline import ProcessingPipeline
 from piddiplatsch.core.routing import ProjectRouter
 
 pytestmark = pytest.mark.integration
@@ -50,8 +50,8 @@ def test_consumer_pipeline_writes_handles_jsonl(tmp_path: Path):
     item = _make_minimal_cmip6_item()
     msg = _wrap_message(item)
 
-    pipeline = ConsumerPipeline(
-        consumer=DirectConsumer([msg]),
+    pipeline = ProcessingPipeline(
+        messages=[msg],
         processor=ProjectRouter(["cmip6"], publish=False),
         publish=False,
         verbose=False,

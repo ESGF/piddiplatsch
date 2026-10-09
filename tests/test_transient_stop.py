@@ -1,6 +1,6 @@
 import pytest
 
-from piddiplatsch.consumer import ConsumerPipeline, DirectConsumer
+from piddiplatsch.core.pipeline import ProcessingPipeline
 from piddiplatsch.exceptions import StopOnTransientSkipError, TransientExternalError
 from piddiplatsch.plugins.cmip6.processor import CMIP6Processor
 
@@ -25,8 +25,8 @@ def test_stop_on_transient_skip(monkeypatch):
         "metadata": {"time": "2024-01-01T00:00:00Z"},
     }
 
-    consumer = DirectConsumer([(key, value)])
-    pipeline = ConsumerPipeline(
+    consumer = [(key, value)]
+    pipeline = ProcessingPipeline(
         consumer,
         processor=AlwaysTransientProcessor(publish=False),
         force=False,

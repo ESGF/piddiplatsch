@@ -4,12 +4,13 @@ from pathlib import Path
 
 import pytest
 
-from piddiplatsch.consumer import HarvestProcessor, feed_messages_direct, map_dump_files
+from piddiplatsch.core.pipeline import process_messages
 from piddiplatsch.exceptions import JsonlReadError, StopOnTransientSkipError
 from piddiplatsch.result import ProcessingResult
+from piddiplatsch.runners.mapping import map_dump_files
 
 
-class CountingProcessor(HarvestProcessor):
+class CountingProcessor:
     def __init__(self):
         self.count = 0
         self.preflights = 0
@@ -21,14 +22,15 @@ class CountingProcessor(HarvestProcessor):
     def process(self, key, value):
         self.count += 1
         self.last_key = key
-        return super().process(key, value)
+        return ProcessingResult(key=key, success=True)
 
 
 @pytest.fixture
 def processor(monkeypatch):
     processor = CountingProcessor()
     monkeypatch.setattr(
-        "piddiplatsch.consumer.build_processing_target", lambda **kwargs: processor
+        "piddiplatsch.runners.mapping.build_processing_target",
+        lambda **kwargs: processor,
     )
     return processor
 
@@ -115,7 +117,7 @@ def test_empty_selection_skips_processor_setup(tmp_path, monkeypatch):
         pytest.fail("Empty selection should not initialize the processor")
 
     monkeypatch.setattr(
-        "piddiplatsch.consumer.build_processing_target", unexpected_setup
+        "piddiplatsch.runners.mapping.build_processing_target", unexpected_setup
     )
     assert map_dump_files([source], offset=1).total == 0
 
@@ -126,7 +128,7 @@ def test_direct_feed_accepts_unsized_iterators_and_counts_consumed_records(proce
             assert processor.count == i
             yield str(i), {"id": i}
 
-    result = feed_messages_direct(messages(), processor=processor)
+    result = process_messages(messages(), processor=processor)
     assert result.total == result.succeeded == 5
 
 

@@ -41,6 +41,6 @@ piddi publish --project cmip6 outputs/cmip6/handles/retry_handles_<timestamp>.js
 Use `retry --publish` only when immediate publication is intentional.
 
 Implementation details:
-- Retry logic: [src/piddiplatsch/persist/retry.py](https://github.com/ESGF/piddiplatsch/blob/main/src/piddiplatsch/persist/retry.py)
+- Retry logic: [src/piddiplatsch/runners/retry.py](https://github.com/ESGF/piddiplatsch/blob/main/src/piddiplatsch/runners/retry.py)
 - Recorders: `src/piddiplatsch/persist/`
 

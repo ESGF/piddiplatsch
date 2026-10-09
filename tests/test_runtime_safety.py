@@ -1,14 +1,14 @@
 import json
 
 from piddiplatsch.config import config
-from piddiplatsch.consumer import ConsumerPipeline, DirectConsumer, feed_messages_direct
+from piddiplatsch.core.pipeline import ProcessingPipeline, process_messages
 from piddiplatsch.core.processing import BaseProcessor
 from piddiplatsch.persist.dump import DumpRecorder
 from piddiplatsch.persist.recovery import FailureRecorder
-from piddiplatsch.persist.retry import RetryRunner
 from piddiplatsch.persist.skipped import SkipRecorder
 from piddiplatsch.plugins.cmip6.record import CMIP6DatasetRecord
 from piddiplatsch.result import ProcessingResult
+from piddiplatsch.runners.retry import RetryRunner
 
 
 class FailingProcessor(BaseProcessor):
@@ -64,8 +64,8 @@ def test_recovery_recorders_store_project_and_use_project_paths(tmp_path):
 
 def test_nested_retry_count_selects_failure_subdirectory(tmp_path):
     value = {"payload": {}, "__infos__": {"retries": 2}}
-    pipeline = ConsumerPipeline(
-        DirectConsumer([("key", value)]),
+    pipeline = ProcessingPipeline(
+        [("key", value)],
         FailingProcessor(),
         failure_dir=tmp_path / "failures",
     )
@@ -78,8 +78,8 @@ def test_nested_retry_count_selects_failure_subdirectory(tmp_path):
 
 def test_pipeline_persists_resolved_project_on_failure(tmp_path):
     config._set("consumer", "output_dir", str(tmp_path))
-    pipeline = ConsumerPipeline(
-        DirectConsumer([("key", {"data": {}})]),
+    pipeline = ProcessingPipeline(
+        [("key", {"data": {}})],
         ProjectAwareFailingProcessor(),
     )
 
@@ -91,7 +91,7 @@ def test_pipeline_persists_resolved_project_on_failure(tmp_path):
 
 def test_skipped_message_is_not_reported_as_success(tmp_path):
     config._set("consumer", "output_dir", str(tmp_path))
-    result = feed_messages_direct(
+    result = process_messages(
         [("key", {})],
         processor=SkippingProcessor(),
         failure_dir=tmp_path / "failures",

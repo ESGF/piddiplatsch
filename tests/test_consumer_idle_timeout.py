@@ -63,3 +63,33 @@ def test_kafka_consumer_fails_on_reported_error(consumer_cls):
         next(consumer.consume())
 
     client.close.assert_called_once_with()
+
+
+@pytest.mark.parametrize("fails", [False, True])
+@patch("piddiplatsch.consumer.signal.signal")
+@patch("confluent_kafka.Consumer")
+def test_kafka_input_closes_when_processing_stops(consumer_cls, signal_mock, fails):
+    from piddiplatsch.config import config
+    from piddiplatsch.consumer import HarvestProcessor, start_consumer
+
+    client = consumer_cls.return_value
+    message = MagicMock()
+    message.error.return_value = None
+    message.key.return_value = b"key"
+    message.value.return_value = b'{"value": 1}'
+    client.poll.return_value = message
+    processor = HarvestProcessor()
+    if fails:
+        config._set("consumer", "max_errors", 1)
+        processor.process = MagicMock(side_effect=RuntimeError("mapping failed"))
+        with pytest.raises(SystemExit) as exc:
+            start_consumer(
+                "topic", {"group.id": "test"}, processor=processor, force=True
+            )
+        assert exc.value.code == 1
+    else:
+        start_consumer(
+            "topic", {"group.id": "test"}, processor=processor, limit=1, force=True
+        )
+    client.poll.assert_called_once()
+    client.close.assert_called_once_with()

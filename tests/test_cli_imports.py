@@ -45,3 +45,45 @@ assert "confluent_kafka" not in sys.modules
     )
     assert result.returncode == 0, result.stderr
     assert "RuntimeWarning" not in result.stderr
+
+
+@pytest.mark.parametrize(
+    "module, blocked",
+    [
+        (
+            "piddiplatsch.core.pipeline",
+            [
+                "piddiplatsch.consumer",
+                "piddiplatsch.jsonl_stream",
+                "piddiplatsch.runners",
+            ],
+        ),
+        ("piddiplatsch.commands.map", ["piddiplatsch.consumer", "confluent_kafka"]),
+        ("piddiplatsch.commands.retry", ["piddiplatsch.consumer", "confluent_kafka"]),
+    ],
+)
+def test_processing_boundaries_do_not_import_input_adapters(tmp_path, module, blocked):
+    source_root = Path(__file__).resolve().parents[1] / "src"
+    script = """
+import importlib
+import importlib.abc
+import sys
+
+blocked = sys.argv[2:]
+class BlockInputAdapters(importlib.abc.MetaPathFinder):
+    def find_spec(self, fullname, path=None, target=None):
+        if any(fullname == name or fullname.startswith(name + ".") for name in blocked):
+            raise AssertionError("Unexpected input-adapter dependency: " + fullname)
+
+sys.meta_path.insert(0, BlockInputAdapters())
+importlib.import_module(sys.argv[1])
+"""
+    result = subprocess.run(  # noqa: S603 - fixed import-isolation script, no shell
+        [sys.executable, "-c", script, module, *blocked],
+        cwd=tmp_path,
+        env={**os.environ, "PYTHONPATH": str(source_root)},
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    assert result.returncode == 0, result.stderr

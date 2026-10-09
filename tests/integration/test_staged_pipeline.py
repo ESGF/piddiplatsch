@@ -4,13 +4,10 @@ from pathlib import Path
 import pytest
 
 from piddiplatsch.config import config
-from piddiplatsch.consumer import (
-    ConsumerPipeline,
-    DirectConsumer,
-    HarvestProcessor,
-    map_dump_files,
-)
+from piddiplatsch.consumer import HarvestProcessor
+from piddiplatsch.core.pipeline import ProcessingPipeline
 from piddiplatsch.core.routing import ProjectRouter
+from piddiplatsch.runners.mapping import map_dump_files
 
 pytestmark = pytest.mark.integration
 
@@ -29,8 +26,8 @@ def test_consume_dumps_every_raw_message_before_project_filtering(
         ("cmip6", _sample(testdata_path, "cmip6")),
         ("cmip7", _sample(testdata_path, "cmip7")),
     ]
-    pipeline = ConsumerPipeline(
-        consumer=DirectConsumer(messages),
+    pipeline = ProcessingPipeline(
+        messages=messages,
         processor=ProjectRouter(["cmip6"], publish=False),
         dump_messages=True,
         publish=False,
@@ -49,8 +46,8 @@ def test_consume_dumps_every_raw_message_before_project_filtering(
 def test_harvest_limit_stops_after_dumping_requested_messages(tmp_path: Path):
     config._set("consumer", "output_dir", str(tmp_path))
     messages = [(str(index), {"index": index}) for index in range(3)]
-    pipeline = ConsumerPipeline(
-        consumer=DirectConsumer(messages),
+    pipeline = ProcessingPipeline(
+        messages=messages,
         processor=HarvestProcessor(),
         dump_messages=True,
         force=True,

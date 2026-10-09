@@ -15,6 +15,32 @@ Kafka message
   -> result persistence and statistics
 ```
 
+## Command execution
+
+CLI command classes handle arguments, progress display, and summaries. Execution
+is separated by input source:
+
+- `consumer.py` owns Kafka polling, preflight, signals, and run shutdown for
+  `consume` and `harvest`. It feeds decoded keyed records into the shared
+  processing pipeline and closes the Kafka input on completion or early exit.
+- `runners/mapping.py` opens raw JSONL through `jsonl_stream.py`, applies the
+  selected offset and limit, and sends a lazy iterable to the pipeline.
+- `runners/retry.py` streams recovery records in bounded batches and owns
+  persisted project routing, retry counts, and input-retention/deletion rules.
+- `core/pipeline.py` owns processor selection, record execution, counters,
+  failure/skipped-record persistence, progress updates, and stop policies. Its
+  `ProcessingPipeline` accepts an iterable directly and returns per-run results;
+  `process_messages` also manages progress created for a mapping or retry call.
+  It does not import Kafka or file-input readers.
+- `handles/publish.py` publishes already prepared Handles independently of the
+  mapping pipeline, using the same `jsonl_stream.py` reader.
+
+Input lifetimes belong to the runners: they close file/Kafka streams on limits,
+errors, or interruption. A caller that injects a progress display retains
+ownership of it. The shared pipeline does not install signal handlers or close
+run-wide monitoring; those remain with the command or Kafka run lifecycle.
+JSON fixture replay helpers live in `testing/processing.py`.
+
 ## Routing
 
 The router extracts project identity without validating a project-specific STAC

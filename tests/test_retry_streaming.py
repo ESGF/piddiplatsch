@@ -5,8 +5,8 @@ from pathlib import Path
 
 import pytest
 
-from piddiplatsch.persist.retry import RetryRunner
 from piddiplatsch.result import FeedResult
+from piddiplatsch.runners.retry import RetryRunner
 
 
 def write_records(path, records):
@@ -20,7 +20,7 @@ def runner(tmp_path, **kwargs):
 
 
 def test_retry_streams_bounded_batches_in_source_order(tmp_path, monkeypatch):
-    monkeypatch.setattr("piddiplatsch.persist.retry.BATCH_SIZE", 2)
+    monkeypatch.setattr("piddiplatsch.runners.retry.BATCH_SIZE", 2)
     source = tmp_path / "retry.jsonl"
     write_records(
         source,
@@ -68,7 +68,7 @@ def test_retry_streams_bounded_batches_in_source_order(tmp_path, monkeypatch):
         return FeedResult(total=len(messages), succeeded=len(messages))
 
     monkeypatch.setattr(Path, "open", tracked_open)
-    monkeypatch.setattr("piddiplatsch.consumer.feed_messages_direct", feed)
+    monkeypatch.setattr("piddiplatsch.runners.retry.process_messages", feed)
     result = runner(tmp_path).run_file(source)
     assert result.succeeded == result.total == 5
     assert processed == [str(i) for i in range(5)]
@@ -87,7 +87,7 @@ def test_retry_continues_after_bad_input_and_keeps_source(tmp_path, monkeypatch)
         seen.extend(key for key, _ in messages)
         return FeedResult(total=len(messages), succeeded=len(messages))
 
-    monkeypatch.setattr("piddiplatsch.consumer.feed_messages_direct", feed)
+    monkeypatch.setattr("piddiplatsch.runners.retry.process_messages", feed)
     result = runner(tmp_path, delete_after=True).run_file(source)
     assert seen == ["one", "two"]
     assert result.total == 5
@@ -101,7 +101,7 @@ def test_retry_continues_after_bad_input_and_keeps_source(tmp_path, monkeypatch)
 
 @pytest.mark.parametrize("count", [1, 3])
 def test_retry_does_not_read_or_delete_appended_records(tmp_path, monkeypatch, count):
-    monkeypatch.setattr("piddiplatsch.persist.retry.BATCH_SIZE", 1)
+    monkeypatch.setattr("piddiplatsch.runners.retry.BATCH_SIZE", 1)
     source = tmp_path / "retry.jsonl"
     # No trailing newline also exercises the byte boundary of the snapshot.
     source.write_text(
@@ -115,7 +115,7 @@ def test_retry_does_not_read_or_delete_appended_records(tmp_path, monkeypatch, c
             stream.write('\n{"key":"appended"}\n')
         return FeedResult(total=len(messages), succeeded=len(messages))
 
-    monkeypatch.setattr("piddiplatsch.consumer.feed_messages_direct", feed)
+    monkeypatch.setattr("piddiplatsch.runners.retry.process_messages", feed)
     result = runner(tmp_path, delete_after=True).run_file(source)
     assert result.total == result.succeeded == count
     assert seen == [f"original-{i}" for i in range(count)]
@@ -124,7 +124,7 @@ def test_retry_does_not_read_or_delete_appended_records(tmp_path, monkeypatch, c
 
 
 def test_retry_closes_input_when_processing_stops(tmp_path, monkeypatch):
-    monkeypatch.setattr("piddiplatsch.persist.retry.BATCH_SIZE", 1)
+    monkeypatch.setattr("piddiplatsch.runners.retry.BATCH_SIZE", 1)
     source = tmp_path / "retry.jsonl"
     write_records(source, [{"key": "one"}, {"key": "two"}])
     opened = []
@@ -140,7 +140,7 @@ def test_retry_closes_input_when_processing_stops(tmp_path, monkeypatch):
         raise RuntimeError("stop processing")
 
     monkeypatch.setattr(Path, "open", tracked_open)
-    monkeypatch.setattr("piddiplatsch.consumer.feed_messages_direct", stop)
+    monkeypatch.setattr("piddiplatsch.runners.retry.process_messages", stop)
     with pytest.raises(RuntimeError, match="stop processing"):
         runner(tmp_path, delete_after=True).run_file(source)
     assert source.exists()
@@ -150,7 +150,7 @@ def test_retry_closes_input_when_processing_stops(tmp_path, monkeypatch):
 
 def test_retry_memory_is_bounded(tmp_path, monkeypatch):
     monkeypatch.setattr(
-        "piddiplatsch.consumer.feed_messages_direct",
+        "piddiplatsch.runners.retry.process_messages",
         lambda messages, **kwargs: FeedResult(
             total=len(messages), succeeded=len(messages)
         ),
