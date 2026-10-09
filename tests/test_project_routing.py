@@ -4,8 +4,8 @@ from typing import Any
 
 import pytest
 
-from piddiplatsch.consumer import feed_messages_direct
 from piddiplatsch.core import registry
+from piddiplatsch.core.pipeline import process_messages
 from piddiplatsch.core.plugin import PluginSpec
 from piddiplatsch.core.routing import ProjectRouter, extract_project_id
 from piddiplatsch.result import ProcessingResult
@@ -144,7 +144,7 @@ def test_registry_rejects_overlapping_project_identifiers(isolated_registry):
 def test_filtered_result_is_counted_without_failure(isolated_registry):
     router = ProjectRouter(["cmip6"], publish=False)
 
-    result = feed_messages_direct(
+    result = process_messages(
         [("other-key", publication("CMIP7"))],
         processor=router,
         publish=False,

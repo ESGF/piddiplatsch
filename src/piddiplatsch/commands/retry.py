@@ -7,8 +7,8 @@ import click
 
 from piddiplatsch.commands.base import Command
 from piddiplatsch.config import config
-from piddiplatsch.consumer import configured_projects
-from piddiplatsch.persist.retry import RetryRunner
+from piddiplatsch.core.pipeline import configured_projects
+from piddiplatsch.runners.retry import RetryRunner
 
 
 @dataclass(kw_only=True)

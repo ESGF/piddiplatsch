@@ -4,10 +4,20 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+### Changed
+- Separate Kafka lifecycle (`consumer.py`), shared iterable processing
+  (`core/pipeline.py`), and file runners (`runners/mapping.py`,
+  `runners/retry.py`, `runners/publish.py`). Remove `DirectConsumer` and replace
+  the internal
+  `ConsumerPipeline`/`feed_messages_direct` APIs with
+  `ProcessingPipeline`/`process_messages`. Preserve streaming, routing,
+  counters, stop policies, and retry safeguards; fixture replay helpers now
+  live in `testing/processing.py`.
+
 ### Removed
 - Removed the legacy list loaders `helpers.read_jsonl` and
   `persist.retry.load_failed_messages`. Use `jsonl_stream.iter_jsonl_records`
-  and `persist.retry.iter_failed_messages` instead.
+  and `runners.retry.iter_failed_messages` instead.
 
 ### Fixed
 - Stream `retry` through the shared JSONL reader in bounded batches, preserving

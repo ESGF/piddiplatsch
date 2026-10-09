@@ -1,403 +1,72 @@
 # Piddiplatsch
 
 [Documentation](https://esgf.github.io/piddiplatsch/) ·
-[Overview slides](https://esgf.github.io/piddiplatsch/talks/overview.html) ·
-[Documentation build instructions](https://esgf.github.io/piddiplatsch/building/)
+[Overview slides](https://esgf.github.io/piddiplatsch/talks/overview.html)
 
 [![Build Status](https://github.com/ESGF/piddiplatsch/actions/workflows/ci.yml/badge.svg)](https://github.com/ESGF/piddiplatsch/actions)
 [![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](https://github.com/ESGF/piddiplatsch/blob/main/LICENSE)
 [![Python Version](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
-[![pre-commit enabled](https://img.shields.io/badge/pre--commit-enabled-brightgreen?logo=pre-commit)](https://pre-commit.com/)
 
----
-
-**Piddiplatsch** is a [Kafka](https://kafka.apache.org/) consumer for **ESGF STAC publication records** that integrates with the [Handle System](https://www.handle.net/) to reliably register and maintain persistent identifiers (PIDs).
+**Piddiplatsch** processes ESGF STAC publication records from Kafka and registers
+persistent identifiers (PIDs) with the Handle System. It supports **CMIP6,
+CMIP6Plus, CMIP7, and CORDEX-CMIP6**, with project-specific routing and mapping.
 
 *Curious by nature. Persistent by design.*
 
-Inspired by the TV puppet [Pittiplatsch](https://en.wikipedia.org/wiki/Pittiplatsch), the name reflects more than wordplay.  
-“Pitti” gives us the CLI name `piddi`, while the PID pun is purely phonetic. Like its namesake, Piddiplatsch is curious, persistent, and unafraid of a little chaos: it jumps into streaming data, handles errors head-on, and keeps going until the job is done.
+## Quick start
 
----
-
-## 🎯 Intended Audience
-
-Piddiplatsch is developed for the **[ESGF](https://esgf.llnl.gov/)** (Earth System Grid Federation) community to support CMIP data ingestion and PID registration workflows. It is currently used in production at **DKRZ**.
-
-It is intended for:
-- ESGF data nodes managing CMIP6+ dataset and file records
-- Sites that need to register or update PIDs via Handle.Net service
-- Users comfortable running Kafka consumers in production environments
-
-The project is fully open-source and documented. ESGF sites and other organizations with similar requirements are welcome to adopt and contribute.
-
----
-
-## 🧭 Project support
-
-CMIP6, CMIP6Plus, CMIP7, and CORDEX-CMIP6 are implemented as built-in project
-plugins.
-
-One consumer can read the shared ESGF publication topic and route records to one,
-several, or all selected project plugins. Unrelated records are filtered without
-being treated as failures. The plugins share the publication-envelope,
-Handle-output schema, and mapping workflow; their small plugin modules declare
-project identity, PID field names, and genuine project-specific behaviour.
-
-```mermaid
-flowchart LR
-    K[Shared Kafka topic] --> R{Project router}
-    K -. optional ordered dump .-> D[outputs/dump]
-    R --> C6[cmip6]
-    R --> C7[cmip7]
-    R --> CX[cordex-cmip6]
-    R --> CP[cmip6plus]
-    R -->|unselected| F[Filtered: log and stats]
-    C6 --> O6[outputs/cmip6/handles]
-    C7 --> O7[outputs/cmip7/handles]
-    CX --> OX[outputs/cordex-cmip6/handles]
-    CP --> OP[outputs/cmip6plus/handles]
-```
-
----
-
-## ⚡ Quick Start
-
-Install, run, and test in minutes (CLI: `piddi`):
+Install with Conda and the development tools:
 
 ```bash
-# 1) Setup environment
-git clone git@github.com:ESGF/piddiplatsch.git
+git clone https://github.com/ESGF/piddiplatsch.git
 cd piddiplatsch
-conda env create && conda activate piddi
+conda env create
+conda activate piddi
 make develop
-
-# 2) Run tests
-make test            # unit + integration
-
-# 3) Harvest and map from Kafka (Handle publication is deferred)
-piddi --help         # commands: harvest, map, consume, publish, retry
-piddi consume --help
-piddi consume
 ```
 
-**Prerequisites for real runs**
-
-You need Kafka for `harvest` and `consume`. A Handle Service (or mock Handle
-server) is required only for `publish` or `consume --publish`.
-Kafka defaults to ESGF authentication (`SASL_SSL` / `PLAIN`); configure your
-brokers and credentials first. For the local Docker test cluster, use
-`piddi --config tests/config.toml consume`, which selects `PLAINTEXT`.
-
----
-
-## 🧪 Safe Exploration and Staged Processing
-
-The default `consume` path dumps every raw queue message before plugin routing,
-then maps selected projects into Handle JSONL without contacting a Handle
-Service:
-
-```bash
-piddi consume
-```
-
-The same work can be separated. `harvest` only reads Kafka and writes raw JSONL;
-`map` replays one or more dump files through the selected plugins:
-
-```bash
-piddi harvest --limit 100
-piddi map --date 2026-08-27
-```
-
-### Deferred Handle publication
-
-The Kafka consumer writes prepared Handles to daily JSONL files while a
-separate command publishes a closed file later. JSONL audit files are also
-always written before direct `rest` or `pyhandle` publication. Configure the
-Each project selects a named Handle profile containing its REST server, prefix,
-and credentials. Keep site profiles and secrets in the same ignored local
-configuration file.
-
-For example, publish all project files from yesterday:
-
-```bash
-piddi publish \
-  --project cmip6 --date 2026-08-24
-```
-
-`--project` selects the service configuration and validates each record before
-sending it. A missing or different project is recorded as a failure; valid
-records continue to publish. Without `--project`, the first parsed record
-selects the project configuration, and later records must match that project.
-
-The date form resolves files beneath the configured `consumer.output_dir`.
-`map --date DATE` selects the global raw dump. `DATE` may be an ISO date,
-`today`, `yesterday`, `today-N`, or `last`; omitting both the path and date
-defaults to `last`, the greatest valid date found in the dump filenames.
-`publish --project NAME` supports the same selectors and also defaults to that
-project's last dated Handle file. A path and `--date` cannot be combined.
-
-For a limited trial against the current file, cap the total number of attempted
-Handles:
-
-```bash
-piddi publish --limit 1000 \
-  --project cmip6 --date 2026-08-25
-```
-
-Continue with the next batch by combining the offset and limit:
-
-```bash
-piddi publish \
-  --project cmip6 --date 2026-08-25 \
-  --offset 1000 --limit 1000 --retries 3
-```
-
-Retries cover transient connection errors, timeouts, rate limiting, and server
-errors. The delay starts at one second and doubles for each retry; customize it
-with `--retry-delay`. Permanent client errors such as invalid credentials are
-not retried. Use `--workers N` for bounded concurrent PUT requests. Updates for
-the same Handle remain in input order while different Handles are published in
-parallel. The progress display shows the number processed and the absolute
-Handle position; the total is unknown until the input is exhausted. At INFO level, publication outcomes are
-written to the standard log file (`pid.log` by default) and to a run-scoped
-structured JSONL
-receipt under `outputs/published/`. The CLI prints the exact receipt path when
-the run finishes. Each line includes the outcome, action, PID, full URL,
-project, dataset, asset, source location, batch position, retries, and error.
-Terminal progress is enabled by default. Pass the global `--silent` or
-`--no-progress` option to hide the progress bar and print only the final
-summary. Use `-v` for INFO logging and `-vv` or `--debug` for DEBUG logging.
-
-The requested or inferred project is included in the receipt filename, such as
-`published_cmip6_handles_2026-08-28_10-15-00.jsonl`. If no project is known when
-the receipt opens, it uses `published_handles_...jsonl`. The final summary
-shows totals for every project encountered, including rejected records.
-
-Publication opens each input once, reads it line by line, and publishes batches
-of at most 256 records before reading the next batch. No staging database or
-preliminary scan is needed. Each record is validated independently; parent
-references do not require loading the referenced record. Receipt metadata comes
-from the record itself, so unavailable dataset or asset details remain `null`.
-`batch_index` and `position` remain global across internal batches;
-`batch_total` is `null` because the total is not known in advance.
-
-Malformed lines and invalid records produce failure receipts, and publication
-continues with the next record. Earlier writes remain published if a later
-record fails. Only the first 100 error messages are retained for the CLI
-summary; all failures remain in the receipts and logs. Offsets count nonblank
-input lines, and limits cap the number of selected records, including failures.
-
-You can also pass one file, several files, or a directory. `publish` never
-changes or deletes its inputs. Publication uses Handle overwrite semantics, so
-an immutable file can safely be run again after an interruption. The command
-continues after individual Handle failures, prints a summary, and exits non-zero
-if any Handle could not be published.
-
----
-
-## ✨ Features
-
-- Kafka consumer and project router for the shared ESGF publication stream
-- Register and update PIDs via Handle Service
-- CLI commands: `consume`, `publish`, `retry`
-- Multihash checksum support
-- Explicit built-in project plugin registry (pure Python, no dynamic framework)
-- Select one, several, or all registered project plugins
-
-For full usage details and local Docker smoke tests, see [CONTRIBUTING.md](https://github.com/ESGF/piddiplatsch/blob/main/CONTRIBUTING.md).
-
----
-
-## 🚀 Usage (Overview)
-
-Common first runs:
-
-- Inspect messages only:
-  ```bash
-  piddi harvest --limit 100
-  ```
-- Observe without stopping on skips:
-  ```bash
-  piddi consume --force
-  ```
-- Replay a saved dump through the configured plugins:
-  ```bash
-  piddi map --date 2026-08-27
-  ```
-- Harvest, map, and publish immediately:
-  ```bash
-  piddi consume --publish
-  ```
-- Override configured projects for one run:
-  ```bash
-  piddi consume --project cmip6
-  piddi consume --project cmip6 --project cmip7
-  piddi consume --all-projects
-  ```
-- Override the default `./custom.toml` layer (the site-wide
-  `/etc/piddi/piddi.toml` is still loaded first):
-  ```bash
-  piddi --config /path/to/another.toml consume
-  ```
-
-### Status Bar
-
-Live progress is displayed by default for `harvest`, `map`, `consume`, and
-`publish`:
-
-```bash
-piddi consume
-piddi map --date 2026-08-27
-```
-
-Use the global `-s` or `--silent` option to disable it.
-
-Status line format:
-```
-cmip6   | msg:458 (22.69/s)| hdl:1.8k (88.79/s)| E:0| W:1.3k| D:70| replica:64| skip:0| patch:152| last_err:-- | ⏱ 00:00:20
-```
-
-- **msg**: messages processed (rate/s)
-- **hdl**: handles registered (rate/s)
-- **E**: errors, **W**: warnings, **D**: retracted messages
-- **replica**: datasets with replica nodes (alternate locations)
-- **skip**: messages skipped (transient external errors, e.g., STAC unavailable)
-- **patch**: messages processed as JSON patches (incremental updates)
-- **last_err**: time since last error
-- **⏱**: total elapsed time
-
-Detailed CLI options and extended examples live in [CONTRIBUTING.md](https://github.com/ESGF/piddiplatsch/blob/main/CONTRIBUTING.md).
-
-Operational guidance for output retention, retries, logging, and shutdown is in
-[docs/operations.md](https://esgf.github.io/piddiplatsch/operations/).
-For recovery procedures, see [Recovery & retry](https://esgf.github.io/piddiplatsch/recovery/)
-in the advanced documentation.
-The short production and Vagrant procedure is in
-[deploy/README.md](https://github.com/ESGF/piddiplatsch/blob/main/deploy/README.md).
-
----
-
-## 🛠️ Configuration
-
-For a new setup, start with a small site override; omitted settings inherit
-packaged defaults, including ESGF Kafka authentication (`SASL_SSL` / `PLAIN`).
-Replace the connection and credential placeholders:
+Create your local configuration and replace the connection and credential
+placeholders before running:
 
 ```bash
 cp etc/esgf-example.toml custom.toml
-vim custom.toml
+# Edit custom.toml for your site; keep credentials out of Git.
+piddi config validate
+piddi --help
 ```
 
-The CLI loads packaged defaults, then `/etc/piddi/piddi.toml`, then
-`./custom.toml` when those optional files exist:
+Start harvesting and mapping Kafka messages into prepared Handle JSONL files:
 
 ```bash
-piddi config validate
-piddi config explain --project cmip6
-```
-
-Use `--config PATH` to select a different final override file in place of
-`./custom.toml`.
-
-Kafka, Handle Service, consumer behaviour, and project selection are all controlled via this file.
-See [docs/configuration.md](https://esgf.github.io/piddiplatsch/configuration/) for the supported application
-settings and override behavior.
-
-### ESGF Example Config
-
-The single manual setup example is [etc/esgf-example.toml](https://github.com/ESGF/piddiplatsch/blob/main/etc/esgf-example.toml).
-For an existing `custom.toml`, copy only the settings you need. Comments map
-ESGF Resource/API key/API secret to their Kafka properties. Keep real credentials
-in the local file (do not commit secrets).
-
-For production, Ansible reads this same `custom.toml` and adds production path
-defaults for omitted values. The optional `deploy/ansible/custom.yml` holds only
-deployment controls. See the [deployment guide](https://github.com/ESGF/piddiplatsch/blob/main/deploy/README.md) for setup and
-migration from the previous duplicated YAML application settings.
-
-For a manual run:
-
-```bash
-# Edit the existing site override with your ESGF Kafka settings
-vim custom.toml   # set brokers, group.id, SASL, CA path, etc.
-
-# Validate and inspect
-piddi config validate
-piddi config show
-
-# Safe test run (no Handle writes; raw dump is automatic)
 piddi consume
 ```
 
-This keeps your private ESGF credentials local while enabling safe staged testing.
+By default, `consume` saves raw messages and prepares Handles **without
+publishing to a Handle service**. Kafka access is required; see
+[Configuration](https://esgf.github.io/piddiplatsch/configuration/) for site settings.
 
-### Validate Config
+## Run in stages
 
-```bash
-piddi config validate
-```
-
-Exits non-zero on errors; prints warnings when applicable.
-
-### Show Effective Config
+You can also harvest a small sample, then map it separately:
 
 ```bash
-piddi config show           # TOML; recognized credentials are redacted
-piddi config show --format json
-piddi config show --section consumer
-piddi config show --section kafka --key group.id
-piddi config show --show-secrets  # explicitly include credential values
+piddi harvest --limit 100
+piddi map --project cmip6 --date last
 ```
 
-Prints the merged defaults + your overrides for quick inspection.
+Once your Handle service profile is configured, publish a completed daily file:
 
----
+```bash
+piddi publish --project cmip6 --date yesterday
+```
 
-## 🧩 Project plugins (Overview)
+Use `piddi COMMAND --help` for options. The
+[Operations guide](https://esgf.github.io/piddiplatsch/operations/) explains date
+selection, publication, retries, logging, and monitoring.
 
-Piddiplatsch uses a small, explicit plugin interface and a router in front of
-project-specific processors.
+## Learn more
 
-This is **not currently** a dynamic plugin ecosystem. Plugins organize built-in
-project code through a deliberately small interface. The mechanism exists to:
-- isolate project-specific logic
-- allow further ESGF projects to be added cleanly
-- keep testing and evolution predictable
-
-The same plugin specification can later become the boundary for external Python
-packages discovered through standard package entry points, without adding that
-complexity today.
-
-Currently implemented project plugins are:
-
-- `cmip6` (default)
-- `cmip6plus`
-- `cmip7`
-- `cordex-cmip6`
-
-The raw dump stays global to preserve Kafka order. JSONL Handle output is
-project-scoped, and `pid.log` records selected and filtered projects.
-
-Configuration and implementation guidance are documented in [CONTRIBUTING.md](https://github.com/ESGF/piddiplatsch/blob/main/CONTRIBUTING.md).
-The message flow and consumer-group constraints are documented in
-[docs/architecture.md](https://esgf.github.io/piddiplatsch/architecture/).
-
----
-
-## 🧪 Testing
-
-Quick commands:
-- All tests (unit + integration): `make test`
-- Unit only: `make test-unit`
-- Integration only: `make test-integration`
-- Smoke tests (Docker): `make test-smoke`
-
-Full development and testing guidance is in [CONTRIBUTING.md](https://github.com/ESGF/piddiplatsch/blob/main/CONTRIBUTING.md).
-
----
-
-## 🤝 Contributing
-
-Interested in contributing?  
-See [CONTRIBUTING.md](https://github.com/ESGF/piddiplatsch/blob/main/CONTRIBUTING.md) for development setup, testing, style, and workflow.
+- [Architecture and project plugins](https://esgf.github.io/piddiplatsch/architecture/)
+- [Recovery and retry](https://esgf.github.io/piddiplatsch/recovery/)
+- [Production deployment with Ansible](https://github.com/ESGF/piddiplatsch/blob/main/deploy/README.md)
+- [Contributing](https://github.com/ESGF/piddiplatsch/blob/main/CONTRIBUTING.md): development, testing, and local Docker services. Run `make test` for unit and integration tests.

@@ -6,7 +6,7 @@ from pathlib import Path
 import pytest
 
 from piddiplatsch.config import config
-from piddiplatsch.consumer import feed_messages_direct
+from piddiplatsch.core.pipeline import process_messages
 from piddiplatsch.jsonl_stream import iter_jsonl_records
 
 pytestmark = pytest.mark.integration
@@ -35,7 +35,7 @@ def test_real_publications_route_and_write_valid_handle_jsonl(
     config._set("lookup", "enabled", False)
     messages = _load_publications(testdata_path / "publication_samples")
 
-    result = feed_messages_direct(messages, projects="all", publish=False)
+    result = process_messages(messages, projects="all", publish=False)
 
     assert result.total == 4
     assert result.succeeded == 4

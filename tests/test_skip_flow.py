@@ -1,6 +1,6 @@
 import json
 
-from piddiplatsch.consumer import ConsumerPipeline, DirectConsumer
+from piddiplatsch.core.pipeline import ProcessingPipeline
 from piddiplatsch.exceptions import TransientExternalError
 from piddiplatsch.persist.skipped import SkipRecorder
 from piddiplatsch.plugins.cmip6.processor import CMIP6Processor
@@ -31,8 +31,8 @@ def test_pipeline_records_skipped_on_patch_failure(tmp_path, monkeypatch):
         "metadata": {"time": "2024-01-01T00:00:00Z"},
     }
 
-    consumer = DirectConsumer([(key, value)])
-    pipeline = ConsumerPipeline(
+    consumer = [(key, value)]
+    pipeline = ProcessingPipeline(
         consumer, processor=FailingPatchProcessor(publish=False), force=True
     )
 

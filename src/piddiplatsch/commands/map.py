@@ -8,10 +8,11 @@ import click
 from piddiplatsch.commands.base import FileBatchCommand
 from piddiplatsch.commands.helper import resolve_latest_dated_input, select_projects
 from piddiplatsch.config import config
-from piddiplatsch.consumer import configured_projects, map_dump_files
+from piddiplatsch.core.pipeline import configured_projects
 from piddiplatsch.core.registry import get_plugins
 from piddiplatsch.exceptions import JsonlReadError
 from piddiplatsch.monitoring.stats import stats
+from piddiplatsch.runners.mapping import map_dump_files
 
 
 @dataclass(kw_only=True)

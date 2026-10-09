@@ -24,8 +24,8 @@ publication.
 
 Deferred publication writes each outcome immediately to a readable, unique
 `published/published_<project>_handles_YYYY-MM-DD_HH-MM-SS.jsonl` file using UTC
-and prints its path in the final CLI summary. Generic mixed-project batches use
-`published_handles_...jsonl`. If another run starts during the same second,
+and prints its path in the final CLI summary. If no project is known when the
+receipt opens, the filename is `published_handles_...jsonl`. If another run starts during the same second,
 `_2`, `_3`, and so on are appended. Parallel completion order may differ from
 input order; `position`, `batch_index`, `source_file`, and `source_line` provide
 stable ordering and provenance.
@@ -68,6 +68,38 @@ This selects the greatest valid date found in the relevant filenames,
 regardless of file modification time. Explicit paths remain available for both
 commands, and a path and `--date` are mutually exclusive.
 
+## Deferred publication
+
+Publish completed files after mapping, using the project's configured Handle
+profile. Profiles contain the REST server, prefix, and credentials; see
+[Handle configuration](configuration.md). Keep credentials in the ignored site
+configuration file.
+
+```bash
+# Publish yesterday's prepared CMIP6 Handles
+piddi publish --project cmip6 --date yesterday
+
+# Try the first 1,000 records of a specific completed file
+piddi publish --project cmip6 --date 2026-08-25 --limit 1000
+
+# Continue with the next 1,000 records, allowing transient retries
+piddi publish --project cmip6 --date 2026-08-25 \
+  --offset 1000 --limit 1000 --retries 3
+```
+
+Explicit inputs can be one file, several files, or a directory. Offsets count
+nonblank input lines across the selected files; limits cap attempted records,
+including failures. Publication never changes or deletes its inputs. Handle
+writes use overwrite semantics, so a completed, immutable input can be replayed
+after interruption. The command exits non-zero if any record fails.
+
+`--retries` covers transient connection errors, timeouts, rate limiting, and
+server errors. The delay starts at one second and doubles up to 60 seconds;
+change its initial value with `--retry-delay`. Permanent client errors such as
+invalid credentials are not retried. `--workers N` enables concurrent requests
+for different Handles, while updates to the same Handle retain source order
+within the run.
+
 `publish --project NAME` validates each Handle immediately before sending it.
 Missing or different projects are recorded as failures, while valid records
 continue. Without `--project`, the first parsed record selects the service
@@ -79,6 +111,13 @@ preliminary scan is used, so progress has no known total and receipt
 `batch_total` is `null`. Parent references are sent as provided; receipt metadata
 comes only from the current record. The final summary provides per-project
 counts and up to 100 error messages; receipts retain all failures.
+
+Each receipt line records the outcome, action, PID, URL, project, dataset, asset,
+source location, position, retry count, and error. Missing dataset or asset
+metadata remains `null`. `batch_index` and `position` refer to the entire
+selected input, independently of internal batch boundaries. Receipts are
+written regardless of log verbosity; INFO logging additionally records each
+publication outcome in the configured log file.
 
 ## Real Handle service contract test
 
@@ -150,6 +189,22 @@ JSONL and skipped records are failures for this decision, so the source remains
 available for inspection. Inputs changed during processing are also retained,
 so newly appended recovery records are not deleted. Earlier successful output
 remains written if a later record fails.
+
+## Terminal progress
+
+Progress is displayed by default for `harvest`, `map`, `consume`, and `publish`.
+Use the global `--silent` (or `-s`) or `--no-progress` option to hide it:
+
+```bash
+piddi --no-progress map --project cmip6 --date yesterday
+piddi -v publish --project cmip6 --date yesterday
+```
+
+The mapping and consumption display reports message and Handle counts/rates,
+errors, filtered records, warnings, retractions, replicas, skips, patches,
+time since the last error, and elapsed time. Publication shows completed
+record counts and the absolute input position; its total is unknown until the
+stream finishes. Final command summaries are still printed with progress off.
 
 ## Logging and statistics
 

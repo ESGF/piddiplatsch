@@ -17,3 +17,14 @@ ESGF-NG workflow. The deck includes an operational appendix and speaker notes.
 
 See [Building the documentation](building.md) to preview or publish this site
 and the slides.
+
+## About the project
+
+Piddiplatsch is developed for the ESGF community and used in production at
+DKRZ. It supports sites managing CMIP dataset and file records, with built-in
+plugins for CMIP6, CMIP6Plus, CMIP7, and CORDEX-CMIP6. Contributions from other
+ESGF sites and organizations with similar workflows are welcome.
+
+The name is inspired by the TV puppet
+[Pittiplatsch](https://en.wikipedia.org/wiki/Pittiplatsch), with a phonetic PID
+pun and the short CLI name `piddi`: *curious by nature, persistent by design*.

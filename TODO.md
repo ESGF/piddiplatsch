@@ -31,10 +31,10 @@
 
 ## Processing architecture
 
-- [ ] Refactor shared processing out of `consumer.py` in a separate PR from the
-  JSONL streaming fixes. Currently, `map` and `retry` depend on a module that
-  also owns Kafka consumption, obscuring the boundary between input handling
-  and record processing.
+- [x] Refactor shared processing out of `consumer.py` in a separate PR from the
+  JSONL streaming fixes. Shared execution now lives in `core/pipeline.py`, with
+  dedicated mapping and retry runners under `runners/`. `DirectConsumer` has
+  been removed; the pipeline accepts iterables directly.
 
 Design target:
 

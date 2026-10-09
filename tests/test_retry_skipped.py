@@ -1,6 +1,6 @@
 import json
 
-from piddiplatsch.persist.retry import RetryRunner
+from piddiplatsch.runners.retry import RetryRunner
 
 
 def test_retry_on_skipped_jsonl(tmp_path):

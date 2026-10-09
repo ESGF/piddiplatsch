@@ -1,8 +1,8 @@
 import logging
 from pathlib import Path
 
-from piddiplatsch.persist.retry import RetryRunner
 from piddiplatsch.result import FeedResult, RetryResult
+from piddiplatsch.runners.retry import RetryRunner
 
 
 def test_run_batch_progress_callback(monkeypatch, tmp_path: Path, caplog):
@@ -13,7 +13,7 @@ def test_run_batch_progress_callback(monkeypatch, tmp_path: Path, caplog):
     file2.write_text("{}\n")
 
     # Patch find_retry_files to return our deterministic list
-    from piddiplatsch.persist import retry as retry_mod
+    from piddiplatsch.runners import retry as retry_mod
 
     monkeypatch.setattr(retry_mod, "find_retry_files", lambda paths: [file1, file2])
 
@@ -71,8 +71,8 @@ def test_run_batch_progress_callback(monkeypatch, tmp_path: Path, caplog):
 
 
 def test_run_file_reports_appended_daily_failure(monkeypatch, tmp_path: Path):
-    from piddiplatsch import consumer
-    from piddiplatsch.persist import retry as retry_mod
+    from piddiplatsch.runners import retry as retry_executor
+    from piddiplatsch.runners import retry as retry_mod
 
     failure_dir = tmp_path / "failures"
     existing_failure = failure_dir / "r1" / "failed_items_2026-08-25.jsonl"
@@ -92,7 +92,7 @@ def test_run_file_reports_appended_daily_failure(monkeypatch, tmp_path: Path):
             stream.write("{}\n")
         return FeedResult(total=1, failed=1)
 
-    monkeypatch.setattr(consumer, "feed_messages_direct", fail_and_append)
+    monkeypatch.setattr(retry_executor, "process_messages", fail_and_append)
     runner = RetryRunner(projects=["cmip6"], failure_dir=failure_dir)
 
     result = runner.run_file(source)
@@ -102,8 +102,8 @@ def test_run_file_reports_appended_daily_failure(monkeypatch, tmp_path: Path):
 
 
 def test_filtered_retry_is_not_deleted_as_success(monkeypatch, tmp_path: Path):
-    from piddiplatsch import consumer
-    from piddiplatsch.persist import retry as retry_mod
+    from piddiplatsch.runners import retry as retry_executor
+    from piddiplatsch.runners import retry as retry_mod
 
     source = tmp_path / "source.jsonl"
     source.write_text("{}\n", encoding="utf-8")
@@ -116,8 +116,8 @@ def test_filtered_retry_is_not_deleted_as_success(monkeypatch, tmp_path: Path):
         lambda _path, **kwargs: (m for m in [("key", {})]),
     )
     monkeypatch.setattr(
-        consumer,
-        "feed_messages_direct",
+        retry_executor,
+        "process_messages",
         lambda *args, **kwargs: FeedResult(total=1, filtered=1),
     )
     runner = RetryRunner(
@@ -134,8 +134,8 @@ def test_filtered_retry_is_not_deleted_as_success(monkeypatch, tmp_path: Path):
 
 
 def test_retry_uses_one_run_scoped_handle_filename(monkeypatch, tmp_path: Path):
-    from piddiplatsch import consumer
-    from piddiplatsch.persist import retry as retry_mod
+    from piddiplatsch.runners import retry as retry_executor
+    from piddiplatsch.runners import retry as retry_mod
 
     source = tmp_path / "source.jsonl"
     source.write_text("{}\n", encoding="utf-8")
@@ -155,7 +155,7 @@ def test_retry_uses_one_run_scoped_handle_filename(monkeypatch, tmp_path: Path):
         output_file.write_text("{}\n", encoding="utf-8")
         return FeedResult(total=1, succeeded=1)
 
-    monkeypatch.setattr(consumer, "feed_messages_direct", feed)
+    monkeypatch.setattr(retry_executor, "process_messages", feed)
     runner = RetryRunner(
         projects=["cmip6"],
         failure_dir=failure_dir,
@@ -171,8 +171,8 @@ def test_retry_uses_one_run_scoped_handle_filename(monkeypatch, tmp_path: Path):
 def test_retry_prefers_persisted_project_over_configured_selection(
     monkeypatch, tmp_path: Path
 ):
-    from piddiplatsch import consumer
-    from piddiplatsch.persist import retry as retry_mod
+    from piddiplatsch.runners import retry as retry_executor
+    from piddiplatsch.runners import retry as retry_mod
 
     source = tmp_path / "source.jsonl"
     source.write_text("{}\n", encoding="utf-8")
@@ -191,7 +191,7 @@ def test_retry_prefers_persisted_project_over_configured_selection(
         selections.append((kwargs["projects"], [key for key, _ in project_messages]))
         return FeedResult(total=len(project_messages), succeeded=len(project_messages))
 
-    monkeypatch.setattr(consumer, "feed_messages_direct", feed)
+    monkeypatch.setattr(retry_executor, "process_messages", feed)
     runner = RetryRunner(projects=["cmip7"], failure_dir=failure_dir)
     runner.output_dir = tmp_path
 

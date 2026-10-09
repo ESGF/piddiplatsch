@@ -10,8 +10,8 @@ import requests
 
 from piddiplatsch.config import config
 from piddiplatsch.handles.jsonl_backend import JsonlHandleBackend
-from piddiplatsch.handles.publish import HandlePublisher
 from piddiplatsch.handles.rest_backend import HandleWriteResult
+from piddiplatsch.runners.publish import HandlePublisher
 
 
 class FakeBackend:
@@ -131,7 +131,7 @@ def test_configured_publisher_resolves_backend_from_input_project(
         return backend
 
     monkeypatch.setattr(
-        "piddiplatsch.handles.publish.RestHandleClient.from_config", from_config
+        "piddiplatsch.runners.publish.RestHandleClient.from_config", from_config
     )
 
     result = HandlePublisher().run([source], handle_profile="dkrz-test")
@@ -152,7 +152,7 @@ def test_configured_publisher_rejects_other_projects_per_record(tmp_path, monkey
 
     backend = FakeBackend()
     monkeypatch.setattr(
-        "piddiplatsch.handles.publish.RestHandleClient.from_config", lambda **_: backend
+        "piddiplatsch.runners.publish.RestHandleClient.from_config", lambda **_: backend
     )
     result = HandlePublisher().run([source])
     assert result.succeeded == 1
@@ -168,7 +168,7 @@ def test_logs_each_publication_and_summary(tmp_path, caplog):
         [handle_record(str(index)) for index in range(10)] + [handle_record("abc")],
     )
 
-    with caplog.at_level(logging.INFO, logger="piddiplatsch.handles.publish"):
+    with caplog.at_level(logging.INFO, logger="piddiplatsch.runners.publish"):
         HandlePublisher(ReportingBackend()).run([source], offset=10, limit=1)
 
     assert "Updated handle handle=21.TEST/abc" in caplog.text
@@ -201,7 +201,7 @@ def test_logs_dataset_context_for_file_asset(tmp_path, caplog):
     )
     write_jsonl(source, [dataset, file])
 
-    with caplog.at_level(logging.INFO, logger="piddiplatsch.handles.publish"):
+    with caplog.at_level(logging.INFO, logger="piddiplatsch.runners.publish"):
         HandlePublisher(ReportingBackend()).run([source], workers=2)
 
     file_line = next(line for line in caplog.messages if "handle=21.TEST/file" in line)
@@ -259,7 +259,7 @@ def test_writes_structured_result_jsonl_for_successes_and_failures(tmp_path):
 def test_default_result_jsonl_has_readable_unique_name(tmp_path, monkeypatch):
     config._set("consumer", "output_dir", str(tmp_path / "outputs"))
     monkeypatch.setattr(
-        "piddiplatsch.handles.publish.utc_now",
+        "piddiplatsch.runners.publish.utc_now",
         lambda: datetime(2026, 8, 27, 15, 33, 53, tzinfo=UTC),
     )
     source = tmp_path / "handles.jsonl"
@@ -542,7 +542,7 @@ def test_rejects_invalid_worker_count(tmp_path):
 def test_batches_preserve_order_context_and_global_positions(
     tmp_path, monkeypatch, workers
 ):
-    monkeypatch.setattr("piddiplatsch.handles.publish.BATCH_SIZE", 2)
+    monkeypatch.setattr("piddiplatsch.runners.publish.BATCH_SIZE", 2)
     source = tmp_path / "handles.jsonl"
     write_jsonl(
         source,
@@ -608,7 +608,7 @@ def test_batches_preserve_order_context_and_global_positions(
 def test_rejects_bad_input_beyond_first_batch_without_undoing_writes(
     tmp_path, monkeypatch, bad_tail
 ):
-    monkeypatch.setattr("piddiplatsch.handles.publish.BATCH_SIZE", 2)
+    monkeypatch.setattr("piddiplatsch.runners.publish.BATCH_SIZE", 2)
     source = tmp_path / "handles.jsonl"
     write_jsonl(source, [handle_record(str(i)) for i in range(5)])
     with source.open("a") as stream:
@@ -672,7 +672,7 @@ def test_large_publication_memory_is_bounded_even_on_failure(tmp_path, workers):
         tracemalloc.start()
         try:
             # Disable captured logs: pytest would otherwise retain every failure.
-            logger = logging.getLogger("piddiplatsch.handles.publish")
+            logger = logging.getLogger("piddiplatsch.runners.publish")
             previous = logger.disabled
             logger.disabled = True
             try:
@@ -701,7 +701,7 @@ def test_large_publication_memory_is_bounded_even_on_failure(tmp_path, workers):
 def test_reads_each_source_once_and_publishes_before_reading_next_batch(
     tmp_path, monkeypatch, workers
 ):
-    monkeypatch.setattr("piddiplatsch.handles.publish.BATCH_SIZE", 2)
+    monkeypatch.setattr("piddiplatsch.runners.publish.BATCH_SIZE", 2)
     source = tmp_path / "handles.jsonl"
     write_jsonl(source, [handle_record(str(i)) for i in range(6)])
     original_open = Path.open
