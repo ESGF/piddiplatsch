@@ -4,8 +4,6 @@ from collections.abc import Iterable
 from datetime import UTC, datetime
 from pathlib import Path
 
-from piddiplatsch.exceptions import JsonlReadError
-
 
 def utc_now() -> datetime:
     """Return current UTC time as a timezone-aware datetime."""
@@ -50,44 +48,6 @@ class DailyJsonlWriter:
             # this writer cannot interleave json.dump() fragments.
             f.write(line)
         return target_path
-
-
-def read_jsonl(
-    file_path: Path,
-    limit: int | None = None,
-    offset: int = 0,
-) -> list[dict]:
-    """Read a bounded window of JSONL records without dropping malformed input."""
-    if limit is not None and limit < 1:
-        raise ValueError("limit must be at least 1")
-    if offset < 0:
-        raise ValueError("offset cannot be negative")
-    if not file_path.exists():
-        return []
-    records: list[dict] = []
-    record_number = 0
-    with file_path.open("r", encoding="utf-8") as f:
-        for line_number, line in enumerate(f, start=1):
-            line = line.strip()
-            if not line:
-                continue
-            try:
-                record = json.loads(line)
-            except json.JSONDecodeError as exc:
-                raise JsonlReadError(
-                    f"Malformed JSON in {file_path} at line {line_number}: {exc.msg}"
-                ) from exc
-            if not isinstance(record, dict):
-                raise JsonlReadError(
-                    f"Expected a JSON object in {file_path} at line {line_number}"
-                )
-            record_number += 1
-            if record_number <= offset:
-                continue
-            records.append(record)
-            if limit is not None and len(records) >= limit:
-                break
-    return records
 
 
 def find_jsonl(paths: Iterable[Path]) -> list[Path]:

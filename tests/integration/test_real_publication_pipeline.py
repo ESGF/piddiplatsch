@@ -7,7 +7,7 @@ import pytest
 
 from piddiplatsch.config import config
 from piddiplatsch.consumer import feed_messages_direct
-from piddiplatsch.helpers import read_jsonl
+from piddiplatsch.jsonl_stream import iter_jsonl_records
 
 pytestmark = pytest.mark.integration
 
@@ -49,11 +49,11 @@ def test_real_publications_route_and_write_valid_handle_jsonl(
         "cmip7",
         "cordex-cmip6",
     }
-    records = [record for path in output_files for record in read_jsonl(path)]
+    located_records = list(iter_jsonl_records(output_files))
+    records = [record for _, _, record in located_records]
     assert len(records) == 8
-    for path in output_files:
-        project = path.parent.parent.name
-        assert all(record["project"] == project for record in read_jsonl(path))
+    for path, _, record in located_records:
+        assert record["project"] == path.parent.parent.name
 
     by_handle = {record["handle"]: record for record in records}
     expected_handles = {

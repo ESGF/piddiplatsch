@@ -29,6 +29,33 @@
 - [ ] Define and test Kafka acknowledgement behavior across persistence errors,
   automatic commits, transient failures, and restarts.
 
+## Processing architecture
+
+- [ ] Refactor shared processing out of `consumer.py` in a separate PR from the
+  JSONL streaming fixes. Currently, `map` and `retry` depend on a module that
+  also owns Kafka consumption, obscuring the boundary between input handling
+  and record processing.
+
+Design target:
+
+- A shared processing pipeline accepts an iterable of keyed records and owns
+  record processing, counters, failure handling, and stop policies, without
+  depending on Kafka or file readers.
+- The Kafka consumer owns polling and feeds records into the shared pipeline.
+- A dedicated mapping runner streams raw JSONL into that pipeline; `map` no
+  longer imports execution helpers from `consumer.py`.
+- The retry runner streams recovery records into the same pipeline and retains
+  retry-specific project routing, retry counts, and input-retention rules.
+- `jsonl_stream.py` remains the shared file-reading utility, and CLI command
+  classes remain thin wrappers around their runners.
+- Remove `DirectConsumer` if accepting iterables directly makes it redundant.
+
+Keep this refactor behaviour-preserving: retain bounded memory, source order,
+offsets and limits, project routing, output formats, progress and counters,
+error/stop policies, file cleanup, and retry deletion safeguards. Use the
+existing unit, integration, and streaming regression tests as the baseline;
+add focused tests for the extracted boundaries where needed.
+
 ## Monitoring
 
 - [x] Define one shared, versioned status model for operator commands and HTTP

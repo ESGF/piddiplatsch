@@ -125,9 +125,10 @@ piddi publish \
   --project cmip6 --date 2026-08-24
 ```
 
-`--project` validates the complete selected batch before the first request. It
-does not filter mismatches. Omit it to retain the generic publisher, including
-support for intentionally mixed-project inputs.
+`--project` selects the service configuration and validates each record before
+sending it. A missing or different project is recorded as a failure; valid
+records continue to publish. Without `--project`, the first parsed record
+selects the project configuration, and later records must match that project.
 
 The date form resolves files beneath the configured `consumer.output_dir`.
 `map --date DATE` selects the global raw dump. `DATE` may be an ISO date,
@@ -157,8 +158,8 @@ errors. The delay starts at one second and doubles for each retry; customize it
 with `--retry-delay`. Permanent client errors such as invalid credentials are
 not retried. Use `--workers N` for bounded concurrent PUT requests. Updates for
 the same Handle remain in input order while different Handles are published in
-parallel. The progress display shows both the absolute Handle position and its
-position within the selected batch. At INFO level, publication outcomes are
+parallel. The progress display shows the number processed and the absolute
+Handle position; the total is unknown until the input is exhausted. At INFO level, publication outcomes are
 written to the standard log file (`pid.log` by default) and to a run-scoped
 structured JSONL
 receipt under `outputs/published/`. The CLI prints the exact receipt path when
@@ -168,10 +169,24 @@ Terminal progress is enabled by default. Pass the global `--silent` or
 `--no-progress` option to hide the progress bar and print only the final
 summary. Use `-v` for INFO logging and `-vv` or `--debug` for DEBUG logging.
 
-Single-project batches are inferred automatically. Their receipt uses a name
-such as `published_cmip6_handles_2026-08-28_10-15-00.jsonl`; mixed or unknown
-batches retain the generic `published_handles_...jsonl` name. The final summary
-shows totals for every project present.
+The requested or inferred project is included in the receipt filename, such as
+`published_cmip6_handles_2026-08-28_10-15-00.jsonl`. If no project is known when
+the receipt opens, it uses `published_handles_...jsonl`. The final summary
+shows totals for every project encountered, including rejected records.
+
+Publication opens each input once, reads it line by line, and publishes batches
+of at most 256 records before reading the next batch. No staging database or
+preliminary scan is needed. Each record is validated independently; parent
+references do not require loading the referenced record. Receipt metadata comes
+from the record itself, so unavailable dataset or asset details remain `null`.
+`batch_index` and `position` remain global across internal batches;
+`batch_total` is `null` because the total is not known in advance.
+
+Malformed lines and invalid records produce failure receipts, and publication
+continues with the next record. Earlier writes remain published if a later
+record fails. Only the first 100 error messages are retained for the CLI
+summary; all failures remain in the receipts and logs. Offsets count nonblank
+input lines, and limits cap the number of selected records, including failures.
 
 You can also pass one file, several files, or a directory. `publish` never
 changes or deletes its inputs. Publication uses Handle overwrite semantics, so

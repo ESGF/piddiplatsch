@@ -93,6 +93,10 @@ class PublishCommand(FileBatchCommand):
             click.echo(f"Failed: {result.failed}")
             for error in result.errors:
                 click.echo(f"  - {error}")
+            if result.failed > len(result.errors):
+                click.echo(
+                    "  Further errors omitted; see publication results and logs."
+                )
             raise click.exceptions.Exit(1)
 
     @staticmethod

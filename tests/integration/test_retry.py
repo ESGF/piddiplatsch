@@ -12,7 +12,7 @@ from piddiplatsch.config import config
 from piddiplatsch.persist.retry import (
     RetryRunner,
     find_retry_files,
-    load_failed_messages,
+    iter_failed_messages,
 )
 
 pytestmark = pytest.mark.integration
@@ -119,7 +119,7 @@ def test_retry_increments_retry_counter(tmp_path: Path):
     _create_failure_jsonl(failure_file, num_items=1)
 
     # Load messages to check retry counter
-    messages = load_failed_messages(failure_file)
+    messages = list(iter_failed_messages(failure_file))
     assert len(messages) == 1
 
     _key, data = messages[0]
@@ -159,15 +159,16 @@ def test_retry_handles_nonexistent_file(tmp_path: Path):
 
     nonexistent_file = tmp_path / "does_not_exist.jsonl"
 
-    # Should return empty result and not raise an exception
+    # Missing input is a reported read failure, not a successful empty run
     runner = RetryRunner(
         projects=["cmip6"],
         failure_dir=tmp_path / "failures",
     )
     result = runner.run_file(nonexistent_file)
-    assert result.total == 0
+    assert result.total == 1
     assert result.succeeded == 0
-    assert result.failed == 0
+    assert result.failed == 1
+    assert result.errors
 
 
 def test_retry_handles_empty_file(tmp_path: Path):

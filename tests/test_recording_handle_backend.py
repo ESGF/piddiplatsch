@@ -3,7 +3,7 @@ import pytest
 from piddiplatsch.config import config
 from piddiplatsch.handles.jsonl_backend import JsonlHandleBackend
 from piddiplatsch.handles.recording_backend import RecordingHandleBackend
-from piddiplatsch.helpers import read_jsonl
+from piddiplatsch.jsonl_stream import iter_jsonl_records
 
 
 class FailingBackend:
@@ -36,12 +36,13 @@ def test_records_jsonl_before_direct_publication_failure(tmp_path):
         )
 
     path = next((tmp_path / "cmip6" / "handles").glob("handles_*.jsonl"))
-    assert read_jsonl(path) == [
+    records = [record for _, _, record in iter_jsonl_records([path])]
+    assert records == [
         {
             "handle": "21.TEST/abc",
             "URL": "https://example.test/abc",
             "data": {"AGGREGATION_LEVEL": "DATASET"},
-            "timestamp": read_jsonl(path)[0]["timestamp"],
+            "timestamp": records[0]["timestamp"],
             "project": "cmip6",
         }
     ]

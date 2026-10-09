@@ -119,7 +119,9 @@ def test_malformed_retry_input_is_retained(tmp_path):
     result = runner.run_file(source)
 
     assert result.succeeded == 0
-    assert result.failed == 1
+    assert result.total == 2
+    assert result.filtered == 1
+    assert result.failed == 2
     assert result.errors
     assert "line 2" in result.errors[0]
     assert source.exists()

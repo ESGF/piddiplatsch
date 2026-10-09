@@ -4,6 +4,27 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+### Removed
+- Removed the legacy list loaders `helpers.read_jsonl` and
+  `persist.retry.load_failed_messages`. Use `jsonl_stream.iter_jsonl_records`
+  and `persist.retry.iter_failed_messages` instead.
+
+### Fixed
+- Stream `retry` through the shared JSONL reader in bounded batches, preserving
+  source order and persisted project routing. Ignore records appended after the
+  source is opened, retain changed or unsuccessful inputs, report malformed
+  records individually, and cap retained input-error summaries at 100 messages.
+- Stream `map` JSONL inputs end to end, removing whole-file lists and the direct
+  consumer's eager copy. Share a single-pass JSONL reader with `publish` for
+  source locations, offsets, limits, error handling, and cleanup. Mapping stops
+  on malformed selected records while retaining output already written.
+- Stream `publish` input in a single pass using batches of at most 256 records,
+  preserving per-Handle update order without a staging database. Validate each
+  record independently and continue after invalid records; earlier writes remain
+  published. Stream receipts, cap error summaries at 100 messages, and report
+  progress without a precomputed total (`batch_total` is now `null`). Parent
+  metadata is no longer inferred from other input records.
+
 ### Added
 - Added per-project `force_dataset_pid` to regenerate dataset PIDs from versioned STAC
   item IDs despite existing source PIDs, keeping file parent links consistent

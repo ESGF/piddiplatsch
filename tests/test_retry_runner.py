@@ -81,7 +81,11 @@ def test_run_file_reports_appended_daily_failure(monkeypatch, tmp_path: Path):
     source = tmp_path / "source.jsonl"
     source.write_text("{}\n", encoding="utf-8")
 
-    monkeypatch.setattr(retry_mod, "load_failed_messages", lambda _path: [("key", {})])
+    monkeypatch.setattr(
+        retry_mod,
+        "iter_failed_messages",
+        lambda _path, **kwargs: (m for m in [("key", {})]),
+    )
 
     def fail_and_append(*args, **kwargs):
         with existing_failure.open("a", encoding="utf-8") as stream:
@@ -106,7 +110,11 @@ def test_filtered_retry_is_not_deleted_as_success(monkeypatch, tmp_path: Path):
     failure_dir = tmp_path / "failures"
     failure_dir.mkdir()
 
-    monkeypatch.setattr(retry_mod, "load_failed_messages", lambda _path: [("key", {})])
+    monkeypatch.setattr(
+        retry_mod,
+        "iter_failed_messages",
+        lambda _path, **kwargs: (m for m in [("key", {})]),
+    )
     monkeypatch.setattr(
         consumer,
         "feed_messages_direct",
@@ -136,7 +144,11 @@ def test_retry_uses_one_run_scoped_handle_filename(monkeypatch, tmp_path: Path):
     output_file = tmp_path / "cmip6" / "handles" / "retry-batch.jsonl"
     output_file.parent.mkdir(parents=True)
 
-    monkeypatch.setattr(retry_mod, "load_failed_messages", lambda _path: [("key", {})])
+    monkeypatch.setattr(
+        retry_mod,
+        "iter_failed_messages",
+        lambda _path, **kwargs: (m for m in [("key", {})]),
+    )
 
     def feed(*args, **kwargs):
         assert kwargs["handle_output_filename"] == "retry-batch.jsonl"
@@ -170,7 +182,9 @@ def test_retry_prefers_persisted_project_over_configured_selection(
         ("known", {"__infos__": {"project": "cmip6"}}),
         ("legacy", {}),
     ]
-    monkeypatch.setattr(retry_mod, "load_failed_messages", lambda _path: messages)
+    monkeypatch.setattr(
+        retry_mod, "iter_failed_messages", lambda _path, **kwargs: (m for m in messages)
+    )
     selections = []
 
     def feed(project_messages, *args, **kwargs):

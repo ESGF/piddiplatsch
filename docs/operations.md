@@ -53,7 +53,12 @@ piddi consume --publish
 for bounded tests against a live topic. `map` accepts files or directories plus
 `--project`, `--all-projects`,
 `--limit`, `--offset`, and `--force`. It never contacts Kafka or a Handle
-Service and does not modify its input dumps.
+Service and does not modify its input dumps. It opens each source once and maps
+one record at a time in source order, without loading the selected files into
+memory. Offsets and limits apply across files and count nonblank input lines;
+source keys use physical line numbers. A malformed selected JSON record stops
+the run with its source location; output from earlier records remains written.
+The existing processing-error and transient-failure stop policies still apply.
 
 The `--date` convenience accepts `YYYY-MM-DD`, `today`, `yesterday`, `today-N`,
 or `last`. `map` uses `dump/dump_messages_<date>.jsonl`; `publish` requires a
@@ -63,10 +68,17 @@ This selects the greatest valid date found in the relevant filenames,
 regardless of file modification time. Explicit paths remain available for both
 commands, and a path and `--date` are mutually exclusive.
 
-`publish --project NAME` validates every selected Handle before publishing and
-stops without sending anything if a project is missing or different. Plain
-`publish` remains the generic mode and permits mixed-project batches. The final
-summary always provides per-project counts when project metadata is available.
+`publish --project NAME` validates each Handle immediately before sending it.
+Missing or different projects are recorded as failures, while valid records
+continue. Without `--project`, the first parsed record selects the service
+configuration; subsequent records must match its project. Each JSONL file is
+opened once and processed in batches of at most 256 records. Writes for the same
+Handle stay in input order, including across batches. Malformed lines receive
+failure receipts; earlier writes are not rolled back. No staging database or
+preliminary scan is used, so progress has no known total and receipt
+`batch_total` is `null`. Parent references are sent as provided; receipt metadata
+comes only from the current record. The final summary provides per-project
+counts and up to 100 error messages; receipts retain all failures.
 
 ## Real Handle service contract test
 
@@ -122,11 +134,22 @@ piddi publish --project cmip6 \
 Use `retry --publish` only for intentional immediate publication.
 Recovery records store the canonical project in `__infos__.project`; `retry`
 uses it instead of the current configured project selection. Older records
-without this metadata still use the configured selection.
+without this metadata still use the configured selection. Retry opens each
+source once and processes batches of at most 256 records in source order,
+including when projects are interleaved. Retry counts are incremented once per
+record. The reader stops at the file size captured when it opens, so records
+appended during recovery are left for a later run.
+
+Malformed JSON and invalid retry metadata are logged with their source location;
+valid records continue to process. The summary retains at most 100 input error
+messages, while all input errors are logged. A missing input is a reported
+failure rather than an empty successful run.
 
 `--delete-after` removes an input file only when all records succeed. Malformed
 JSONL and skipped records are failures for this decision, so the source remains
-available for inspection.
+available for inspection. Inputs changed during processing are also retained,
+so newly appended recovery records are not deleted. Earlier successful output
+remains written if a later record fails.
 
 ## Logging and statistics
 
