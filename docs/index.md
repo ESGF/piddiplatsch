@@ -4,10 +4,11 @@ Piddiplatsch consumes ESGF STAC publication records from Kafka and registers
 persistent identifiers with the Handle System. Its staged workflow is
 `harvest → map + validation → publish`, with JSONL files between stages.
 
-- [Installation and quick start](https://github.com/ESGF/piddiplatsch#readme)
+- [Installation and quick start](quick-guide.md)
 - [Architecture](architecture.md): routing, project plugins, and processing stages.
 - [Configuration](configuration.md): site settings and supported options.
 - [Operations](operations.md): output, publication, retries, and monitoring.
+- [Recovery & retry](recovery.md): advanced recovery procedures.
 - [Deployment](https://github.com/ESGF/piddiplatsch/blob/main/deploy/README.md):
   Linux service setup with Ansible.
 

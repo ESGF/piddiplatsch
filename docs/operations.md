@@ -105,6 +105,9 @@ old files according to the site's operational policy.
 
 ## Safe inspection and retry
 
+See [Recovery & retry](recovery.md) in the advanced documentation for recovery
+file locations and the retry workflow.
+
 Retry remaps failed events without contacting the Handle Service. Each command
 creates and prints a distinct project-scoped
 `retry_handles_<timestamp>.jsonl`, keeping late recovery work separate from

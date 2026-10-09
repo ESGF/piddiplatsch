@@ -2,10 +2,10 @@
 
 [Documentation](https://esgf.github.io/piddiplatsch/) ·
 [Overview slides](https://esgf.github.io/piddiplatsch/talks/overview.html) ·
-[Documentation build instructions](docs/building.md)
+[Documentation build instructions](https://esgf.github.io/piddiplatsch/building/)
 
 [![Build Status](https://github.com/ESGF/piddiplatsch/actions/workflows/ci.yml/badge.svg)](https://github.com/ESGF/piddiplatsch/actions)
-[![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
+[![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](https://github.com/ESGF/piddiplatsch/blob/main/LICENSE)
 [![Python Version](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
 [![pre-commit enabled](https://img.shields.io/badge/pre--commit-enabled-brightgreen?logo=pre-commit)](https://pre-commit.com/)
 
@@ -190,7 +190,7 @@ if any Handle could not be published.
 - Explicit built-in project plugin registry (pure Python, no dynamic framework)
 - Select one, several, or all registered project plugins
 
-For full usage details and local Docker smoke tests, see [CONTRIBUTING.md](CONTRIBUTING.md).
+For full usage details and local Docker smoke tests, see [CONTRIBUTING.md](https://github.com/ESGF/piddiplatsch/blob/main/CONTRIBUTING.md).
 
 ---
 
@@ -252,12 +252,14 @@ cmip6   | msg:458 (22.69/s)| hdl:1.8k (88.79/s)| E:0| W:1.3k| D:70| replica:64| 
 - **last_err**: time since last error
 - **⏱**: total elapsed time
 
-Detailed CLI options and extended examples live in [CONTRIBUTING.md](CONTRIBUTING.md).
+Detailed CLI options and extended examples live in [CONTRIBUTING.md](https://github.com/ESGF/piddiplatsch/blob/main/CONTRIBUTING.md).
 
 Operational guidance for output retention, retries, logging, and shutdown is in
-[docs/operations.md](docs/operations.md).
+[docs/operations.md](https://esgf.github.io/piddiplatsch/operations/).
+For recovery procedures, see [Recovery & retry](https://esgf.github.io/piddiplatsch/recovery/)
+in the advanced documentation.
 The short production and Vagrant procedure is in
-[deploy/README.md](deploy/README.md).
+[deploy/README.md](https://github.com/ESGF/piddiplatsch/blob/main/deploy/README.md).
 
 ---
 
@@ -284,19 +286,19 @@ Use `--config PATH` to select a different final override file in place of
 `./custom.toml`.
 
 Kafka, Handle Service, consumer behaviour, and project selection are all controlled via this file.
-See [docs/configuration.md](docs/configuration.md) for the supported application
+See [docs/configuration.md](https://esgf.github.io/piddiplatsch/configuration/) for the supported application
 settings and override behavior.
 
 ### ESGF Example Config
 
-The single manual setup example is [etc/esgf-example.toml](etc/esgf-example.toml).
+The single manual setup example is [etc/esgf-example.toml](https://github.com/ESGF/piddiplatsch/blob/main/etc/esgf-example.toml).
 For an existing `custom.toml`, copy only the settings you need. Comments map
 ESGF Resource/API key/API secret to their Kafka properties. Keep real credentials
 in the local file (do not commit secrets).
 
 For production, Ansible reads this same `custom.toml` and adds production path
 defaults for omitted values. The optional `deploy/ansible/custom.yml` holds only
-deployment controls. See the [deployment guide](deploy/README.md) for setup and
+deployment controls. See the [deployment guide](https://github.com/ESGF/piddiplatsch/blob/main/deploy/README.md) for setup and
 migration from the previous duplicated YAML application settings.
 
 For a manual run:
@@ -337,54 +339,6 @@ Prints the merged defaults + your overrides for quick inspection.
 
 ---
 
-## 🔄 Recovery & Retry
-
-Piddiplatsch persists problematic records for later inspection or retry.
-
-Failure records are written to:
-
-```
-outputs/<project>/failures/r<N>/failed_items_<date>.jsonl
-```
-
-Skipped (transient) records are written to:
-
-```
-outputs/<project>/skipped/skipped_items_<date>.jsonl
-```
-
-Each record stores the canonical project in `__infos__.project`. Events whose
-project cannot be resolved remain in the legacy global `failures/` or
-`skipped/` directory.
-
-Dumped messages are written to:
-
-```
-outputs/dump/dump_messages_<date>.jsonl
-```
-
-Retry previously persisted items:
-
-```bash
-piddi retry <path...> [--delete-after] [-v]
-```
-
-Retry remaps without contacting the Handle Service and writes a distinct batch
-to `outputs/<project>/handles/retry_handles_<timestamp>.jsonl`. The command
-prints every created path; publish only the recovered batch when it is ready:
-
-```bash
-piddi publish --project cmip6 outputs/cmip6/handles/retry_handles_<timestamp>.jsonl
-```
-
-Use `retry --publish` only when immediate publication is intentional.
-
-Implementation details:
-- Retry logic: [src/piddiplatsch/persist/retry.py](src/piddiplatsch/persist/retry.py)
-- Recorders: `src/piddiplatsch/persist/`
-
----
-
 ## 🧩 Project plugins (Overview)
 
 Piddiplatsch uses a small, explicit plugin interface and a router in front of
@@ -410,9 +364,9 @@ Currently implemented project plugins are:
 The raw dump stays global to preserve Kafka order. JSONL Handle output is
 project-scoped, and `pid.log` records selected and filtered projects.
 
-Configuration and implementation guidance are documented in [CONTRIBUTING.md](CONTRIBUTING.md).
+Configuration and implementation guidance are documented in [CONTRIBUTING.md](https://github.com/ESGF/piddiplatsch/blob/main/CONTRIBUTING.md).
 The message flow and consumer-group constraints are documented in
-[docs/architecture.md](docs/architecture.md).
+[docs/architecture.md](https://esgf.github.io/piddiplatsch/architecture/).
 
 ---
 
@@ -424,11 +378,11 @@ Quick commands:
 - Integration only: `make test-integration`
 - Smoke tests (Docker): `make test-smoke`
 
-Full development and testing guidance is in [CONTRIBUTING.md](CONTRIBUTING.md).
+Full development and testing guidance is in [CONTRIBUTING.md](https://github.com/ESGF/piddiplatsch/blob/main/CONTRIBUTING.md).
 
 ---
 
 ## 🤝 Contributing
 
 Interested in contributing?  
-See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup, testing, style, and workflow.
+See [CONTRIBUTING.md](https://github.com/ESGF/piddiplatsch/blob/main/CONTRIBUTING.md) for development setup, testing, style, and workflow.

@@ -66,9 +66,9 @@ play: ## deploy piddi locally using custom variables
 
 deploy: conda play ## prepare the Conda environment and deploy piddi locally
 
-develop: ## install application with development libraries
+develop: ## install application with development and documentation libraries
 	@echo "Installing development requirements ..."
-	@bash -c 'pip install -e ".[dev]"'
+	@python -m pip install -e ".[dev,docs]"
 
 clean: clean-build clean-pyc clean-test ## remove all build, test, coverage and Python artifacts
 
