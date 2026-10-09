@@ -63,10 +63,17 @@ This selects the greatest valid date found in the relevant filenames,
 regardless of file modification time. Explicit paths remain available for both
 commands, and a path and `--date` are mutually exclusive.
 
-`publish --project NAME` validates every selected Handle before publishing and
-stops without sending anything if a project is missing or different. Plain
-`publish` remains the generic mode and permits mixed-project batches. The final
-summary always provides per-project counts when project metadata is available.
+`publish --project NAME` validates each Handle immediately before sending it.
+Missing or different projects are recorded as failures, while valid records
+continue. Without `--project`, the first parsed record selects the service
+configuration; subsequent records must match its project. Each JSONL file is
+opened once and processed in batches of at most 256 records. Writes for the same
+Handle stay in input order, including across batches. Malformed lines receive
+failure receipts; earlier writes are not rolled back. No staging database or
+preliminary scan is used, so progress has no known total and receipt
+`batch_total` is `null`. Parent references are sent as provided; receipt metadata
+comes only from the current record. The final summary provides per-project
+counts and up to 100 error messages; receipts retain all failures.
 
 ## Real Handle service contract test
 

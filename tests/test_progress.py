@@ -67,3 +67,19 @@ def test_stream_progress_close_is_idempotent(tqdm_cls):
     progress.close()
 
     tqdm_cls.return_value.close.assert_called_once_with()
+
+
+@patch("piddiplatsch.monitoring.progress.tqdm")
+def test_publication_progress_supports_unknown_total(tqdm_cls):
+    with BoundedProgress(
+        title="publish handles", unit="handle", enabled=True, start=10
+    ) as progress:
+        progress.update(total=None, position=12, ok=True)
+        progress.update(total=None, position=11, ok=False)
+    tqdm_cls.assert_called_once_with(
+        total=None, desc="publish handles", unit="handle", dynamic_ncols=True
+    )
+    assert progress.position == 12
+    assert progress.succeeded == 1
+    assert progress.failed == 1
+    assert tqdm_cls.return_value.update.call_count == 2

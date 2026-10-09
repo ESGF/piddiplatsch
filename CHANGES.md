@@ -4,6 +4,14 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+### Fixed
+- Stream `publish` input in a single pass using batches of at most 256 records,
+  preserving per-Handle update order without a staging database. Validate each
+  record independently and continue after invalid records; earlier writes remain
+  published. Stream receipts, cap error summaries at 100 messages, and report
+  progress without a precomputed total (`batch_total` is now `null`). Parent
+  metadata is no longer inferred from other input records.
+
 ### Added
 - Added per-project `force_dataset_pid` to regenerate dataset PIDs from versioned STAC
   item IDs despite existing source PIDs, keeping file parent links consistent

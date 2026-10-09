@@ -40,7 +40,7 @@ class NoOpProgress(BaseProgress):
 
 
 class BoundedProgress(BaseProgress):
-    """Track and optionally display progress for work with a known total."""
+    """Track and optionally display progress for work with an optional total."""
 
     def __init__(self, *, title: str, unit: str, enabled: bool, start: int = 0) -> None:
         self.title = title
@@ -52,7 +52,7 @@ class BoundedProgress(BaseProgress):
         self.failed = 0
         self.bar = None
 
-    def update(self, *, total: int, position: int, ok: bool) -> None:
+    def update(self, *, total: int | None, position: int, ok: bool) -> None:
         """Record one completed item and refresh the display when enabled."""
         self.position = max(self.position, position)
         if ok:
@@ -65,7 +65,11 @@ class BoundedProgress(BaseProgress):
         if self.bar is None:
             self.bar = tqdm(
                 total=total,
-                desc=f"{self.title} {self.start + 1}-{self.start + total}",
+                desc=(
+                    f"{self.title} {self.start + 1}-{self.start + total}"
+                    if total is not None
+                    else self.title
+                ),
                 unit=self.unit,
                 dynamic_ncols=True,
             )

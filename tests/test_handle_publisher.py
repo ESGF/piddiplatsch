@@ -3,6 +3,7 @@ import logging
 import threading
 import time
 from datetime import UTC, datetime
+from pathlib import Path
 
 import pytest
 import requests
@@ -139,7 +140,7 @@ def test_configured_publisher_resolves_backend_from_input_project(
     assert selected == [("cmip6", "dkrz-test")]
 
 
-def test_configured_publisher_rejects_mixed_project_batch(tmp_path):
+def test_configured_publisher_rejects_other_projects_per_record(tmp_path, monkeypatch):
     source = tmp_path / "handles.jsonl"
     write_jsonl(
         source,
@@ -149,8 +150,15 @@ def test_configured_publisher_rejects_mixed_project_batch(tmp_path):
         ],
     )
 
-    with pytest.raises(ValueError, match="multiple projects"):
-        HandlePublisher().run([source])
+    backend = FakeBackend()
+    monkeypatch.setattr(
+        "piddiplatsch.handles.publish.RestHandleClient.from_config", lambda **_: backend
+    )
+    result = HandlePublisher().run([source])
+    assert result.succeeded == 1
+    assert result.failed == 1
+    assert [pid for pid, _ in backend.published] == ["one"]
+    assert "does not match project 'cmip6'" in result.errors[0]
 
 
 def test_logs_each_publication_and_summary(tmp_path, caplog):
@@ -168,7 +176,7 @@ def test_logs_each_publication_and_summary(tmp_path, caplog):
     assert "project=cmip6" in caplog.text
     assert "dataset_id=-" in caplog.text
     assert "file_name=-" in caplog.text
-    assert "position=11 batch=1/1" in caplog.text
+    assert "position=11 batch=1/?" in caplog.text
     assert "Handle publication complete: published=1 total=1" in caplog.text
 
 
@@ -184,8 +192,8 @@ def test_logs_dataset_context_for_file_asset(tmp_path, caplog):
     )
     file = handle_record(
         "file",
-        project=None,
         data={
+            "DATASET_ID": "CMIP6.CMIP.example",
             "AGGREGATION_LEVEL": "FILE",
             "FILE_NAME": "example.nc",
             "IS_PART_OF": "hdl:21.TEST/dataset",
@@ -240,7 +248,7 @@ def test_writes_structured_result_jsonl_for_successes_and_failures(tmp_path):
     assert success["source_line"] == 1
     assert success["position"] == 1
     assert success["batch_index"] == 1
-    assert success["batch_total"] == 2
+    assert success["batch_total"] is None
     assert success["retry_attempts"] == 0
     assert success["error"] is None
     assert failure["status"] == "failed"
@@ -257,8 +265,8 @@ def test_default_result_jsonl_has_readable_unique_name(tmp_path, monkeypatch):
     source = tmp_path / "handles.jsonl"
     write_jsonl(source, [handle_record("abc")])
 
-    first = HandlePublisher(FakeBackend()).run([source])
-    second = HandlePublisher(FakeBackend()).run([source])
+    first = HandlePublisher(FakeBackend()).run([source], project="cmip6")
+    second = HandlePublisher(FakeBackend()).run([source], project="cmip6")
 
     assert first.result_file is not None
     assert second.result_file is not None
@@ -270,7 +278,7 @@ def test_default_result_jsonl_has_readable_unique_name(tmp_path, monkeypatch):
     assert first.result_file.read_text().count("\n") == 1
 
 
-def test_project_selection_validates_whole_batch_before_publication(tmp_path):
+def test_project_selection_validates_each_record_before_publication(tmp_path):
     source = tmp_path / "handles.jsonl"
     write_jsonl(
         source,
@@ -278,26 +286,27 @@ def test_project_selection_validates_whole_batch_before_publication(tmp_path):
     )
     backend = FakeBackend()
 
-    with pytest.raises(
-        ValueError, match=r"does not match project 'cmip6'.*handles.jsonl:2"
-    ):
-        HandlePublisher(backend).run([source], project="CMIP6")
+    result = HandlePublisher(backend).run([source], project="CMIP6")
+    assert result.succeeded == 1
+    assert result.failed == 1
+    assert [pid for pid, _ in backend.published] == ["cmip6"]
+    assert "handles.jsonl:2" in result.errors[0]
+    assert "does not match project 'cmip6'" in result.errors[0]
 
-    assert backend.published == []
-    assert not (tmp_path / "outputs" / "published").exists()
 
-
-def test_project_selection_does_not_publish_when_input_cannot_be_validated(tmp_path):
+def test_project_selection_reports_unreadable_record_and_publishes_valid_input(
+    tmp_path,
+):
     good = tmp_path / "good.jsonl"
     malformed = tmp_path / "malformed.jsonl"
     write_jsonl(good, [handle_record("good")])
     malformed.write_text("not-json\n", encoding="utf-8")
     backend = FakeBackend()
 
-    with pytest.raises(ValueError, match="Cannot validate project 'cmip6'"):
-        HandlePublisher(backend).run([good, malformed], project="cmip6")
-
-    assert backend.published == []
+    result = HandlePublisher(backend).run([good, malformed], project="cmip6")
+    assert result.succeeded == 1
+    assert result.failed == 1
+    assert [pid for pid, _ in backend.published] == ["good"]
 
 
 def test_generic_publication_keeps_mixed_projects_and_reports_each(tmp_path):
@@ -347,7 +356,7 @@ def test_continues_after_invalid_record_and_backend_failure(tmp_path):
     assert "server unavailable" in result.errors[1]
 
 
-def test_rejects_malformed_jsonl_without_publishing_partial_file(tmp_path):
+def test_reports_malformed_line_without_discarding_valid_records(tmp_path):
     source = tmp_path / "handles.jsonl"
     source.write_text(
         f"{json.dumps(handle_record('first'))}\nnot-json\n", encoding="utf-8"
@@ -356,10 +365,11 @@ def test_rejects_malformed_jsonl_without_publishing_partial_file(tmp_path):
 
     result = HandlePublisher(backend).run([source])
 
-    assert result.total == 1
+    assert result.total == 2
+    assert result.succeeded == 1
     assert result.failed == 1
     assert "line 2" in result.errors[0]
-    assert backend.published == []
+    assert [pid for pid, _ in backend.published] == ["first"]
 
 
 def test_reads_all_jsonl_files_in_directory(tmp_path):
@@ -526,3 +536,231 @@ def test_rejects_invalid_worker_count(tmp_path):
 
     with pytest.raises(ValueError, match="workers must be at least 1"):
         HandlePublisher(FakeBackend()).run([source], workers=0)
+
+
+@pytest.mark.parametrize("workers", [1, 3])
+def test_batches_preserve_order_context_and_global_positions(
+    tmp_path, monkeypatch, workers
+):
+    monkeypatch.setattr("piddiplatsch.handles.publish.BATCH_SIZE", 2)
+    source = tmp_path / "handles.jsonl"
+    write_jsonl(
+        source,
+        [
+            handle_record("skip"),
+            handle_record(
+                "same",
+                data={
+                    "DATASET_ID": "CMIP6.example",
+                    "IS_PART_OF": "hdl:21.TEST/parent",
+                    "VERSION": "1",
+                },
+            ),
+            handle_record("other"),
+            handle_record(
+                "same",
+                data={
+                    "DATASET_ID": "CMIP6.example",
+                    "IS_PART_OF": "hdl:21.TEST/parent",
+                    "VERSION": "2",
+                },
+            ),
+            handle_record("parent", data={"DATASET_ID": "CMIP6.example"}),
+        ],
+    )
+    backend = ConcurrentBackend()
+    progress = []
+    result = HandlePublisher(backend).run(
+        [source],
+        offset=1,
+        project="cmip6",
+        workers=workers,
+        progress_callback=lambda index, total, *_: progress.append((index, total)),
+    )
+    assert result.succeeded == 4
+    assert [data["VERSION"] for pid, data in backend.published if pid == "same"] == [
+        "1",
+        "2",
+    ]
+    receipts = [
+        json.loads(line) for line in result.result_file.read_text().splitlines()
+    ]
+    assert sorted(
+        (r["position"], r["batch_index"], r["batch_total"]) for r in receipts
+    ) == [
+        (2, 1, None),
+        (3, 2, None),
+        (4, 3, None),
+        (5, 4, None),
+    ]
+    assert all(
+        r["dataset_id"] == "CMIP6.example"
+        for r in receipts
+        if r["handle"] == "21.TEST/same"
+    )
+    assert sorted(progress) == [(1, None), (2, None), (3, None), (4, None)]
+    assert not list((tmp_path / "outputs").glob(".piddi-publish-*"))
+
+
+@pytest.mark.parametrize(
+    "bad_tail", ["not-json", json.dumps(handle_record("wrong", project="cmip7"))]
+)
+def test_rejects_bad_input_beyond_first_batch_without_undoing_writes(
+    tmp_path, monkeypatch, bad_tail
+):
+    monkeypatch.setattr("piddiplatsch.handles.publish.BATCH_SIZE", 2)
+    source = tmp_path / "handles.jsonl"
+    write_jsonl(source, [handle_record(str(i)) for i in range(5)])
+    with source.open("a") as stream:
+        stream.write(bad_tail + "\n")
+    backend = FakeBackend()
+    result = HandlePublisher(backend).run([source], project="cmip6", workers=3)
+    assert result.succeeded == 5
+    assert result.failed == 1
+    assert sorted(pid for pid, _ in backend.published) == [str(i) for i in range(5)]
+    assert not list((tmp_path / "outputs").glob(".piddi-publish-*"))
+
+
+def test_receipts_report_physical_lines_with_blanks_and_offset(tmp_path):
+    source = tmp_path / "handles.jsonl"
+    source.write_text(
+        "\n"
+        + json.dumps(handle_record("skip"))
+        + "\n\n"
+        + json.dumps(handle_record("good"))
+        + "\n"
+    )
+    result = HandlePublisher(FakeBackend()).run([source], offset=1, limit=1)
+    receipt = json.loads(result.result_file.read_text())
+    assert receipt["source_line"] == 4
+    assert receipt["position"] == 2
+
+
+def test_parent_reference_does_not_require_parent_record(tmp_path):
+    source = tmp_path / "handles.jsonl"
+    write_jsonl(
+        source,
+        [handle_record("child", data={"IS_PART_OF": "hdl:21.TEST/absent-parent"})],
+    )
+    backend = FakeBackend()
+    result = HandlePublisher(backend).run([source], project="cmip6")
+    assert result.succeeded == 1
+    assert backend.published[0][1]["IS_PART_OF"] == "hdl:21.TEST/absent-parent"
+    receipt = json.loads(result.result_file.read_text())
+    assert receipt["project"] == "cmip6"
+    assert receipt["dataset_id"] is None
+
+
+@pytest.mark.parametrize("workers", [1, 3])
+def test_large_publication_memory_is_bounded_even_on_failure(tmp_path, workers):
+    import tracemalloc
+
+    class RejectingBackend:
+        prefix = "21.TEST"
+
+        def add(self, pid, record):
+            raise RuntimeError("rejected")
+
+    def peak_for(count):
+        source = tmp_path / "handles.jsonl"
+        with source.open("w") as stream:
+            for i in range(count):
+                stream.write(
+                    json.dumps(handle_record(str(i), data={"payload": "x" * 4096}))
+                    + "\n"
+                )
+        tracemalloc.start()
+        try:
+            # Disable captured logs: pytest would otherwise retain every failure.
+            logger = logging.getLogger("piddiplatsch.handles.publish")
+            previous = logger.disabled
+            logger.disabled = True
+            try:
+                result = HandlePublisher(RejectingBackend()).run(
+                    [source], workers=workers
+                )
+            finally:
+                logger.disabled = previous
+            peak = tracemalloc.get_traced_memory()[1]
+        finally:
+            tracemalloc.stop()
+        assert result.failed == count
+        assert len(result.errors) == 100
+        with result.result_file.open() as stream:
+            assert sum(1 for _ in stream) == count
+        return peak
+
+    small = peak_for(512)
+    large = peak_for(4096)
+    # Eight times as many unique handles must not retain eight times the input,
+    # parent index, futures, outcomes, or exception tracebacks on the heap.
+    assert large < small * 2 + 2_000_000
+
+
+@pytest.mark.parametrize("workers", [1, 3])
+def test_reads_each_source_once_and_publishes_before_reading_next_batch(
+    tmp_path, monkeypatch, workers
+):
+    monkeypatch.setattr("piddiplatsch.handles.publish.BATCH_SIZE", 2)
+    source = tmp_path / "handles.jsonl"
+    write_jsonl(source, [handle_record(str(i)) for i in range(6)])
+    original_open = Path.open
+    opened = []
+    consumed = []
+    backend = FakeBackend()
+
+    class WatchedStream:
+        def __init__(self, stream):
+            self.stream = stream
+
+        def __enter__(self):
+            self.stream.__enter__()
+            return self
+
+        def __exit__(self, *args):
+            return self.stream.__exit__(*args)
+
+        def __iter__(self):
+            for i, line in enumerate(self.stream):
+                if i >= 2:
+                    assert len(backend.published) >= (i // 2) * 2
+                consumed.append(i)
+                yield line
+
+    def watched_open(path, *args, **kwargs):
+        stream = original_open(path, *args, **kwargs)
+        if path == source:
+            opened.append(stream)
+            return WatchedStream(stream)
+        return stream
+
+    monkeypatch.setattr(Path, "open", watched_open)
+    result = HandlePublisher(backend).run(
+        [source], project="cmip6", workers=workers, limit=5
+    )
+    assert result.succeeded == 5
+    assert len(opened) == 1
+    assert opened[0].closed
+    assert consumed == list(range(5))
+
+
+@pytest.mark.parametrize(
+    "bad_record",
+    [[], None, 42, "bad", {"project": "cmip6"}, handle_record("missing", project=None)],
+)
+def test_invalid_records_are_receipted_and_next_valid_record_is_published(
+    tmp_path, bad_record
+):
+    source = tmp_path / "handles.jsonl"
+    write_jsonl(source, [bad_record, handle_record("good")])
+    backend = FakeBackend()
+    result = HandlePublisher(backend).run([source], project="cmip6")
+    assert result.failed == 1
+    assert result.succeeded == 1
+    assert [pid for pid, _ in backend.published] == ["good"]
+    receipts = [
+        json.loads(line) for line in result.result_file.read_text().splitlines()
+    ]
+    assert receipts[0]["status"] == "failed"
+    assert receipts[0]["source_line"] == 1
+    assert receipts[1]["status"] == "succeeded"
