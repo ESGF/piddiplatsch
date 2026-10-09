@@ -3,13 +3,16 @@ import logging
 import signal
 import sys
 import time
+from contextlib import closing
 from enum import StrEnum
+from itertools import chain
 from pathlib import Path
 
 from piddiplatsch.config import config
 from piddiplatsch.core.routing import ProjectRouter
 from piddiplatsch.exceptions import MaxErrorsExceededError, StopOnTransientSkipError
-from piddiplatsch.helpers import find_jsonl, read_jsonl
+from piddiplatsch.helpers import find_jsonl
+from piddiplatsch.jsonl_stream import iter_jsonl_records
 from piddiplatsch.monitoring.progress import BaseProgress, get_progress
 from piddiplatsch.monitoring.stats import CounterKey, stats
 from piddiplatsch.persist.dump import DumpRecorder
@@ -151,10 +154,13 @@ class DirectConsumer(BaseConsumer):
         """
         messages: iterable of (key, value) tuples
         """
-        self.messages = list(messages)
+        self.messages = messages
+        self.consumed = 0
 
     def consume(self):
-        yield from self.messages
+        for message in self.messages:
+            self.consumed += 1
+            yield message
 
 
 class HarvestProcessor:
@@ -375,7 +381,7 @@ def feed_messages_direct(
     succeeded = processed - skipped - filtered
 
     return FeedResult(
-        total=len(messages),
+        total=consumer.consumed,
         succeeded=succeeded,
         failed=failed,
         skipped=skipped,
@@ -400,44 +406,31 @@ def map_dump_files(
     if offset < 0:
         raise ValueError("offset cannot be negative")
 
-    messages: list[tuple[str, dict]] = []
-    offset_remaining = offset
-    for path in find_jsonl(paths):
-        remaining = None if limit is None else limit - len(messages)
-        if remaining == 0:
-            break
-
-        file_offset = 0
-        if offset_remaining:
-            skipped = read_jsonl(path, limit=offset_remaining)
-            file_offset = len(skipped)
-            offset_remaining -= file_offset
-            if offset_remaining:
-                continue
-
-        records = read_jsonl(path, limit=remaining, offset=file_offset)
-        messages.extend(
-            (f"{path}:{file_offset + index}", record)
-            for index, record in enumerate(records, start=1)
+    with closing(
+        iter_jsonl_records(find_jsonl(paths), offset=offset, limit=limit)
+    ) as records:
+        # Peek only one record so empty selections still skip processor setup.
+        first = next(records, None)
+        if first is None:
+            return FeedResult()
+        target = build_processing_target(
+            projects=projects,
+            handle_profile=handle_profile,
         )
-
-    if not messages:
-        return FeedResult()
-
-    target = build_processing_target(
-        projects=projects,
-        handle_profile=handle_profile,
-    )
-    if not force:
-        target.preflight_check(stop_on_transient_skip=True)
-    return feed_messages_direct(
-        messages,
-        processor=target,
-        force=force,
-        verbose=verbose,
-        progress=progress,
-        handle_profile=handle_profile,
-    )
+        if not force:
+            target.preflight_check(stop_on_transient_skip=True)
+        messages = (
+            (f"{path}:{line_number}", record)
+            for path, line_number, record in chain((first,), records)
+        )
+        return feed_messages_direct(
+            messages,
+            processor=target,
+            force=force,
+            verbose=verbose,
+            progress=progress,
+            handle_profile=handle_profile,
+        )
 
 
 def feed_test_files(

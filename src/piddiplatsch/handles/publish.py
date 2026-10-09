@@ -5,22 +5,22 @@ import logging
 import re
 import threading
 import time
-from collections.abc import Callable, Iterable, Iterator
+from collections.abc import Callable, Iterable
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from contextlib import AbstractContextManager, ExitStack, closing
 from dataclasses import dataclass, replace
+from itertools import islice
 from pathlib import Path
 from queue import Queue
-from itertools import islice
 from typing import Any, Protocol
 
 import requests
 
 from piddiplatsch.config import config
 from piddiplatsch.core.plugin import normalize_project_id
-from piddiplatsch.exceptions import JsonlReadError
 from piddiplatsch.handles.rest_backend import RestHandleClient
 from piddiplatsch.helpers import find_jsonl, utc_now
+from piddiplatsch.jsonl_stream import JsonlRecord, iter_jsonl_records
 from piddiplatsch.result import ProjectPublishResult, PublishResult
 
 
@@ -31,7 +31,6 @@ class PreparedHandleBackend(Protocol):
 
 
 BATCH_SIZE = 256
-InputRecord = tuple[Path, int, dict[str, Any] | Exception]
 ProgressCallback = Callable[[int, int | None, str, Exception | None], None]
 OutcomeCallback = Callable[["_PublicationOutcome"], None]
 
@@ -141,8 +140,16 @@ class HandlePublisher:
         result.project = selected_project
         completed = 0
         with ExitStack() as stack:
-            source = stack.enter_context(closing(self._read_records(files)))
-            records = islice(source, offset, None if limit is None else offset + limit)
+            records = stack.enter_context(
+                closing(
+                    iter_jsonl_records(
+                        files,
+                        offset=offset,
+                        limit=limit,
+                        yield_errors=True,
+                    )
+                )
+            )
             writer = None
             while batch := list(islice(records, BATCH_SIZE)):
                 contexts = self._publication_contexts(batch)
@@ -257,30 +264,6 @@ class HandlePublisher:
                 outcome.error,
             )
 
-    @staticmethod
-    def _read_records(files: Iterable[Path]) -> Iterator[InputRecord]:
-        """Open each source once and retain physical line numbers for receipts."""
-        for path in files:
-            line_number = 0
-            try:
-                with path.open(encoding="utf-8") as stream:
-                    for line_number, line in enumerate(stream, start=1):
-                        if not line.strip():
-                            continue
-                        try:
-                            record = json.loads(line)
-                        except json.JSONDecodeError as exc:
-                            record = JsonlReadError(
-                                f"Malformed JSON in {path} at line {line_number}: {exc.msg}"
-                            )
-                        if not isinstance(record, (dict, Exception)):
-                            record = JsonlReadError(
-                                f"Expected a JSON object in {path} at line {line_number}"
-                            )
-                        yield path, line_number, record
-            except (OSError, UnicodeError) as exc:
-                yield path, line_number, JsonlReadError(f"Could not read {path}: {exc}")
-
     def _log_publication(
         self,
         outcome: _PublicationOutcome,
@@ -301,7 +284,7 @@ class HandlePublisher:
 
     def _publish_records(
         self,
-        records: list[InputRecord],
+        records: list[JsonlRecord],
         *,
         retries: int,
         retry_delay: float,
@@ -516,7 +499,7 @@ class HandlePublisher:
 
     @staticmethod
     def _publication_contexts(
-        records: list[InputRecord],
+        records: list[JsonlRecord],
     ) -> dict[int, _PublicationContext]:
         contexts = {}
         for index, (_, _, record) in enumerate(records, start=1):

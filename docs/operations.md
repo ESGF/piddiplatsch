@@ -53,7 +53,12 @@ piddi consume --publish
 for bounded tests against a live topic. `map` accepts files or directories plus
 `--project`, `--all-projects`,
 `--limit`, `--offset`, and `--force`. It never contacts Kafka or a Handle
-Service and does not modify its input dumps.
+Service and does not modify its input dumps. It opens each source once and maps
+one record at a time in source order, without loading the selected files into
+memory. Offsets and limits apply across files and count nonblank input lines;
+source keys use physical line numbers. A malformed selected JSON record stops
+the run with its source location; output from earlier records remains written.
+The existing processing-error and transient-failure stop policies still apply.
 
 The `--date` convenience accepts `YYYY-MM-DD`, `today`, `yesterday`, `today-N`,
 or `last`. `map` uses `dump/dump_messages_<date>.jsonl`; `publish` requires a

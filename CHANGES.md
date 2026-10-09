@@ -5,6 +5,10 @@ All notable changes to this project are documented here.
 ## [Unreleased]
 
 ### Fixed
+- Stream `map` JSONL inputs end to end, removing whole-file lists and the direct
+  consumer's eager copy. Share a single-pass JSONL reader with `publish` for
+  source locations, offsets, limits, error handling, and cleanup. Mapping stops
+  on malformed selected records while retaining output already written.
 - Stream `publish` input in a single pass using batches of at most 256 records,
   preserving per-Handle update order without a staging database. Validate each
   record independently and continue after invalid records; earlier writes remain
