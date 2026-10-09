@@ -32,7 +32,7 @@ is separated by input source:
   `ProcessingPipeline` accepts an iterable directly and returns per-run results;
   `process_messages` also manages progress created for a mapping or retry call.
   It does not import Kafka or file-input readers.
-- `handles/publish.py` publishes already prepared Handles independently of the
+- `runners/publish.py` publishes already prepared Handles independently of the
   mapping pipeline, using the same `jsonl_stream.py` reader.
 
 Input lifetimes belong to the runners: they close file/Kafka streams on limits,

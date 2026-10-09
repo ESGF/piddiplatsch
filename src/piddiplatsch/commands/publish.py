@@ -8,8 +8,8 @@ import click
 from piddiplatsch.commands.base import FileBatchCommand
 from piddiplatsch.commands.helper import resolve_latest_dated_input
 from piddiplatsch.core.plugin import normalize_project_id
-from piddiplatsch.handles.publish import HandlePublisher
 from piddiplatsch.result import PublishResult
+from piddiplatsch.runners.publish import HandlePublisher
 
 
 @dataclass(kw_only=True)

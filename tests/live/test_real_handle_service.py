@@ -9,8 +9,8 @@ from uuid import uuid4
 import pytest
 
 from piddiplatsch.config import config
-from piddiplatsch.handles.publish import HandlePublisher
 from piddiplatsch.handles.rest_backend import RestHandleClient
+from piddiplatsch.runners.publish import HandlePublisher
 
 pytestmark = pytest.mark.live
 
