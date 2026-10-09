@@ -4,7 +4,16 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+### Removed
+- Removed the legacy list loaders `helpers.read_jsonl` and
+  `persist.retry.load_failed_messages`. Use `jsonl_stream.iter_jsonl_records`
+  and `persist.retry.iter_failed_messages` instead.
+
 ### Fixed
+- Stream `retry` through the shared JSONL reader in bounded batches, preserving
+  source order and persisted project routing. Ignore records appended after the
+  source is opened, retain changed or unsuccessful inputs, report malformed
+  records individually, and cap retained input-error summaries at 100 messages.
 - Stream `map` JSONL inputs end to end, removing whole-file lists and the direct
   consumer's eager copy. Share a single-pass JSONL reader with `publish` for
   source locations, offsets, limits, error handling, and cleanup. Mapping stops

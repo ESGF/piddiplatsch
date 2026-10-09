@@ -134,11 +134,22 @@ piddi publish --project cmip6 \
 Use `retry --publish` only for intentional immediate publication.
 Recovery records store the canonical project in `__infos__.project`; `retry`
 uses it instead of the current configured project selection. Older records
-without this metadata still use the configured selection.
+without this metadata still use the configured selection. Retry opens each
+source once and processes batches of at most 256 records in source order,
+including when projects are interleaved. Retry counts are incremented once per
+record. The reader stops at the file size captured when it opens, so records
+appended during recovery are left for a later run.
+
+Malformed JSON and invalid retry metadata are logged with their source location;
+valid records continue to process. The summary retains at most 100 input error
+messages, while all input errors are logged. A missing input is a reported
+failure rather than an empty successful run.
 
 `--delete-after` removes an input file only when all records succeed. Malformed
 JSONL and skipped records are failures for this decision, so the source remains
-available for inspection.
+available for inspection. Inputs changed during processing are also retained,
+so newly appended recovery records are not deleted. Earlier successful output
+remains written if a later record fails.
 
 ## Logging and statistics
 

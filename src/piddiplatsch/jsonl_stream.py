@@ -1,6 +1,7 @@
 """Single-pass JSONL readers shared by file-processing commands."""
 
 import json
+import os
 from collections.abc import Iterable, Iterator
 from contextlib import closing
 from itertools import islice
@@ -18,19 +19,21 @@ def iter_jsonl_records(
     offset: int = 0,
     limit: int | None = None,
     yield_errors: bool = False,
+    snapshot: bool = False,
 ) -> Iterator[JsonlRecord]:
     """Yield a global window of records with their physical source locations.
 
     Paths are consumed in caller-provided order and each file is opened once.
     Blank lines do not count towards offset or limit. Selected malformed records
     raise by default; ``yield_errors`` lets publishers receipt them and continue.
+    With ``snapshot``, ignore bytes appended after each file is opened.
     Close the iterator when stopping early to release the current input file.
     """
     if offset < 0:
         raise ValueError("offset cannot be negative")
     if limit is not None and limit < 1:
         raise ValueError("limit must be at least 1")
-    with closing(_read_records(paths)) as source:
+    with closing(_read_records(paths, snapshot=snapshot)) as source:
         for path, line_number, record in islice(
             source, offset, None if limit is None else offset + limit
         ):
@@ -39,12 +42,12 @@ def iter_jsonl_records(
             yield path, line_number, record
 
 
-def _read_records(paths: Iterable[Path]) -> Iterator[JsonlRecord]:
+def _read_records(paths: Iterable[Path], *, snapshot: bool) -> Iterator[JsonlRecord]:
     for path in paths:
         line_number = 0
         try:
-            with path.open(encoding="utf-8") as stream:
-                for line_number, line in enumerate(stream, start=1):
+            with closing(_lines(path, snapshot=snapshot)) as lines:
+                for line_number, line in enumerate(lines, start=1):
                     if not line.strip():
                         continue
                     try:
@@ -60,3 +63,19 @@ def _read_records(paths: Iterable[Path]) -> Iterator[JsonlRecord]:
                     yield path, line_number, record
         except (OSError, UnicodeError) as exc:
             yield path, line_number, JsonlReadError(f"Could not read {path}: {exc}")
+
+
+def _lines(path: Path, *, snapshot: bool) -> Iterator[str]:
+    if not snapshot:
+        with path.open(encoding="utf-8") as stream:
+            yield from stream
+        return
+    # Bound bytes, not record count: a retry may append to its own input file.
+    with path.open("rb") as stream:
+        remaining = os.fstat(stream.fileno()).st_size
+        while remaining > 0:
+            line = stream.readline(remaining)
+            if not line:
+                break
+            remaining -= len(line)
+            yield line.decode("utf-8")

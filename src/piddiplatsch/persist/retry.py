@@ -1,33 +1,54 @@
 import logging
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
+from contextlib import closing
+from itertools import groupby, islice
 from pathlib import Path
 
 from piddiplatsch.config import config
 from piddiplatsch.exceptions import JsonlReadError
-from piddiplatsch.helpers import find_jsonl, read_jsonl, utc_now
-from piddiplatsch.result import FeedResult, RetryResult
+from piddiplatsch.helpers import find_jsonl, utc_now
+from piddiplatsch.jsonl_stream import iter_jsonl_records
+from piddiplatsch.result import RetryResult
+
+BATCH_SIZE = 256
+_INPUT_ERROR = object()
 
 
-def load_failed_messages(jsonl_path: Path) -> list[tuple[str, dict]]:
-    """Load failed (or skipped) items from JSONL and return as (key, value) tuples."""
-    records = read_jsonl(jsonl_path)
-    if not records:
-        logging.error(f"Retry file not found or empty: {jsonl_path}")
-        return []
-
-    messages: list[tuple[str, dict]] = []
-    for record in records:
-        key = str(record.get("key") or record.get("id") or "unknown")
-        if "__infos__" in record:
-            record["__infos__"]["retries"] = (
-                int(record["__infos__"].get("retries", 0)) + 1
-            )
-        else:
-            record["retries"] = int(record.get("retries", 0)) + 1
-        messages.append((key, record))
-
-    logging.info(f"Loaded {len(messages)} messages from {jsonl_path}")
-    return messages
+def iter_failed_messages(
+    jsonl_path: Path,
+    *,
+    yield_errors: bool = False,
+) -> Iterator[tuple[str, dict] | JsonlReadError]:
+    """Stream retry messages, incrementing persisted retry counts once."""
+    with closing(
+        iter_jsonl_records(
+            [jsonl_path],
+            yield_errors=yield_errors,
+            snapshot=True,
+        )
+    ) as records:
+        for path, line, record in records:
+            if isinstance(record, JsonlReadError):
+                yield record
+                continue
+            try:
+                infos = record.get("__infos__")
+                if infos is not None and not isinstance(infos, dict):
+                    raise ValueError("__infos__ must be an object")
+                if infos is None:
+                    record.pop("__infos__", None)
+                target = infos if infos is not None else record
+                target["retries"] = int(target.get("retries", 0)) + 1
+            except (TypeError, ValueError, OverflowError) as exc:
+                error = JsonlReadError(
+                    f"Invalid retry metadata in {path} at line {line}: {exc}"
+                )
+                if not yield_errors:
+                    raise error from exc
+                yield error
+                continue
+            key = str(record.get("key") or record.get("id") or "unknown")
+            yield key, record
 
 
 def find_retry_files(paths: tuple[Path, ...]) -> list[Path]:
@@ -88,44 +109,44 @@ class RetryRunner:
         """Retry failed items from a JSONL file by reprocessing them through the pipeline."""
         from piddiplatsch.consumer import feed_messages_direct
 
-        try:
-            messages = load_failed_messages(jsonl_path)
-        except JsonlReadError as exc:
-            self.logger.error(str(exc))
-            return RetryResult(total=1, failed=1, errors=[str(exc)])
-
-        result = RetryResult(total=len(messages))
-        if not messages:
-            self.logger.warning("No messages to retry.")
-            return result
-
+        result = RetryResult()
         self.logger.info(
-            f"Retrying {len(messages)} messages from {jsonl_path} using '{self.projects}'..."
+            "Retrying messages from %s using %s", jsonl_path, self.projects
         )
-
-        # Track failure files before retry
+        try:
+            source_stat = jsonl_path.stat()
+        except OSError:
+            source_stat = None  # The shared reader will report the read failure.
         failure_files_before = {
             path: path.stat().st_size for path in self._failure_files()
         }
-
-        # Records with persisted provenance are retried through exactly that
-        # plugin. Legacy records without it retain the configured selection.
-        feed_result = FeedResult()
-        for project, project_messages in self._group_messages(messages).items():
-            selection = [project] if project else self.projects
-            partial = feed_messages_direct(
-                project_messages,
-                projects=selection,
-                publish=self.publish,
-                handle_profile=self.handle_profile,
-                handle_output_filename=self.handle_output_filename,
-                force=True,
-            )
-            feed_result.total += partial.total
-            feed_result.succeeded += partial.succeeded
-            feed_result.failed += partial.failed
-            feed_result.skipped += partial.skipped
-            feed_result.filtered += partial.filtered
+        with closing(iter_failed_messages(jsonl_path, yield_errors=True)) as messages:
+            while batch := list(islice(messages, BATCH_SIZE)):
+                # Group only adjacent selections so interleaved projects retain
+                # source order. Each list and processing call is bounded.
+                for project, group in groupby(batch, key=self._message_project):
+                    entries = list(group)
+                    if project is _INPUT_ERROR:
+                        for error in entries:
+                            result.total += 1
+                            result.failed += 1
+                            self.logger.error("%s", error)
+                            if len(result.errors) < 100:
+                                result.errors.append(str(error))
+                        continue
+                    partial = feed_messages_direct(
+                        entries,
+                        projects=[project] if project else self.projects,
+                        publish=self.publish,
+                        handle_profile=self.handle_profile,
+                        handle_output_filename=self.handle_output_filename,
+                        force=True,
+                    )
+                    result.total += partial.total
+                    result.succeeded += partial.succeeded
+                    result.skipped += partial.skipped
+                    result.filtered += partial.filtered
+                    result.failed += partial.failed + partial.skipped + partial.filtered
 
         # Find new failure files created during retry
         failure_files_after = self._failure_files()
@@ -139,18 +160,22 @@ class RetryRunner:
             self.output_dir.glob(f"*/handles/{self.handle_output_filename}")
         )
 
-        # Use stats from feed_result
-        result.succeeded = feed_result.succeeded
-        result.skipped = feed_result.skipped
-        result.filtered = feed_result.filtered
-        # A filtered retry was not handled by a selected plugin. Keep the
-        # original input instead of treating it as successfully recovered.
-        result.failed = feed_result.failed + feed_result.skipped + feed_result.filtered
+        if result.total == 0:
+            self.logger.warning("No messages to retry.")
+            return result
 
         if self.delete_after and result.failed == 0:
             try:
-                jsonl_path.unlink()
-                self.logger.info(f"Deleted retry file: {jsonl_path}")
+                current_stat = jsonl_path.stat()
+                unchanged = source_stat is not None and all(
+                    getattr(current_stat, name) == getattr(source_stat, name)
+                    for name in ("st_dev", "st_ino", "st_size", "st_mtime_ns")
+                )
+                if not unchanged:
+                    self.logger.warning("Keeping changed retry input: %s", jsonl_path)
+                else:
+                    jsonl_path.unlink()
+                    self.logger.info(f"Deleted retry file: {jsonl_path}")
             except Exception as e:
                 self.logger.warning(f"Could not delete {jsonl_path}: {e}")
         elif self.delete_after and result.failed > 0:
@@ -166,17 +191,12 @@ class RetryRunner:
         return files
 
     @staticmethod
-    def _group_messages(
-        messages: list[tuple[str, dict]],
-    ) -> dict[str | None, list[tuple[str, dict]]]:
-        groups: dict[str | None, list[tuple[str, dict]]] = {}
-        for key, record in messages:
-            infos = record.get("__infos__", {}) or {}
-            project = infos.get("project")
-            if not isinstance(project, str) or not project.strip():
-                project = None
-            groups.setdefault(project, []).append((key, record))
-        return groups
+    def _message_project(message: tuple[str, dict] | JsonlReadError):
+        if isinstance(message, JsonlReadError):
+            return _INPUT_ERROR
+        infos = message[1].get("__infos__", {}) or {}
+        project = infos.get("project")
+        return project if isinstance(project, str) and project.strip() else None
 
     def run_batch(
         self,
@@ -206,7 +226,7 @@ class RetryRunner:
             overall.filtered += result.filtered
             overall.failure_files.update(result.failure_files)
             overall.handle_files.update(result.handle_files)
-            overall.errors.extend(result.errors)
+            overall.errors.extend(result.errors[: max(0, 100 - len(overall.errors))])
 
             if progress_callback:
                 progress_callback(file, idx, total_files, result)
