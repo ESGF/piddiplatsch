@@ -50,7 +50,7 @@ It shows a statue of the character, not the original television puppet.
 - Built-in plugins: **CMIP6, CMIP6Plus, CMIP7, and CORDEX-CMIP6**.
 - Used in production at DKRZ; open source under Apache-2.0.
 
-CLI: **`harvest` → `map` + validation → `publish`**, linked by **JSONL**.
+CLI: **`harvest` → `map` + validation → `publish`**, using **local catalogs and Handle JSONL**.
 
 [ESGF/piddiplatsch](https://github.com/ESGF/piddiplatsch)
 
@@ -83,8 +83,8 @@ flowchart LR
 Simplified logical view, not a deployment topology. The data-node box groups file hosting and publishing tools; the publication
 box groups the transaction API and Kafka. Catalog consumers and their STAC
 catalogs are grouped together. Catalog consumers and
-Piddi independently consume publication events. Piddi may query STAC to recover
-an item for PATCH processing or perform optional version lookup; STAC is not an
+Piddi independently consume publication events. The legacy direct consume path may query STAC for PATCH processing;
+staged harvest/map resolves patches and optional version links locally; STAC is not an
 extra mandatory hop between Kafka and Piddi. Data access bypasses Piddi.
 Sources: docs/architecture.md, docs/configuration.md;
 https://github.com/ESGF/ESGF-Playground;
@@ -144,26 +144,26 @@ flowchart LR
 ::: notes
 Plugins are explicitly registered Python modules through PluginSpec, not
 currently external packages discovered at runtime. Thin project adapters share
-StacProjectProcessor and Pydantic Handle output models. CMIP6 version lookup is
-an example of project-specific behavior. Unselected and unknown projects are
+StacProjectProcessor and Pydantic Handle output models. Local catalog version
+lookup is shared; plugins supply version index metadata. Unselected and unknown projects are
 filtered and counted. Source: docs/architecture.md.
 :::
 
-## Three commands, connected by JSONL
+## Three commands, connected by catalogs and JSONL
 
 | Command | Input | Work and output |
 | --- | --- | --- |
-| **`harvest`** | Kafka events | Save raw messages as **JSONL** |
-| **`map`** | Raw JSONL | Route to plugins, map + validate → **Handle JSONL** |
+| **`harvest`** | Kafka events | Maintain **local STAC catalogs** + raw JSONL |
+| **`map`** | Local STAC catalogs | Map complete items + validate → **Handle JSONL** |
 | **`publish`** | Handle JSONL | Write to Handle Service → **receipt JSONL** |
 
 ```bash
 piddi harvest --limit 100
-piddi map --date last --project cmip6
+piddi map --project cmip6
 piddi publish --project cmip6 --date last --limit 100
 ```
 
-**JSONL = one JSON record per line:** inspect, retain, and replay each stage.
+**Local catalogs hold complete item state; JSONL preserves raw events and prepared Handles.**
 
 ::: notes
 Examples assume installed Piddi and configured site credentials; these code
@@ -192,7 +192,7 @@ Prepare a small batch and inspect its Handle records:
 
 ```bash
 piddi harvest --limit 100
-piddi map --date last --project cmip6
+piddi map --project cmip6
 ```
 
 Publish up to 100 prepared Handles when ready:
@@ -258,7 +258,7 @@ The summary closes the overview; the appendix supports operational questions.
 %%{init: {"theme":"base","fontFamily":"Arial","fontSize":24,"themeVariables":{"fontSize":"24px","primaryColor":"#eef5f9","primaryBorderColor":"#457b9d","lineColor":"#457b9d"},"flowchart":{"htmlLabels":false,"curve":"linear","nodeSpacing":40,"rankSpacing":45}}}%%
 flowchart LR
     K["ESGF-NG<br/>Kafka stream"] --> H["harvest"]
-    H -->|raw JSONL| M["map + validation<br/>Project plugins"]
+    H -->|local catalog| M["map + validation<br/>Project plugins"]
     M -->|Handle JSONL| P["publish"]
     P --> PID["Today<br/>Dataset + file PIDs"]
     M -.->|proposed Rook plugin| DB[("Outlook<br/>Local STAC lookup DB")]
@@ -344,7 +344,7 @@ outputs/
 ```
 :::
 
-- `map` reprocesses raw dumps with the chosen project selection.
+- `map` streams local catalog snapshots with the chosen project selection.
 - `retry` writes `retry_handles_<timestamp>.jsonl` in the project's handles folder.
 - `publish` preserves its inputs and reports each attempted Handle's outcome.
 

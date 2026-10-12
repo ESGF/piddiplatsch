@@ -2,10 +2,10 @@
 
 from contextlib import closing
 from dataclasses import dataclass
-from pathlib import Path
 
 import click
 
+from piddiplatsch.catalog.api import get_catalog_directory
 from piddiplatsch.commands.base import KafkaCommand
 from piddiplatsch.config import config
 from piddiplatsch.consumer import HarvestProcessor
@@ -49,10 +49,7 @@ class HarvestCommand(KafkaCommand):
                 raise click.UsageError(str(exc)) from exc
         directory = None
         if enabled:
-            directory = Path(
-                catalog_cfg.get("directory")
-                or Path(config.get("consumer", "output_dir", "outputs")) / "catalog"
-            )
+            directory = get_catalog_directory()
         try:
             with closing(
                 HarvestProcessor(

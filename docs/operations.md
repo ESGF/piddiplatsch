@@ -46,8 +46,11 @@ piddi harvest --clean-catalog
 # Clear selected projects; other catalogs retain their state
 piddi harvest --clean-project cmip6 --clean-project cmip7
 
-# raw JSONL -> project-scoped Handle JSONL only
-piddi map --project cmip6 --date 2026-08-27
+# local catalog -> project-scoped Handle JSONL only
+piddi map --project cmip6
+
+# Add predecessor links using the local catalog index
+piddi map --project cmip6 --version-history
 
 # Handle JSONL -> REST Handle Service
 piddi publish --project cmip6 --date 2026-08-27
@@ -114,8 +117,8 @@ concurrent clean/harvest commands are not coordinated.
 Configure `[catalog].enabled = false` or use `--no-catalog` for raw-only harvest;
 that mode retains the existing Kafka group and acknowledgement behavior.
 `[catalog].backend` currently supports `"sqlite"`; `[catalog].directory` overrides
-the default catalog directory. `map` still reads raw JSONL; catalog-backed mapping
-will be connected separately.
+the default catalog directory. `map` reads complete local catalog items exclusively;
+raw dumps remain available for inspection and existing recovery workflows.
 
 Tune broker acknowledgement frequency with `[catalog].kafka_commit_batch_size`
 and `[catalog].kafka_commit_interval_seconds`. Setting batch size to `1` restores
@@ -124,23 +127,48 @@ broker latency is high. SQLite item/checkpoint transactions remain durable per
 message regardless of broker batching. A crash can replay the unacknowledged batch;
 local checkpoints skip the already stored events, including non-idempotent patches.
 
-`map` accepts files or directories plus
-`--project`, `--all-projects`,
-`--limit`, `--offset`, and `--force`. It never contacts Kafka or a Handle
-Service and does not modify its input dumps. It opens each source once and maps
-one record at a time in source order, without loading the selected files into
-memory. Offsets and limits apply across files and count nonblank input lines;
-source keys use physical line numbers. A malformed selected JSON record stops
-the run with its source location; output from earlier records remains written.
-The existing processing-error and transient-failure stop policies still apply.
+`map` accepts `--project`, `--all-projects`, `--catalog-dir`, `--limit`, `--offset`,
+and `--version-history/--no-version-history`. Without an explicit project selection
+it uses `consumer.projects`. Named selections require every selected project's
+catalog to exist; `--all-projects` selects the registered catalogs available in
+the directory. It opens read-only snapshots, streams one current state per versioned
+item, and performs no Kafka, remote STAC, or Handle Service calls. Patches were
+already applied during harvest. Pending catalog cleans block mapping until harvest
+finishes the reset.
 
-The `--date` convenience accepts `YYYY-MM-DD`, `today`, `yesterday`, `today-N`,
-or `last`. `map` uses `dump/dump_messages_<date>.jsonl`; `publish` requires a
-project and uses `<project>/handles/handles_<date>.jsonl`. When neither an
-explicit path nor `--date` is supplied, both commands default to `last`.
-This selects the greatest valid date found in the relevant filenames,
-regardless of file modification time. Explicit paths remain available for both
-commands, and a path and `--date` are mutually exclusive.
+Order follows the selected project order, then collection/item ID within each
+project. Offsets and limits count catalog items across that sequence. Mapping and
+predecessor lookup share the same snapshot for each project, so concurrent harvest
+writes are visible on the next map run. Rerunning map appends a new set of prepared
+Handle records; it does not mark catalog items as mapped. Existing error limits
+still apply, and output from earlier successfully mapped items remains written.
+
+Predecessor linking is disabled by default during initial filling. Enable
+`[catalog].version_history = true` or pass `--version-history`; a per-run
+`--no-version-history` overrides the setting. Every built-in project uses an
+indexed search for the greatest version strictly below the current version within
+the same collection and dataset. Legacy `[lookup]` backend/enabled settings do not
+control catalog mapping. Direct `consume` and existing raw-event retry paths retain
+their separate remote PATCH handling for now.
+
+Existing version-1 SQLite catalogs are readable without rebuilding. The next
+writer open migrates them to version 2, which preserves publication event time
+for subsequently harvested entries. Earlier entries cannot recover discarded
+event timestamps: map falls back to STAC `updated`, then `created`, then its existing
+current-time fallback. Publication times are retained for new updates, including
+retractions.
+
+Mapping failures retain the complete item, publication time, and any resolved
+predecessor in their recovery envelope. The existing retry path can preserve those
+links when retrying Handle preparation. For catalog corruption or failed history
+queries, repair the catalog and rerun map to resolve the missing information.
+
+Migration: `map PATH`, `map --date ...`, and `map --force` are removed. Run harvest
+with catalog mode enabled, then `map --project NAME`; `--catalog-dir` selects an
+alternate catalog directory. A raw-only harvest dump is not a map input anymore.
+`publish` continues accepting Handle files/directories and `--date` selectors
+(`YYYY-MM-DD`, `today`, `yesterday`, `today-N`, or `last`). Its default remains the
+greatest dated Handle batch, independent of file modification time.
 
 ## Deferred publication
 
@@ -281,7 +309,7 @@ Progress is displayed by default for `harvest`, `map`, `consume`, and `publish`.
 Use the global `--silent` (or `-s`) or `--no-progress` option to hide it:
 
 ```bash
-piddi --no-progress map --project cmip6 --date yesterday
+piddi --no-progress map --project cmip6
 piddi -v publish --project cmip6 --date yesterday
 ```
 

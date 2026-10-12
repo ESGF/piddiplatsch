@@ -2,7 +2,8 @@
 
 Piddiplatsch consumes ESGF STAC publication records from Kafka and registers
 persistent identifiers with the Handle System. Its staged workflow is
-`harvest → map + validation → publish`, with JSONL files between stages.
+`harvest → map + validation → publish`, using local STAC catalogs for mapping
+and JSONL Handle files for publication. Harvest also retains raw JSONL dumps.
 
 - [Installation and quick start](quick-guide.md)
 - [Architecture](architecture.md): routing, project plugins, and processing stages.

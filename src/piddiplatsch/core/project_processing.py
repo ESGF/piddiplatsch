@@ -7,9 +7,11 @@ import jsonpatch
 import requests
 from pydantic import ValidationError
 
+from piddiplatsch.catalog.base import BaseCatalogReader
 from piddiplatsch.config import config
 from piddiplatsch.core.processing import BaseProcessor
 from piddiplatsch.core.project_records import ProjectDatasetRecord, ProjectFileRecord
+from piddiplatsch.core.registry import get_plugin
 from piddiplatsch.exceptions import TransientExternalError
 from piddiplatsch.result import ProcessingResult
 from piddiplatsch.utils.stac import get_stac_client
@@ -28,7 +30,14 @@ class StacProjectProcessor(BaseProcessor):
         "quicklook",
     ]
 
-    def __init__(self, excluded_asset_keys=None, **kwargs):
+    def __init__(
+        self,
+        excluded_asset_keys=None,
+        *,
+        catalog_reader: BaseCatalogReader | None = None,
+        version_history: bool = False,
+        **kwargs,
+    ):
         kwargs["project"] = self.plugin_name
         super().__init__(**kwargs)
         self.excluded_asset_keys = excluded_asset_keys or config.get_plugin(
@@ -36,9 +45,15 @@ class StacProjectProcessor(BaseProcessor):
             "excluded_asset_keys",
             self.default_excluded_asset_keys,
         )
-        self.stac_client = get_stac_client(self.plugin_name)
+        self.catalog_reader = catalog_reader
+        self.version_history = version_history
+        self.stac_client = (
+            None if catalog_reader is not None else get_stac_client(self.plugin_name)
+        )
 
     def preflight_check(self, stop_on_transient_skip: bool = True):
+        if self.catalog_reader is not None:
+            return
         stac_cfg = config.get_stac(self.plugin_name)
         base_url = stac_cfg.get("base_url")
         consumer_cfg = config.get("consumer", {})
@@ -102,6 +117,10 @@ class StacProjectProcessor(BaseProcessor):
         result: ProcessingResult,
     ) -> ProcessingResult:
         if payload.get("method") == "PATCH":
+            if self.catalog_reader is not None:
+                raise ValueError(
+                    "Catalog mapping requires complete items; apply patches during harvest"
+                )
             try:
                 item = self._apply_patch_to_stac_item(payload)
                 result.patched = True
@@ -115,10 +134,27 @@ class StacProjectProcessor(BaseProcessor):
         else:
             raise ValueError("MISSING item object")
 
+        previous_version = metadata.get("previous_version")
+        if self.catalog_reader is not None:
+            previous_version = None
+            if self.version_history:
+                dataset_id, version_number = get_plugin(self.plugin_name).catalog_index(
+                    item["id"]
+                )
+                collection_id = payload.get("collection_id") or item.get("collection")
+                previous_version = self.catalog_reader.find_previous_version(
+                    collection_id, dataset_id, version_number
+                )
+            # Catalog inputs are synthetic envelopes owned by the mapping runner.
+            # Preserve resolved history in failure records for the retry path.
+            metadata["previous_version"] = previous_version
         record = self.dataset_record(
             item,
             exclude_keys=self.excluded_asset_keys,
-            additional_attributes={"publication_time": metadata.get("time")},
+            additional_attributes={
+                "publication_time": metadata.get("time"),
+                "previous_version": previous_version,
+            },
             handle_profile=self.handle_profile,
         )
         record.validate()

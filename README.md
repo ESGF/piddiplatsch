@@ -51,12 +51,15 @@ You can also harvest a small sample, then map it separately:
 
 ```bash
 piddi harvest --limit 100
-piddi map --project cmip6 --date last
+piddi map --project cmip6
+# Optional predecessor links from the local catalog
+piddi map --project cmip6 --version-history
 ```
 
 Harvest also maintains per-project SQLite STAC catalogs under `outputs/catalog/`
 using a separate Kafka group (`<group.id>.harvest`). Use `--no-catalog` for the
-previous raw-only behavior. Mapping still reads raw dumps during this transition.
+previous raw-only behavior. Map reads complete local catalog items, including
+harvested patches, without fetching STAC items or replaying raw dumps.
 Use `harvest --clean-catalog` to clear and rebuild all registered project catalogs,
 or repeat `--clean-project NAME` to rebuild selected projects from retained Kafka
 history. Cleaning uses a fresh harvest group and compacts the cleared databases.

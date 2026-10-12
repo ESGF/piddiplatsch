@@ -73,13 +73,26 @@ class ProjectRouter:
         publish: bool = False,
         handle_profile: str | None = None,
         processor_kwargs: dict[str, Any] | None = None,
+        catalogs=None,
+        version_history: bool = False,
     ) -> None:
         self.plugins = get_plugins(projects)
         kwargs = dict(processor_kwargs or {})
         kwargs.setdefault("publish", publish)
         kwargs.setdefault("handle_profile", handle_profile)
         self.processors = {
-            plugin.name: plugin.make_processor(**kwargs) for plugin in self.plugins
+            plugin.name: plugin.make_processor(
+                **kwargs,
+                **(
+                    {
+                        "catalog_reader": catalogs[plugin.name],
+                        "version_history": version_history,
+                    }
+                    if catalogs is not None
+                    else {}
+                ),
+            )
+            for plugin in self.plugins
         }
         self._plugins_by_project = {
             project_id: plugin

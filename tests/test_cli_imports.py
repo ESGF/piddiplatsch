@@ -70,7 +70,15 @@ assert "confluent_kafka" not in sys.modules
                 "piddiplatsch.runners",
             ],
         ),
-        ("piddiplatsch.commands.map", ["piddiplatsch.consumer", "confluent_kafka"]),
+        (
+            "piddiplatsch.commands.map",
+            [
+                "piddiplatsch.consumer",
+                "confluent_kafka",
+                "piddiplatsch.jsonl_stream",
+                "piddiplatsch.lookup",
+            ],
+        ),
         ("piddiplatsch.commands.retry", ["piddiplatsch.consumer", "confluent_kafka"]),
     ],
 )

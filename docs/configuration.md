@@ -37,7 +37,7 @@ piddi config explain --project cmip6
 piddi config explain --project cmip6 --handle-profile production
 ```
 
-`explain` shows the resolved Handle service, prefix, STAC collection, and lookup
+`explain` shows the resolved Handle service, prefix, STAC collection, and catalog
 settings, with the configuration keys and files supplying them. It lists loaded
 files in precedence order, listing full filenames once with short labels such
 as `defaults` and `custom.toml`. Settings use those labels; repeated filenames
@@ -222,8 +222,29 @@ collection = "CMIP7"
 
 Project settings inherit unspecified values from `[stac]`. A project-specific
 `base_url` or `timeout` can therefore be added later if that collection moves to
-another service. PATCH events continue to use their own `collection_id`; the
-configured collection is used by STAC version lookups.
+another service. Legacy direct consumption/retry PATCH events use their own
+`collection_id`. Catalog mapping uses stored collections and does not contact
+this endpoint. Its predecessor queries are controlled by `[catalog].version_history`.
+
+## Local catalog
+
+```toml
+[catalog]
+enabled = true
+backend = "sqlite"
+# Default: <consumer.output_dir>/catalog
+# directory = "/var/lib/piddi/catalog"
+version_history = false
+kafka_commit_batch_size = 100
+kafka_commit_interval_seconds = 1.0
+```
+
+`enabled` controls catalog maintenance during harvest. Map always reads the
+catalog; it uses read-only snapshots and can use existing catalogs even when
+harvest maintenance is disabled. `version_history` enables local predecessor
+links for every built-in project; map's `--version-history`/`--no-version-history`
+overrides it for one run. No remote lookup backend is involved. See
+[staged operations](operations.md#staged-commands) for cleaning and migration.
 
 ## Settings reference
 
@@ -282,8 +303,11 @@ The CLI `--force` option remains separate and controls transient failure handlin
 | `consumer.transient` | `retries` | Number of retries for transient STAC patch retrieval. |
 | `consumer.transient` | `backoff_initial`, `backoff_max` | Exponential retry delay bounds in seconds. |
 | `consumer.transient` | `preflight_stac` | Probe the configured STAC service before consuming; disabled by default. |
-| `lookup` | `enabled`, `backend` | Enable version lookup using `stac` or `es`; disabled by default. |
-| `elasticsearch` | `base_url`, `index` | Elasticsearch lookup settings when `lookup.backend = "es"`. |
+| `catalog` | `enabled`, `backend`, `directory` | Harvest maintenance and per-project local catalog storage. |
+| `catalog` | `version_history` | Optional local predecessor linking during map; disabled by default. |
+| `catalog` | `kafka_commit_batch_size`, `kafka_commit_interval_seconds` | Broker acknowledgement batching after durable local writes. |
+| `lookup` | `enabled`, `backend` | Legacy compatibility lookup helpers; unused by catalog mapping. |
+| `elasticsearch` | `base_url`, `index` | Legacy Elasticsearch lookup helper settings; unused by catalog mapping. |
 | `stats` | `interval_seconds`, `summary_interval` | Statistics reporting intervals. |
 | `stats` | `enable_db`, `db_path`, heartbeat/sample/history intervals | Local SQLite state and history for `piddi consume` and `piddi map`. |
 

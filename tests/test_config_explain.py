@@ -28,6 +28,7 @@ def test_explain_defaults(explained_config):
     assert "Handle timeout: 10  <- handles.defaults.timeout" in result.output
     assert 'STAC collection: "CMIP6"  <- plugins.cmip6.stac.collection' in result.output
     assert "Lookup enabled: false" in result.output
+    assert "Catalog version_history: false" in result.output
     assert "testpass" not in result.output
     assert "300:21.TEST/testuser" not in result.output
 

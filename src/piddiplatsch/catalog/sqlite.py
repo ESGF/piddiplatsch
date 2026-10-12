@@ -11,14 +11,16 @@ from piddiplatsch.catalog.base import BaseCatalog, BaseCatalogTransaction
 from piddiplatsch.catalog.models import CatalogEntry, KafkaCheckpoint
 from piddiplatsch.exceptions import CatalogError
 
-_SCHEMA_VERSION = 1
+_SCHEMA_VERSION = 2
 
 
 def _decode_entry(row: tuple) -> CatalogEntry:
     try:
-        collection_id, dataset_id, version_number, payload = row
+        collection_id, dataset_id, version_number, payload, publication_time = row
         item = json.loads(zlib.decompress(payload))
-        return CatalogEntry(collection_id, item, dataset_id, version_number)
+        return CatalogEntry(
+            collection_id, item, dataset_id, version_number, publication_time
+        )
     except (ValueError, TypeError, zlib.error) as exc:
         raise CatalogError(f"Invalid stored catalog entry: {exc}") from exc
 
@@ -28,7 +30,8 @@ class SQLiteCatalog(BaseCatalog):
 
     Payloads use compact UTF-8 JSON compressed independently with zlib level 3,
     available in the standard library. Identity/version indexes remain outside
-    the payload. Schema version 1 fixes this codec; future changes need migration.
+    the payload. Version 2 adds publication time, migrating version 1 on write-open.
+    Read-only opens support both versions without migrating or creating files.
 
     One instance belongs to one thread. WAL permits separate instances/processes
     to read while a writer holds a transaction; writers serialize with a bounded
@@ -36,10 +39,18 @@ class SQLiteCatalog(BaseCatalog):
     established on its first query, excluding uncommitted transaction writes.
     Long-lived iterators can delay WAL reclamation and must be closed promptly.
     Use local disk, not a network filesystem. Reset reuses space; it does not
-    compact or remove the database. No harvest/map integration is enabled here.
+    compact or remove the database. Read-only opens hold a snapshot shared by item
+    iteration and predecessor queries until close.
     """
 
-    def __init__(self, project: str, path: str | Path, *, timeout: float = 5.0):
+    def __init__(
+        self,
+        project: str,
+        path: str | Path,
+        *,
+        timeout: float = 5.0,
+        read_only: bool = False,
+    ):
         super().__init__(project)
         if str(path) == ":memory:":
             raise ValueError("SQLiteCatalog requires a persistent database file")
@@ -48,17 +59,44 @@ class SQLiteCatalog(BaseCatalog):
         self._active_transaction: SQLiteCatalogTransaction | None = None
         self._read_connections: set[sqlite3.Connection] = set()
         self._timeout = timeout
+        self.read_only = read_only
+        self._schema_version = _SCHEMA_VERSION
         try:
-            self.path.parent.mkdir(parents=True, exist_ok=True)
-            self._connection = sqlite3.connect(
-                self.path, timeout=timeout, isolation_level=None
-            )
-            self._initialize()
-            self._execute("PRAGMA journal_mode=WAL")
-            self._execute("PRAGMA synchronous=FULL")
+            if read_only:
+                self._connection = sqlite3.connect(
+                    self.path.as_uri() + "?mode=ro",
+                    uri=True,
+                    timeout=timeout,
+                    isolation_level=None,
+                )
+                self._execute("BEGIN")
+                metadata = self._execute(
+                    "SELECT project, schema_version FROM catalog_metadata WHERE singleton = 1"
+                ).fetchone()
+                self._validate_metadata(metadata)
+                self._schema_version = metadata[1]
+            else:
+                self.path.parent.mkdir(parents=True, exist_ok=True)
+                self._connection = sqlite3.connect(
+                    self.path, timeout=timeout, isolation_level=None
+                )
+                self._initialize()
+                self._execute("PRAGMA journal_mode=WAL")
+                self._execute("PRAGMA synchronous=FULL")
         except (OSError, sqlite3.Error, CatalogError) as exc:
             self.close()
             raise CatalogError(f"Could not open catalog {self.path}: {exc}") from exc
+
+    def _validate_metadata(self, metadata) -> None:
+        if (
+            metadata is None
+            or metadata[0] != self.project
+            or metadata[1] not in (1, _SCHEMA_VERSION)
+        ):
+            raise CatalogError(
+                "Catalog project or schema version does not match: "
+                f"stored={metadata!r}, requested={(self.project, _SCHEMA_VERSION)!r}"
+            )
 
     def _initialize(self) -> None:
         connection = self._require_connection()
@@ -77,17 +115,20 @@ class SQLiteCatalog(BaseCatalog):
                     "INSERT INTO catalog_metadata VALUES (1, ?, ?)",
                     (self.project, _SCHEMA_VERSION),
                 )
-            elif metadata != (self.project, _SCHEMA_VERSION):
-                raise CatalogError(
-                    "Catalog project or schema version does not match: "
-                    f"stored={metadata!r}, requested={(self.project, _SCHEMA_VERSION)!r}"
-                )
+            else:
+                self._validate_metadata(metadata)
             connection.execute(
                 "CREATE TABLE IF NOT EXISTS items ("
                 "collection_id TEXT NOT NULL, item_id TEXT NOT NULL, "
                 "dataset_id TEXT NOT NULL, version_number INTEGER NOT NULL, "
-                "payload BLOB NOT NULL, PRIMARY KEY (collection_id, item_id))"
+                "payload BLOB NOT NULL, publication_time TEXT, PRIMARY KEY (collection_id, item_id))"
             )
+            if metadata is not None and metadata[1] == 1:
+                connection.execute("ALTER TABLE items ADD COLUMN publication_time TEXT")
+                connection.execute(
+                    "UPDATE catalog_metadata SET schema_version = ? WHERE singleton = 1",
+                    (_SCHEMA_VERSION,),
+                )
             connection.execute(
                 "CREATE INDEX IF NOT EXISTS items_versions "
                 "ON items (collection_id, dataset_id, version_number, item_id)"
@@ -115,9 +156,19 @@ class SQLiteCatalog(BaseCatalog):
             raise CatalogError(f"SQLite catalog operation failed: {exc}") from exc
 
     def get_item(self, collection_id: str, item_id: str) -> CatalogEntry | None:
+        sql = (
+            (
+                "SELECT collection_id, dataset_id, version_number, payload, publication_time "
+                "FROM items WHERE collection_id = ? AND item_id = ?"
+            )
+            if self._schema_version >= 2
+            else (
+                "SELECT collection_id, dataset_id, version_number, payload, NULL "
+                "FROM items WHERE collection_id = ? AND item_id = ?"
+            )
+        )
         row = self._execute(
-            "SELECT collection_id, dataset_id, version_number, payload "
-            "FROM items WHERE collection_id = ? AND item_id = ?",
+            sql,
             (collection_id, item_id),
         ).fetchone()
         return None if row is None else _decode_entry(row)
@@ -144,6 +195,8 @@ class SQLiteCatalog(BaseCatalog):
     @contextmanager
     def transaction(self) -> Iterator[BaseCatalogTransaction]:
         self._require_connection()
+        if self.read_only:
+            raise CatalogError("Catalog is read-only")
         if self._active_transaction is not None:
             raise CatalogError("Nested catalog transactions are unsupported")
         self._execute("BEGIN IMMEDIATE")
@@ -165,17 +218,27 @@ class SQLiteCatalog(BaseCatalog):
     def iter_items(self, *, collection_id: str | None = None) -> Iterator[CatalogEntry]:
         self._require_connection()
         reader = None
+        cursor = None
         try:
             # URI mode prevents accidentally recreating a removed database.
-            reader = sqlite3.connect(
-                self.path.as_uri() + "?mode=ro",
-                uri=True,
-                timeout=self._timeout,
-                isolation_level=None,
+            reader = (
+                self._require_connection()
+                if self.read_only
+                else sqlite3.connect(
+                    self.path.as_uri() + "?mode=ro",
+                    uri=True,
+                    timeout=self._timeout,
+                    isolation_level=None,
+                )
             )
-            self._read_connections.add(reader)
-            reader.execute("BEGIN")
-            sql = "SELECT collection_id, dataset_id, version_number, payload FROM items"
+            if not self.read_only:
+                self._read_connections.add(reader)
+                reader.execute("BEGIN")
+            sql = (
+                "SELECT collection_id, dataset_id, version_number, payload, publication_time FROM items"
+                if self._schema_version >= 2
+                else "SELECT collection_id, dataset_id, version_number, payload, NULL FROM items"
+            )
             parameters = ()
             if collection_id is not None:
                 sql += " WHERE collection_id = ?"
@@ -193,8 +256,12 @@ class SQLiteCatalog(BaseCatalog):
             raise CatalogError(f"Could not stream SQLite catalog: {exc}") from exc
         finally:
             if reader is not None:
-                self._read_connections.discard(reader)
-                reader.close()
+                if self.read_only:
+                    if self._connection is not None and cursor is not None:
+                        cursor.close()
+                else:
+                    self._read_connections.discard(reader)
+                    reader.close()
 
     def reset(self) -> None:
         with self.transaction():
@@ -217,6 +284,8 @@ class SQLiteCatalog(BaseCatalog):
 
     def compact(self) -> None:
         self._require_connection()
+        if self.read_only:
+            raise CatalogError("Catalog is read-only")
         if self._active_transaction is not None or self._read_connections:
             raise CatalogError(
                 "Cannot compact with an active transaction or read iterator"
@@ -273,16 +342,17 @@ class SQLiteCatalogTransaction(BaseCatalogTransaction):
                 level=3,
             )
             self._catalog._execute(
-                "INSERT INTO items VALUES (?, ?, ?, ?, ?) "
+                "INSERT INTO items VALUES (?, ?, ?, ?, ?, ?) "
                 "ON CONFLICT(collection_id, item_id) DO UPDATE SET "
                 "dataset_id = excluded.dataset_id, version_number = excluded.version_number, "
-                "payload = excluded.payload",
+                "payload = excluded.payload, publication_time = excluded.publication_time",
                 (
                     entry.collection_id,
                     entry.item_id,
                     entry.dataset_id,
                     entry.version_number,
                     payload,
+                    entry.publication_time,
                 ),
             )
         except (

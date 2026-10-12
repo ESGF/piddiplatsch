@@ -5,6 +5,7 @@ from pathlib import Path
 
 import jsonpatch
 
+from piddiplatsch.catalog.api import get_catalog_path, open_catalog
 from piddiplatsch.catalog.base import BaseCatalog, BaseCatalogTransaction
 from piddiplatsch.catalog.models import CatalogEntry, KafkaCheckpoint
 from piddiplatsch.catalog.state import HarvestState
@@ -37,6 +38,7 @@ class CatalogHarvester:
         if backend != "sqlite":
             raise ValueError(f"Unsupported catalog backend: {backend!r}")
         self.directory = Path(directory)
+        self.backend = backend
         self.plugins = get_plugins("all")
         self._plugins_by_project = {
             project_id: plugin
@@ -55,7 +57,9 @@ class CatalogHarvester:
                 raise CatalogError("Pending clean references an unregistered project")
             for project in self._state.pending_clean:
                 # Do not create empty databases for projects never harvested.
-                if (self.directory / f"{project}.sqlite").exists():
+                if get_catalog_path(
+                    project, directory=self.directory, backend=self.backend
+                ).exists():
                     catalog = self._get_catalog(project)
                     catalog.reset()
                     catalog.compact()
@@ -88,10 +92,8 @@ class CatalogHarvester:
             # Plugin names become filenames; reject unsafe third-party names.
             if Path(project).name != project or project in {".", ".."}:
                 raise CatalogError(f"Unsafe catalog project name: {project!r}")
-            from piddiplatsch.catalog.sqlite import SQLiteCatalog
-
-            self._catalogs[project] = SQLiteCatalog(
-                project, self.directory / f"{project}.sqlite"
+            self._catalogs[project] = open_catalog(
+                project, directory=self.directory, backend=self.backend
             )
         return self._catalogs[project]
 
@@ -137,6 +139,9 @@ class CatalogHarvester:
         self, key: str, value: dict, source: KafkaSource
     ) -> ProcessingResult:
         payload = self._payload(value)
+        metadata = value.get("metadata") or {}
+        if not isinstance(metadata, dict):
+            raise ValueError("Publication metadata must be an object")
         project = self.plugin_name_for(value)
         if project is None:
             raise CatalogError("Publication project is missing or not registered")
@@ -182,7 +187,13 @@ class CatalogHarvester:
                 raise ValueError("STAC item requires a non-empty string 'id'")
             dataset_id, version_number = plugin.catalog_index(item_id)
             transaction.put_item(
-                CatalogEntry(collection_id, item, dataset_id, version_number)
+                CatalogEntry(
+                    collection_id,
+                    item,
+                    dataset_id,
+                    version_number,
+                    metadata.get("time"),
+                )
             )
             transaction.set_checkpoint(
                 KafkaCheckpoint(source.topic, source.partition, source.offset + 1)

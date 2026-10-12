@@ -5,43 +5,45 @@ from pathlib import Path
 
 import click
 
-from piddiplatsch.commands.base import FileBatchCommand
-from piddiplatsch.commands.helper import resolve_latest_dated_input, select_projects
+from piddiplatsch.commands.base import Command
+from piddiplatsch.commands.helper import select_projects
 from piddiplatsch.config import config
 from piddiplatsch.core.pipeline import configured_projects
 from piddiplatsch.core.registry import get_plugins
-from piddiplatsch.exceptions import JsonlReadError
+from piddiplatsch.exceptions import CatalogError, MaxErrorsExceededError
 from piddiplatsch.monitoring.stats import stats
-from piddiplatsch.runners.mapping import map_dump_files
+from piddiplatsch.runners.mapping import map_catalog
 
 
 @dataclass(kw_only=True)
-class MapCommand(FileBatchCommand):
-    """Map dumped messages through the selected project plugins."""
+class MapCommand(Command):
+    """Map complete cached STAC items through the selected project plugins."""
 
     projects: tuple[str, ...] = ()
     all_projects: bool = False
-    force: bool = False
+    directory: Path | None = None
+    limit: int | None = None
+    offset: int = 0
+    version_history: bool | None = None
     handle_profile: str | None = None
 
     def execute(self) -> None:
         progress = self.progress(title="map", stream=True)
         selection = select_projects(self.projects, self.all_projects)
-        paths = self._resolve_paths()
         try:
             self._start_monitoring(selection)
             with progress:
-                result = map_dump_files(
-                    paths,
+                result = map_catalog(
+                    directory=self.directory,
                     projects=selection,
                     limit=self.limit,
                     offset=self.offset,
-                    force=self.force,
+                    version_history=self.version_history,
                     verbose=self.verbose,
                     progress=progress,
                     handle_profile=self.handle_profile,
                 )
-        except (JsonlReadError, OSError, ValueError) as exc:
+        except (CatalogError, MaxErrorsExceededError, OSError, ValueError) as exc:
             stats.close(status="failed", error_summary=str(exc))
             raise click.ClickException(str(exc)) from exc
         except KeyboardInterrupt:
@@ -53,9 +55,9 @@ class MapCommand(FileBatchCommand):
 
         if result.total == 0:
             stats.close(status="completed")
-            click.echo("No dumped messages found.")
+            click.echo("No catalog items found.")
             return
-        click.echo(f"Mapped {result.succeeded}/{result.total} dumped messages.")
+        click.echo(f"Mapped {result.succeeded}/{result.total} catalog items.")
         if result.filtered:
             click.echo(f"Filtered by project selection: {result.filtered}")
         if result.skipped:
@@ -86,17 +88,4 @@ class MapCommand(FileBatchCommand):
             ),
             sample_interval_seconds=stats_config.get("sample_interval_seconds", 15),
             sample_retention_days=stats_config.get("sample_retention_days", 30),
-        )
-
-    def _resolve_paths(self) -> tuple[Path, ...]:
-        if not self.paths and self.input_date in (None, "last"):
-            self.validate_input()
-            return resolve_latest_dated_input(
-                relative_dir=Path("dump"),
-                filename_prefix="dump_messages_",
-                missing_label="raw dump",
-            )
-        return self.resolve_paths(
-            relative_path=lambda date: Path("dump") / f"dump_messages_{date}.jsonl",
-            missing_label="Raw dump",
         )

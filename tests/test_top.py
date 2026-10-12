@@ -154,18 +154,18 @@ def test_top_history_excludes_previous_stopped_run(tmp_path):
     assert result.output.count("cmip7") == 2
 
 
-@patch("piddiplatsch.commands.map.map_dump_files")
-def test_map_command_owns_monitoring_database(mock_map_dump_files, tmp_path):
+@patch("piddiplatsch.commands.map.map_catalog")
+def test_map_command_owns_monitoring_database(mock_map_catalog, tmp_path):
     source = tmp_path / "dump.jsonl"
     source.write_text("{}\n")
     db_path = tmp_path / "piddi.db"
     config._set("stats", "enable_db", True)
     config._set("stats", "db_path", str(db_path))
-    mock_map_dump_files.return_value = FeedResult(total=1, succeeded=1)
+    mock_map_catalog.return_value = FeedResult(total=1, succeeded=1)
 
     result = CliRunner().invoke(
         cli,
-        ["--log", str(tmp_path / "test.log"), "map", str(source), "--project", "cmip6"],
+        ["--log", str(tmp_path / "test.log"), "map", "--project", "cmip6"],
     )
 
     assert result.exit_code == 0
@@ -174,18 +174,18 @@ def test_map_command_owns_monitoring_database(mock_map_dump_files, tmp_path):
     assert status["runs"][0]["state"] == "completed"
 
 
-@patch("piddiplatsch.commands.map.map_dump_files")
-def test_map_failures_close_monitoring_run_as_failed(mock_map_dump_files, tmp_path):
+@patch("piddiplatsch.commands.map.map_catalog")
+def test_map_failures_close_monitoring_run_as_failed(mock_map_catalog, tmp_path):
     source = tmp_path / "dump.jsonl"
     source.write_text("{}\n")
     db_path = tmp_path / "piddi.db"
     config._set("stats", "enable_db", True)
     config._set("stats", "db_path", str(db_path))
-    mock_map_dump_files.return_value = FeedResult(total=2, succeeded=1, failed=1)
+    mock_map_catalog.return_value = FeedResult(total=2, succeeded=1, failed=1)
 
     result = CliRunner().invoke(
         cli,
-        ["--log", str(tmp_path / "test.log"), "map", str(source), "--project", "cmip6"],
+        ["--log", str(tmp_path / "test.log"), "map", "--project", "cmip6"],
     )
 
     assert result.exit_code == 1

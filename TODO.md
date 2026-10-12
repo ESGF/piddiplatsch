@@ -53,8 +53,9 @@ local predecessor lookup, but overwrite successive updates to the same item.
 - [x] Attach SQLite catalogs to `harvest`, retaining raw dumps and a `--no-catalog`
   compatibility mode. Use a separate Kafka group and batched synchronous broker
   acknowledgement after durable per-message catalog writes; stop on unresolved
-  events and persist decoded failure records with source coordinates. Test duplicate patch replay and failed
-  Kafka acknowledgement without reapplying catalog updates.
+  events and persist decoded failure records with source coordinates. Test
+  duplicate patch replay and failed Kafka acknowledgement without reapplying
+  catalog updates.
 - [ ] Store full publication items and apply PATCH events to their cached base
   items in source order. Persist the resulting complete item for later patches.
   Establish ordering assumptions when an item can appear in several partitions
@@ -78,15 +79,21 @@ local predecessor lookup, but overwrite successive updates to the same item.
 - [ ] Add project-scoped cache inspection/removal with safe database closure and
   cleanup of associated journal files. Report item counts, unresolved records,
   checkpoints, and disk usage.
-- [ ] Switch `map` input from raw event replay to complete cached items and stream
+- [x] Switch `map` input from raw event replay to complete cached items and stream
   them through the shared processing pipeline. Define project selection,
   iteration order, limits/offsets, and rerun behavior for latest-state mapping.
   Document migration of existing JSONL mapping/recovery workflows.
-- [ ] Replace remote patch fetching and STAC/Elasticsearch version lookup paths
-  with the integrated catalog. Keep predecessor linking optional during initial
-  filling, then allow remapping/reconciliation to populate missing links.
+- [x] Use read-only catalog snapshots and indexed predecessor queries in `map`;
+  reject patch envelopes instead of fetching or reapplying them. Keep predecessor
+  linking optional during initial filling, then remap to populate missing links.
   Select the nearest strictly older version within the same project, collection,
   and dataset; distinguish disabled lookup, no predecessor, and storage failure.
+- [x] Preserve publication event time in catalog entries. Migrate SQLite version 1
+  on writer open while allowing read-only version-1 mapping with STAC timestamp
+  fallbacks. Share item iteration and predecessor queries within each snapshot.
+- [ ] Retire legacy remote lookup helpers/configuration and decide how direct
+  `consume` and raw-event retry should integrate with the catalog; they retain
+  their existing remote PATCH handling for now.
 - [ ] Keep full STAC JSON losslessly, with compact serialization and benchmarked
   per-item compression. Index exact identities and dataset/version metadata so
   predecessor searches do not decompress or scan item payloads. Minimize redundant
@@ -116,8 +123,8 @@ Design target:
   record processing, counters, failure handling, and stop policies, without
   depending on Kafka or file readers.
 - The Kafka consumer owns polling and feeds records into the shared pipeline.
-- A dedicated mapping runner streams raw JSONL into that pipeline; `map` no
-  longer imports execution helpers from `consumer.py`.
+- A dedicated mapping runner streams catalog items into that pipeline; `map` does
+  not import execution helpers from `consumer.py`.
 - The retry runner streams recovery records into the same pipeline and retains
   retry-specific project routing, retry counts, and input-retention rules.
 - `jsonl_stream.py` remains the shared file-reading utility, and CLI command

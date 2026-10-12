@@ -1,23 +1,22 @@
-import json
+"""Catalog mapping stays lazy, deterministic, and closes bounded selections."""
+
 import tracemalloc
-from pathlib import Path
+from contextlib import closing
 
 import pytest
 
+from piddiplatsch.catalog import CatalogEntry
+from piddiplatsch.catalog.sqlite import SQLiteCatalog
 from piddiplatsch.core.pipeline import process_messages
-from piddiplatsch.exceptions import JsonlReadError, StopOnTransientSkipError
+from piddiplatsch.exceptions import StopOnTransientSkipError
 from piddiplatsch.result import ProcessingResult
-from piddiplatsch.runners.mapping import map_dump_files
+from piddiplatsch.runners.mapping import map_catalog
 
 
 class CountingProcessor:
     def __init__(self):
         self.count = 0
-        self.preflights = 0
         self.last_key = None
-
-    def preflight_check(self, **kwargs):
-        self.preflights += 1
 
     def process(self, key, value):
         self.count += 1
@@ -35,39 +34,45 @@ def processor(monkeypatch):
     return processor
 
 
+def seed(directory, project="cmip6", count=4, payload_size=0):
+    with SQLiteCatalog(project, directory / f"{project}.sqlite") as catalog:
+        with catalog.transaction() as transaction:
+            for index in range(count):
+                transaction.put_item(
+                    CatalogEntry(
+                        project.upper(),
+                        {
+                            "id": f"{project}.dataset.v{index:06}",
+                            "properties": {},
+                            "padding": "x" * payload_size,
+                        },
+                        f"{project}.dataset",
+                        index,
+                    )
+                )
+
+
 @pytest.mark.parametrize("stop", [False, True])
-def test_map_opens_once_and_processes_before_reading_more(
+def test_map_processes_before_reading_more_and_closes_early(
     tmp_path, monkeypatch, processor, stop
 ):
-    source = tmp_path / "raw.jsonl"
-    source.write_text("".join(json.dumps({"id": i}) + "\n" for i in range(4)))
-    original_open = Path.open
-    opened = []
+    seed(tmp_path)
+    iter_items = SQLiteCatalog.iter_items
+    close = SQLiteCatalog.close
     read_count = 0
+    closed = []
 
-    class WatchedStream:
-        def __init__(self, stream):
-            self.stream = stream
-
-        def __enter__(self):
-            return self
-
-        def __exit__(self, *args):
-            self.stream.close()
-
-        def __iter__(self):
-            nonlocal read_count
-            for i, line in enumerate(self.stream):
-                assert processor.count == i
+    def tracked_items(catalog, **kwargs):
+        nonlocal read_count
+        with closing(iter_items(catalog, **kwargs)) as items:
+            for index, entry in enumerate(items):
+                assert processor.count == index
                 read_count += 1
-                yield line
+                yield entry
 
-    def tracked_open(path, *args, **kwargs):
-        stream = original_open(path, *args, **kwargs)
-        if path == source:
-            opened.append(stream)
-            return WatchedStream(stream)
-        return stream
+    def tracked_close(catalog):
+        closed.append(catalog)
+        close(catalog)
 
     if stop:
 
@@ -78,69 +83,59 @@ def test_map_opens_once_and_processes_before_reading_more(
             )
 
         monkeypatch.setattr(processor, "process", skip)
-    monkeypatch.setattr(Path, "open", tracked_open)
+    monkeypatch.setattr(SQLiteCatalog, "iter_items", tracked_items)
+    monkeypatch.setattr(SQLiteCatalog, "close", tracked_close)
     if stop:
         with pytest.raises(StopOnTransientSkipError):
-            map_dump_files([source], projects=["cmip6"])
+            map_catalog(directory=tmp_path, projects=["cmip6"])
         assert read_count == 1
     else:
-        result = map_dump_files([source], projects=["cmip6"], limit=3)
+        result = map_catalog(directory=tmp_path, projects=["cmip6"], limit=3)
         assert result.total == result.succeeded == 3
         assert read_count == 3
-    assert processor.preflights == 1
-    assert len(opened) == 1
-    assert opened[0].closed
+    assert len(closed) == 1
+    assert closed[0]._connection is None
 
 
-def test_map_offset_across_files_and_limit_excludes_malformed_tail(tmp_path, processor):
-    first, second = tmp_path / "1.jsonl", tmp_path / "2.jsonl"
-    first.write_text('{"id": 0}\n{"id": 1}\n')
-    second.write_text('\n{"id": 2}\n\n{"id": 3}\nnot-json\n')
-    result = map_dump_files([second, first], projects=["cmip6"], offset=3, limit=1)
+def test_map_offset_and_limit_count_across_selected_projects(tmp_path, processor):
+    seed(tmp_path, "cmip6", count=2)
+    seed(tmp_path, "cmip7", count=2)
+    result = map_catalog(
+        directory=tmp_path, projects=["cmip6", "cmip7"], offset=3, limit=1
+    )
     assert result.total == result.succeeded == 1
-    assert processor.last_key == f"{second}:4"
-
-
-def test_map_stops_at_malformed_line_after_processing_valid_prefix(tmp_path, processor):
-    source = tmp_path / "raw.jsonl"
-    source.write_text('{"id": 1}\nnot-json\n{"id": 3}\n')
-    with pytest.raises(JsonlReadError, match="line 2"):
-        map_dump_files([source], projects=["cmip6"])
-    assert processor.count == 1
+    assert processor.last_key == "cmip7:CMIP7/cmip7.dataset.v000001"
 
 
 def test_empty_selection_skips_processor_setup(tmp_path, monkeypatch):
-    source = tmp_path / "raw.jsonl"
-    source.write_text('{"id": 1}\n')
+    seed(tmp_path, count=1)
 
     def unexpected_setup(**kwargs):
-        pytest.fail("Empty selection should not initialize the processor")
+        pytest.fail("Empty selection should not initialize processors")
 
     monkeypatch.setattr(
         "piddiplatsch.runners.mapping.build_processing_target", unexpected_setup
     )
-    assert map_dump_files([source], offset=1).total == 0
+    assert map_catalog(directory=tmp_path, projects=["cmip6"], offset=1).total == 0
 
 
-def test_direct_feed_accepts_unsized_iterators_and_counts_consumed_records(processor):
+def test_direct_feed_accepts_unsized_iterators(processor):
     def messages():
-        for i in range(5):
-            assert processor.count == i
-            yield str(i), {"id": i}
+        for index in range(5):
+            assert processor.count == index
+            yield str(index), {"id": index}
 
     result = process_messages(messages(), processor=processor)
     assert result.total == result.succeeded == 5
 
 
-def test_map_memory_does_not_scale_with_input_size(tmp_path, processor):
+def test_map_memory_does_not_scale_with_catalog_size(tmp_path, processor):
     def peak_for(count):
-        source = tmp_path / "raw.jsonl"
-        with source.open("w") as stream:
-            for i in range(count):
-                stream.write(json.dumps({"id": i, "payload": "x" * 8192}) + "\n")
+        directory = tmp_path / str(count)
+        seed(directory, count=count, payload_size=8192)
         tracemalloc.start()
         try:
-            result = map_dump_files([source], projects=["cmip6"])
+            result = map_catalog(directory=directory, projects=["cmip6"])
             peak = tracemalloc.get_traced_memory()[1]
         finally:
             tracemalloc.stop()

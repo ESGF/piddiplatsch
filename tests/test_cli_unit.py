@@ -240,172 +240,86 @@ class TestMapCommand:
     def test_map_help(self, runner):
         result = runner.invoke(cli, ["map", "--help"])
         assert result.exit_code == 0
+        assert "catalog" in result.output
         assert "Handle JSONL" in result.output
-        assert "--limit" in result.output
-        assert "--offset" in result.output
-        assert "--project" in result.output
-        assert "--date" in result.output
+        assert "--catalog-dir" in result.output
+        assert "--version-history" in result.output
+        assert "--date" not in result.output
+        assert "--force" not in result.output
 
-    @patch("piddiplatsch.commands.map.map_dump_files")
-    def test_map_calls_mapper(self, mock_map_dump_files, runner, tmp_path):
-        source = tmp_path / "dump.jsonl"
-        source.write_text("{}\n")
-        mock_map_dump_files.return_value = FeedResult(total=3, succeeded=1, filtered=2)
-
+    @patch("piddiplatsch.commands.map.map_catalog")
+    def test_map_calls_mapper(self, mapper, runner, tmp_path):
+        mapper.return_value = FeedResult(total=3, succeeded=3)
         result = runner.invoke(
             cli,
             [
                 "--silent",
                 "map",
-                str(source),
+                "--catalog-dir",
+                str(tmp_path),
                 "--project",
                 "cmip6",
                 "--limit",
                 "3",
                 "--offset",
                 "2",
-                "--force",
+                "--version-history",
                 "--handle-profile",
                 "dkrz-test",
             ],
         )
-
-        assert result.exit_code == 0
-        assert "Mapped 1/3" in result.output
-        assert "Filtered by project selection: 2" in result.output
-        kwargs = mock_map_dump_files.call_args.kwargs
+        assert result.exit_code == 0, result.output
+        assert "Mapped 3/3 catalog items" in result.output
+        kwargs = mapper.call_args.kwargs
         assert isinstance(kwargs.pop("progress"), NoOpProgress)
         assert kwargs == {
+            "directory": tmp_path,
             "projects": ("cmip6",),
             "limit": 3,
             "offset": 2,
-            "force": True,
+            "version_history": True,
             "verbose": False,
             "handle_profile": "dkrz-test",
         }
 
-    @patch("piddiplatsch.commands.map.map_dump_files")
-    def test_map_passes_global_verbose(self, mock_map_dump_files, runner, tmp_path):
-        source = tmp_path / "dump.jsonl"
-        source.write_text("{}\n")
-        mock_map_dump_files.return_value = FeedResult(total=1, succeeded=1)
+    @patch("piddiplatsch.commands.map.map_catalog")
+    def test_map_passes_global_verbose(self, mapper, runner):
+        mapper.return_value = FeedResult(total=1, succeeded=1)
+        result = runner.invoke(cli, ["--verbose", "map"])
+        assert result.exit_code == 0, result.output
+        assert mapper.call_args.kwargs["verbose"] is True
+        assert isinstance(mapper.call_args.kwargs["progress"], Progress)
+        assert mapper.call_args.kwargs["directory"] is None
 
-        result = runner.invoke(cli, ["--verbose", "map", str(source)])
-
-        assert result.exit_code == 0
-        assert mock_map_dump_files.call_args.kwargs["verbose"] is True
-        assert isinstance(mock_map_dump_files.call_args.kwargs["progress"], Progress)
-
-    @patch("piddiplatsch.commands.map.map_dump_files")
-    def test_map_resolves_date_from_output_dir(
-        self, mock_map_dump_files, runner, tmp_path
-    ):
-        output_dir = tmp_path / "outputs"
-        source = output_dir / "dump" / "dump_messages_2026-08-27.jsonl"
-        source.parent.mkdir(parents=True)
-        source.write_text("{}\n")
-        config._set("consumer", "output_dir", str(output_dir))
-        mock_map_dump_files.return_value = FeedResult(total=1, succeeded=1)
-
-        result = runner.invoke(
-            cli,
-            ["map", "--project", "cmip6", "--date", "2026-08-27"],
-        )
-
-        assert result.exit_code == 0
-        assert mock_map_dump_files.call_args.args[0] == (source,)
-        assert mock_map_dump_files.call_args.kwargs["projects"] == ("cmip6",)
-
+    @patch("piddiplatsch.commands.map.map_catalog")
     @pytest.mark.parametrize(
-        ("selector", "days_ago"),
-        (("today", 0), ("yesterday", 1), ("today-2", 2)),
+        "options", [["--date", "last"], ["--force"], ["dump.jsonl"]]
     )
-    @patch("piddiplatsch.commands.map.map_dump_files")
-    def test_map_resolves_relative_date(
-        self, mock_map_dump_files, runner, tmp_path, selector, days_ago
-    ):
-        output_dir = tmp_path / "outputs"
-        selected_date = date.today() - timedelta(days=days_ago)
-        source = (
-            output_dir / "dump" / f"dump_messages_{selected_date.isoformat()}.jsonl"
-        )
-        source.parent.mkdir(parents=True)
-        source.write_text("{}\n")
-        config._set("consumer", "output_dir", str(output_dir))
-        mock_map_dump_files.return_value = FeedResult(total=1, succeeded=1)
-
-        result = runner.invoke(cli, ["map", "--date", selector])
-
-        assert result.exit_code == 0
-        assert mock_map_dump_files.call_args.args[0] == (source,)
-
-    @pytest.mark.parametrize("date_args", ((), ("--date", "last")))
-    @patch("piddiplatsch.commands.map.map_dump_files")
-    def test_map_defaults_to_latest_dated_dump(
-        self, mock_map_dump_files, runner, tmp_path, date_args
-    ):
-        dump_dir = tmp_path / "outputs" / "dump"
-        dump_dir.mkdir(parents=True)
-        older = dump_dir / "dump_messages_2026-08-26.jsonl"
-        latest = dump_dir / "dump_messages_2026-08-28.jsonl"
-        malformed = dump_dir / "dump_messages_latest.jsonl"
-        for source in (older, latest, malformed):
-            source.write_text("{}\n")
-        config._set("consumer", "output_dir", str(tmp_path / "outputs"))
-        mock_map_dump_files.return_value = FeedResult(total=1, succeeded=1)
-
-        result = runner.invoke(cli, ["map", *date_args])
-
-        assert result.exit_code == 0
-        assert mock_map_dump_files.call_args.args[0] == (latest,)
-
-    @patch("piddiplatsch.commands.map.map_dump_files")
-    @pytest.mark.parametrize("selector", ("tomorrow", "20260827", "today--1"))
-    def test_map_rejects_invalid_relative_date(
-        self, mock_map_dump_files, runner, selector
-    ):
-        result = runner.invoke(cli, ["map", "--date", selector])
-
+    def test_map_rejects_raw_dump_arguments(self, mapper, runner, options):
+        result = runner.invoke(cli, ["map", *options])
         assert result.exit_code == 2
-        assert "YYYY-MM-DD, today, yesterday, today-N, or last" in result.output
-        mock_map_dump_files.assert_not_called()
+        mapper.assert_not_called()
 
-    @patch("piddiplatsch.commands.map.map_dump_files")
-    def test_map_last_requires_a_dated_dump(
-        self, mock_map_dump_files, runner, tmp_path
-    ):
-        config._set("consumer", "output_dir", str(tmp_path / "outputs"))
-
-        result = runner.invoke(cli, ["map"])
-
+    def test_map_requires_harvested_project(self, runner):
+        result = runner.invoke(cli, ["map", "--project", "cmip6"])
         assert result.exit_code == 1
-        assert "No dated raw dump files found" in result.output
-        mock_map_dump_files.assert_not_called()
+        assert "run harvest first" in result.output
 
-    @patch("piddiplatsch.commands.map.map_dump_files")
-    def test_map_rejects_path_and_date(self, mock_map_dump_files, runner, tmp_path):
-        source = tmp_path / "dump.jsonl"
-        source.touch()
-
-        result = runner.invoke(cli, ["map", str(source), "--date", "2026-08-27"])
-
+    @patch("piddiplatsch.commands.map.map_catalog")
+    def test_map_rejects_named_and_all_projects(self, mapper, runner):
+        result = runner.invoke(cli, ["map", "--project", "cmip6", "--all-projects"])
         assert result.exit_code == 2
         assert "cannot be combined" in result.output
-        mock_map_dump_files.assert_not_called()
+        mapper.assert_not_called()
 
-    @patch("piddiplatsch.commands.map.map_dump_files")
-    def test_map_rejects_named_and_all_projects(
-        self, mock_map_dump_files, runner, tmp_path
-    ):
-        source = tmp_path / "dump.jsonl"
-        source.write_text("{}\n")
-        result = runner.invoke(
-            cli,
-            ["map", str(source), "--project", "cmip6", "--all-projects"],
-        )
-        assert result.exit_code == 2
-        assert "cannot be combined" in result.output
-        mock_map_dump_files.assert_not_called()
+    @patch("piddiplatsch.commands.map.map_catalog")
+    def test_map_can_disable_version_history(self, mapper, runner):
+        mapper.return_value = FeedResult()
+        result = runner.invoke(cli, ["map", "--all-projects", "--no-version-history"])
+        assert result.exit_code == 0, result.output
+        assert mapper.call_args.kwargs["version_history"] is False
+        assert mapper.call_args.kwargs["projects"] == "all"
+        assert "No catalog items found" in result.output
 
 
 class TestRetryCommand:

@@ -31,8 +31,10 @@ is separated by input source:
   and atomic item/checkpoint writes through the shared catalog contracts.
   Broker acknowledgements batch explicit durable offsets by count/time and flush
   on shutdown or revocation, avoiding a network round trip for every record.
-- `runners/mapping.py` opens raw JSONL through `jsonl_stream.py`, applies the
-  selected offset and limit, and sends a lazy iterable to the pipeline.
+- `runners/mapping.py` opens read-only per-project catalog snapshots, applies the
+  selected item offset and limit, and sends complete items lazily to the pipeline.
+  Processors use the same snapshots for optional predecessor queries and do not
+  fetch or reapply patches. `catalog.api` owns backend and path selection.
 - `runners/retry.py` streams recovery records in bounded batches and owns
   persisted project routing, retry counts, and input-retention/deletion rules.
 - `core/pipeline.py` owns processor selection, record execution, counters,
@@ -41,7 +43,7 @@ is separated by input source:
   `process_messages` also manages progress created for a mapping or retry call.
   It does not import Kafka or file-input readers.
 - `runners/publish.py` publishes already prepared Handles independently of the
-  mapping pipeline, using the same `jsonl_stream.py` reader.
+  mapping pipeline, using the same `jsonl_stream.py` reader as retry.
 
 Input lifetimes belong to the runners: they close file/Kafka streams on limits,
 errors, or interruption. A caller that injects a progress display retains
@@ -82,7 +84,8 @@ publication records are not validated against a complete STAC schema. Core
 checks only the envelope and the object/field shapes consumed by mapping;
 Pydantic validates the Handle records produced by each plugin. Thin plugin
 classes declare project PID fields and retain genuine differences, such as
-CMIP6 version lookup.
+version index metadata. Predecessor lookup during catalog mapping is shared by
+all built-in project processors and uses the local catalog index.
 
 Canonical PID fields currently are `cmip6:pid` / `cmip6:tracking_id` and
 `cmip7:pid` / `cmip7:tracking_id`, plus `cordex-cmip6:pid` /
@@ -101,7 +104,8 @@ different mapping selection can be applied later. Unknown or malformed events
 stop catalog harvesting and remain unacknowledged; `--no-catalog` keeps the previous
 raw-only behavior. Harvest uses plugin metadata without constructing processors.
 
-Only selected plugins are constructed and preflighted.
+Only selected plugins are constructed. Catalog mapping skips remote preflight;
+direct consumption retains its existing preflight behavior.
 
 ## Output and dump scope
 

@@ -227,6 +227,7 @@ class CatalogConfig(BaseModel):
     directory: str | None = Field(default=None, min_length=1)
     kafka_commit_batch_size: int = Field(default=100, ge=1, strict=True)
     kafka_commit_interval_seconds: float = Field(default=1.0, gt=0)
+    version_history: bool = Field(default=False, strict=True)
 
 
 class SchemaConfig(BaseModel):

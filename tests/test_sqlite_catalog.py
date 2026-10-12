@@ -1,6 +1,8 @@
 """Persistence, transaction recovery, and indexed reads for SQLite catalogs."""
 
+import json
 import sqlite3
+import zlib
 from contextlib import closing
 
 import pytest
@@ -369,3 +371,79 @@ def test_compaction_rejects_active_transaction_and_iterator(catalog):
         with pytest.raises(CatalogError, match="active"):
             catalog.compact()
     catalog.compact()
+
+
+def test_read_only_open_does_not_create_missing_database(tmp_path):
+    path = tmp_path / "missing/cmip6.sqlite"
+    with pytest.raises(CatalogError):
+        SQLiteCatalog("cmip6", path, read_only=True)
+    assert not path.parent.exists()
+
+
+def test_read_only_snapshot_is_shared_by_stream_and_predecessor_queries(tmp_path):
+    path = tmp_path / "cmip6.sqlite"
+    with SQLiteCatalog("cmip6", path) as writer:
+        with writer.transaction() as transaction:
+            transaction.put_item(entry(1))
+            transaction.put_item(entry(3))
+        with SQLiteCatalog("cmip6", path, read_only=True) as reader:
+            with writer.transaction() as transaction:
+                transaction.put_item(entry(2))
+            assert [value.version_number for value in reader.iter_items()] == [1, 3]
+            assert (
+                reader.find_previous_version("CMIP6", "dataset", 3) == entry(1).item_id
+            )
+            with pytest.raises(CatalogError, match="read-only"), reader.transaction():
+                pass
+            with pytest.raises(CatalogError, match="read-only"):
+                reader.reset()
+            with pytest.raises(CatalogError, match="read-only"):
+                reader.compact()
+        with SQLiteCatalog("cmip6", path, read_only=True) as reader:
+            assert (
+                reader.find_previous_version("CMIP6", "dataset", 3) == entry(2).item_id
+            )
+
+
+def test_version_one_catalog_remains_readable_and_migrates_on_writer_open(tmp_path):
+    path = tmp_path / "cmip6.sqlite"
+    original = entry(1)
+    with sqlite3.connect(path) as connection:
+        connection.execute(
+            "CREATE TABLE catalog_metadata (singleton INTEGER PRIMARY KEY, project TEXT, schema_version INTEGER)"
+        )
+        connection.execute("INSERT INTO catalog_metadata VALUES (1, 'cmip6', 1)")
+        connection.execute(
+            "CREATE TABLE items (collection_id TEXT, item_id TEXT, dataset_id TEXT, "
+            "version_number INTEGER, payload BLOB, PRIMARY KEY (collection_id, item_id))"
+        )
+        connection.execute(
+            "INSERT INTO items VALUES (?, ?, ?, ?, ?)",
+            (
+                original.collection_id,
+                original.item_id,
+                original.dataset_id,
+                original.version_number,
+                zlib.compress(json.dumps(original.item).encode()),
+            ),
+        )
+        connection.execute(
+            "CREATE TABLE checkpoints (topic TEXT, partition INTEGER, next_offset INTEGER, PRIMARY KEY (topic, partition))"
+        )
+        connection.execute("INSERT INTO checkpoints VALUES ('topic', 0, 42)")
+    original_bytes = path.read_bytes()
+    with SQLiteCatalog("cmip6", path, read_only=True) as reader:
+        assert reader.get_item("CMIP6", original.item_id) == original
+        assert list(reader.iter_items()) == [original]
+        assert reader.get_checkpoint("topic", 0).next_offset == 42
+    assert path.read_bytes() == original_bytes
+    with SQLiteCatalog("cmip6", path) as writer:
+        assert writer.get_item("CMIP6", original.item_id) == original
+        assert writer.get_checkpoint("topic", 0).next_offset == 42
+        updated = CatalogEntry(
+            "CMIP6", original.item, "dataset", 1, "2026-10-12T10:15:00Z"
+        )
+        with writer.transaction() as transaction:
+            transaction.put_item(updated)
+    with SQLiteCatalog("cmip6", path, read_only=True) as reader:
+        assert reader.get_item("CMIP6", original.item_id) == updated

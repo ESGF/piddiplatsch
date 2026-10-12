@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import logging
 from functools import cached_property
 from typing import Any
 
@@ -10,8 +9,6 @@ from piddiplatsch.core.project_records import (
     ProjectFileRecord,
     extract_project_asset_records,
 )
-from piddiplatsch.exceptions import LookupError
-from piddiplatsch.lookup.api import get_lookup
 from piddiplatsch.plugins.cmip6.model import CMIP6DatasetModel, CMIP6FileModel
 from piddiplatsch.utils.stac import split_cmip6_id
 
@@ -31,34 +28,9 @@ class CMIP6DatasetRecord(ProjectDatasetRecord, BaseCMIP6Record):
     dataset_model = CMIP6DatasetModel
     file_record = CMIP6FileRecord
 
-    def __init__(
-        self,
-        item: dict[str, Any],
-        exclude_keys: list[str] | None = None,
-        additional_attributes: dict[str, Any] | None = None,
-        handle_profile: str | None = None,
-    ) -> None:
-        super().__init__(item, exclude_keys, additional_attributes, handle_profile)
-        self.lookup = get_lookup(self.plugin_name)
-
     @cached_property
     def dataset_properties(self):
         return split_cmip6_id(self.item_id)
-
-    @cached_property
-    def previous_version(self) -> str | None:
-        try:
-            item_ids = self.lookup.find_versions(self.item_id)
-        except LookupError as exc:
-            logging.error("Failed to fetch versions for %s: %s", self.dataset_id, exc)
-            raise
-        if not item_ids:
-            return None
-        current_version = self.dataset_properties.version_number
-        for item_id in item_ids:
-            if split_cmip6_id(item_id).version_number < current_version:
-                return item_id
-        return None
 
 
 def extract_asset_records(

@@ -34,6 +34,8 @@ def build_processing_target(
     publish: bool = False,
     handle_profile: str | None = None,
     handle_output_filename: str | None = None,
+    catalogs=None,
+    version_history: bool = False,
 ):
     """Build a project router or use an explicitly supplied processing object."""
     if processor is not None and projects is not None:
@@ -50,6 +52,8 @@ def build_processing_target(
         publish=publish,
         handle_profile=handle_profile,
         processor_kwargs={"handle_output_filename": handle_output_filename},
+        catalogs=catalogs,
+        version_history=version_history,
     )
 
 
@@ -225,6 +229,7 @@ def process_messages(
     progress: BaseProgress | None = None,
     handle_profile: str | None = None,
     handle_output_filename: str | None = None,
+    max_errors: int = -1,
 ) -> FeedResult:
     target = build_processing_target(
         processor=processor,
@@ -241,6 +246,7 @@ def process_messages(
         force=force,
         verbose=verbose,
         progress=progress,
+        max_errors=max_errors,
     )
 
     try:

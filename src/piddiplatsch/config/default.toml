@@ -10,7 +10,7 @@
 # - schema: validation strictness
 # - logging: log level and destination
 # - plugins.*: project-specific mapping options
-# - lookup: choose STAC or ES backend
+# - lookup: legacy remote lookup helper settings (unused by map)
 # - catalog: local project catalogs maintained by harvest
 # - stats: logging/SQLite reporter settings
 #
@@ -38,6 +38,9 @@ backend = "sqlite"
 # per-message commits (slower on remote brokers).
 kafka_commit_batch_size = 100
 kafka_commit_interval_seconds = 1.0
+# Link each dataset version to its nearest strictly older catalog item in map.
+# Keep disabled during initial filling; override with map --version-history.
+version_history = false
 # Default directory: <consumer.output_dir>/catalog. Override if needed:
 # directory = "/var/lib/piddi/catalog"
 
@@ -115,8 +118,7 @@ password = "testpass"
 # [plugins.<name>.stac] when their collection is hosted elsewhere.
 base_url = "https://discovery.east.esgf.io"
 timeout = 10  # seconds
-# Fallback for callers that do not select a project. Project defaults below
-# override this value for project-aware STAC version lookups.
+# Legacy remote client collection. Catalog mapping uses stored collections.
 collection = "cmip6"
 
 [elasticsearch]

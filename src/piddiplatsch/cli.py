@@ -204,15 +204,11 @@ def harvest(
 
 
 @cli.command("map")
-@click.argument(
-    "path", type=click.Path(exists=True, path_type=Path), nargs=-1, required=False
-)
 @click.option(
-    "--date",
-    "input_date",
-    metavar="DATE",
-    callback=_parse_date_selector,
-    help=f"Select a dated raw dump ({DATE_FORMATS}; default: last).",
+    "--catalog-dir",
+    "directory",
+    type=click.Path(file_okay=False, path_type=Path),
+    help="Read project catalogs from this directory (overrides [catalog].directory).",
 )
 @click.option(
     "--project",
@@ -232,42 +228,40 @@ def harvest(
 @click.option(
     "--limit",
     type=click.IntRange(min=1),
-    help="Stop after mapping this many dumped messages in total.",
+    help="Stop after mapping this many catalog items in total.",
 )
 @click.option(
     "--offset",
     type=click.IntRange(min=0),
     default=0,
     show_default=True,
-    help="Skip this many dumped messages before mapping.",
+    help="Skip this many catalog items before mapping.",
 )
 @click.option(
-    "--force",
-    is_flag=True,
-    help="Continue on transient external failures (e.g., STAC down).",
+    "--version-history/--no-version-history",
+    default=None,
+    help="Link to the nearest older catalog version (default: [catalog].version_history).",
 )
 @click.pass_context
 def map_messages(
     ctx: click.Context,
-    path: tuple[Path, ...],
-    input_date: datetime | str | None,
+    directory: Path | None,
     projects: tuple[str, ...],
     all_projects: bool,
     limit: int | None,
     offset: int,
-    force: bool,
+    version_history: bool | None,
     handle_profile: str | None,
 ) -> None:
-    """Map raw message JSONL through plugins into Handle JSONL."""
+    """Map complete local catalog items through plugins into Handle JSONL."""
     commands.MapCommand(
         verbose=ctx.obj["verbose"],
-        paths=path,
-        input_date=input_date,
+        directory=directory,
         projects=projects,
         all_projects=all_projects,
         limit=limit,
         offset=offset,
-        force=force,
+        version_history=version_history,
         handle_profile=handle_profile,
     ).execute()
 

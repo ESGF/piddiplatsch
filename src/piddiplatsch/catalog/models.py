@@ -18,6 +18,7 @@ class CatalogEntry:
     item: dict[str, Any]
     dataset_id: str
     version_number: int
+    publication_time: str | None = None
 
     def __post_init__(self) -> None:
         if not isinstance(self.collection_id, str) or not self.collection_id:
@@ -32,6 +33,10 @@ class CatalogEntry:
             raise ValueError("dataset_id must be a non-empty string")
         if type(self.version_number) is not int or self.version_number < 0:
             raise ValueError("version_number must be a non-negative integer")
+        if self.publication_time is not None and not isinstance(
+            self.publication_time, str
+        ):
+            raise ValueError("publication_time must be a string or None")
 
     @property
     def item_id(self) -> str:

@@ -100,6 +100,19 @@ class ConfigExplainCommand(Command):
             show(f"STAC {key}", stac.get(key), source)
         for key in ("enabled", "backend"):
             show(f"Lookup {key}", config.get("lookup", key), f"lookup.{key}")
+        for key in ("backend", "version_history"):
+            show(f"Catalog {key}", config.get("catalog", key), f"catalog.{key}")
+        catalog_directory = config.get("catalog", "directory")
+        directory_source = (
+            "catalog.directory" if catalog_directory else "consumer.output_dir"
+        )
+        catalog_directory = catalog_directory or str(
+            Path(config.get("consumer", "output_dir", "outputs")) / "catalog"
+        )
+        show("Catalog directory", catalog_directory, directory_source)
+        click.echo(
+            "Map uses local catalogs; legacy [lookup] settings do not control map."
+        )
         self._explain_paths(show)
         click.echo(
             "Publication: consume writes JSONL; --publish enables immediate delivery."
