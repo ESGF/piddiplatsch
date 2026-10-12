@@ -147,16 +147,20 @@ def test_lookup_stac_requires_base_url():
     ), f"Missing base_url error not found in: {errors}"
 
 
-def test_lookup_es_requires_base_url():
+@pytest.mark.parametrize("backend", ["es", "elasticsearch"])
+def test_removed_elasticsearch_lookup_backend_is_rejected(backend):
     cfg = _base_config()
     cfg["kafka"] = {"bootstrap.servers": "localhost:39092"}
-    cfg["lookup"] = {"enabled": True, "backend": "es"}
-    # omit [elasticsearch].base_url
+    cfg["lookup"] = {"enabled": True, "backend": backend}
+    cfg["elasticsearch"] = {
+        "base_url": "https://old-index.example.test",
+        "index": "handles",
+    }
     errors, _ = validate_config(cfg)
-    assert errors, "Expected error for missing [elasticsearch].base_url"
-    assert any(
-        "[elasticsearch].base_url" in e for e in errors
-    ), f"Missing base_url error not found in: {errors}"
+    assert any("lookup.backend" in error for error in errors)
+    config._set("lookup", None, cfg["lookup"])
+    with pytest.raises(ValueError, match="Unknown lookup backend"):
+        get_lookup()
 
 
 def test_projects_must_not_be_empty_or_duplicated():

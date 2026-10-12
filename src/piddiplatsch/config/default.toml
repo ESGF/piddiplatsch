@@ -6,7 +6,6 @@
 # - kafka: Kafka client settings (librdkafka options supported)
 # - handles: named Handle server profiles (use overrides for secrets)
 # - stac: STAC client and collection
-# - elasticsearch: ES endpoint and index (if using ES lookups)
 # - schema: validation strictness
 # - logging: log level and destination
 # - plugins.*: project-specific mapping options
@@ -121,12 +120,6 @@ timeout = 10  # seconds
 # Legacy remote client collection. Catalog mapping uses stored collections.
 collection = "cmip6"
 
-[elasticsearch]
-# Elasticsearch endpoint (used when lookup.backend = "es").
-base_url = "http://elastic-hippo.cloud.dkrz.de:9200"
-# Target index for lookups/writes (backend-specific usage).
-index = "handle_21t14995"
-
 [schema]
 # Enforce strict schema validation; set false to be permissive.
 strict_mode = true
@@ -183,7 +176,8 @@ excluded_asset_keys = ["reference_file", "globus", "thumbnail", "quicklook"]
 collection = "CMIP6Plus"
 
 [lookup]
-# Lookup backend: "stac" (requires stac.base_url) or "es" (requires elasticsearch.base_url).
+# Legacy remote version lookup helper; only "stac" is supported.
+# Catalog version linking uses [catalog].version_history instead.
 backend = "stac"
 enabled = false
 

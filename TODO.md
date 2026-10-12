@@ -105,6 +105,8 @@ local predecessor lookup, but overwrite successive updates to the same item.
 - [ ] Add an explicit harvest force option with diagnosed skip/checkpoint semantics
   for unresolved events; default harvest remains fail-fast.
 - [ ] Add a configurable publication failure limit aligned with mapping.
+- [x] Remove the manual Elasticsearch version lookup, its dependency, and defaults.
+  Catalog indexes provide predecessor links; remote STAC recovery remains available.
 - [ ] Retire legacy remote lookup helpers/configuration and decide how direct
   `consume` should integrate with the catalog; it retains
   its existing remote PATCH handling for now.

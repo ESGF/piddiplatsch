@@ -206,16 +206,10 @@ class StacConfig(BaseModel):
     collection: str | None = None
 
 
-class ElasticsearchConfig(BaseModel):
-    model_config = ConfigDict(extra="allow")
-    base_url: str | None = None
-    index: str | None = None
-
-
 class LookupConfig(BaseModel):
     model_config = ConfigDict(extra="allow")
 
-    backend: Literal["stac", "es"] | None = None
+    backend: Literal["stac"] | None = None
     enabled: bool = False
 
 
@@ -275,7 +269,6 @@ class AppConfig(BaseModel):
     handle: HandleConfig | None = None
     handles: HandlesConfig | None = None
     stac: StacConfig | None = None
-    elasticsearch: ElasticsearchConfig | None = None
     lookup: LookupConfig | None = None
     catalog: CatalogConfig | None = None
     schema_config: SchemaConfig | None = Field(None, alias="schema")
@@ -289,11 +282,6 @@ class AppConfig(BaseModel):
             if self.lookup.backend == "stac":
                 if not (self.stac and self.stac.base_url):
                     raise ValueError("Missing required setting: [stac].base_url")
-            elif self.lookup.backend == "es":
-                if not (self.elasticsearch and self.elasticsearch.base_url):
-                    raise ValueError(
-                        "Missing required setting: [elasticsearch].base_url"
-                    )
         return self
 
     @model_validator(mode="after")
@@ -376,12 +364,6 @@ def validate_config(data: dict) -> tuple[list[str], list[str]]:
             warnings.append(
                 f"Handle profile {name!r} uses demo credentials; do not use in production"
             )
-    if cfg.lookup and cfg.lookup.enabled and cfg.lookup.backend == "es":
-        if cfg.elasticsearch and not (cfg.elasticsearch.index):
-            warnings.append(
-                "[elasticsearch].index is not set; some features may be unavailable"
-            )
-
     warnings.extend(
         f"[plugins.{plugin.name}].landing_page_url not set; landing pages may be missing"
         for plugin in selected

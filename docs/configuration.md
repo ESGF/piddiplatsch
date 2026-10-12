@@ -229,6 +229,11 @@ recovery and persistent per-item remote refresh. This is independent of the lega
 `[lookup].enabled` setting; an absent endpoint stops recovery instead of creating
 a placeholder. Its predecessor queries are controlled by `[catalog].version_history`.
 
+Elasticsearch version lookup has been removed. Remove the old `[elasticsearch]`
+section and any `[lookup].backend = "es"` setting from site configuration.
+Dataset predecessor links use `[catalog].version_history`. Remote harvest recovery
+continues to use the project STAC endpoint.
+
 ## Local catalog
 
 ```toml
@@ -310,7 +315,6 @@ The CLI `--force` option remains separate and controls transient failure handlin
 | `catalog` | `version_history` | Optional local predecessor linking during map; disabled by default. |
 | `catalog` | `kafka_commit_batch_size`, `kafka_commit_interval_seconds` | Broker acknowledgement batching after durable local writes. |
 | `lookup` | `enabled`, `backend` | Legacy compatibility lookup helpers; unused by catalog mapping. |
-| `elasticsearch` | `base_url`, `index` | Legacy Elasticsearch lookup helper settings; unused by catalog mapping. |
 | `stats` | `interval_seconds`, `summary_interval` | Statistics reporting intervals. |
 | `stats` | `enable_db`, `db_path`, heartbeat/sample/history intervals | Local SQLite state and history for `piddi consume` and `piddi map`. |
 
