@@ -70,8 +70,10 @@ Conda environment: Quarto and Node/npm, then DeckTape and its Puppeteer browser.
 `make -C talks slides-pdf`; the Pages workflow publishes the HTML deck only.
 Like Woodpecker, CI installs Node 22 and DeckTape 3.16.1 and uses its
 `chrome-headless-shell` for Quarto's Mermaid rendering. It checks the browser
-executable before building; the build step has a five-minute timeout so a
-rendering stall is reported separately from dependency installation.
+version and actual headless startup before building. The build logs Quarto
+debug output and limits each attempt to two minutes, with one retry after a
+timeout to recover from intermittent Mermaid browser stalls. Other build
+errors fail immediately. The overall build step retains its five-minute limit.
 
 ## GitHub Pages
 
