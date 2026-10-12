@@ -61,8 +61,8 @@ local predecessor lookup, but overwrite successive updates to the same item.
   Establish ordering assumptions when an item can appear in several partitions
   or topics; do not assume Kafka provides global ordering.
 - [ ] Record unknown projects, malformed records, and patches without base items
-  as unresolved, with source coordinates and a reason; provide retry/recovery
-  without silently dropping records or storing fabricated base items.
+  as unresolved, with source coordinates and a reason; resume normal harvest
+  after repair without silently dropping records or fabricating base items.
 - [ ] Persist per-project Kafka topic/partition checkpoints atomically with
   catalog changes. Skip already processed messages, not existing item IDs:
   existing items must still accept new patches and replacement publications.
@@ -91,9 +91,20 @@ local predecessor lookup, but overwrite successive updates to the same item.
 - [x] Preserve publication event time in catalog entries. Migrate SQLite version 1
   on writer open while allowing read-only version-1 mapping with STAC timestamp
   fallbacks. Share item iteration and predecessor queries within each snapshot.
+- [x] Align map/publish date, inclusive range, offset, and limit options, including
+  `today-N`, `last`, and `all`, with a common `last` CLI default. Index UTC catalog
+  event days and route map output to matching daily Handle files. Upgrade existing
+  catalogs during harvest startup without changing compressed payloads.
+- [x] Remove the retry CLI; persist failed STAC records with diagnostic metadata
+  for inspection and recover by repeating normal commands. Apply configured
+  mapping failure limits.
+- [ ] Remove retained legacy retry library helpers after compatibility review.
+- [ ] Add an explicit harvest force option with diagnosed skip/checkpoint semantics
+  for unresolved events; default harvest remains fail-fast.
+- [ ] Add a configurable publication failure limit aligned with mapping.
 - [ ] Retire legacy remote lookup helpers/configuration and decide how direct
-  `consume` and raw-event retry should integrate with the catalog; they retain
-  their existing remote PATCH handling for now.
+  `consume` should integrate with the catalog; it retains
+  its existing remote PATCH handling for now.
 - [ ] Keep full STAC JSON losslessly, with compact serialization and benchmarked
   per-item compression. Index exact identities and dataset/version metadata so
   predecessor searches do not decompress or scan item payloads. Minimize redundant
@@ -114,7 +125,7 @@ evaluate optional Parquet import/export separately if measurements justify it.
 
 - [x] Refactor shared processing out of `consumer.py` in a separate PR from the
   JSONL streaming fixes. Shared execution now lives in `core/pipeline.py`, with
-  dedicated mapping and retry runners under `runners/`. `DirectConsumer` has
+  a dedicated mapping runner under `runners/`. `DirectConsumer` has
   been removed; the pipeline accepts iterables directly.
 
 Design target:
@@ -125,15 +136,15 @@ Design target:
 - The Kafka consumer owns polling and feeds records into the shared pipeline.
 - A dedicated mapping runner streams catalog items into that pipeline; `map` does
   not import execution helpers from `consumer.py`.
-- The retry runner streams recovery records into the same pipeline and retains
-  retry-specific project routing, retry counts, and input-retention rules.
+- Recovery repeats normal mapping/publication selections; failure files are
+  inspection artifacts. Legacy retry helpers await removal.
 - `jsonl_stream.py` remains the shared file-reading utility, and CLI command
   classes remain thin wrappers around their runners.
 - Remove `DirectConsumer` if accepting iterables directly makes it redundant.
 
 Keep this refactor behaviour-preserving: retain bounded memory, source order,
 offsets and limits, project routing, output formats, progress and counters,
-error/stop policies, file cleanup, and retry deletion safeguards. Use the
+error/stop policies and file cleanup. Use the
 existing unit, integration, and streaming regression tests as the baseline;
 add focused tests for the extracted boundaries where needed.
 

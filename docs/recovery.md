@@ -1,46 +1,45 @@
-# Recovery & retry
+# Recovery
 
-Piddiplatsch persists problematic records for later inspection or retry.
+Failure files are inspection artifacts. There is no `retry` command, and normal
+commands never consume failure or skipped records as inputs.
 
-Failure records are written to:
+Decoded failures include the source STAC record, error description, and available
+project/source coordinates. They retain the historical directory layout:
 
-```
-outputs/<project>/failures/r<N>/failed_items_<date>.jsonl
-```
-
-Skipped (transient) records are written to:
-
-```
+```text
+outputs/<project>/failures/r0/failed_items_<date>.jsonl
 outputs/<project>/skipped/skipped_items_<date>.jsonl
 ```
 
-Each record stores the canonical project in `__infos__.project`. Events whose
-project cannot be resolved remain in the legacy global `failures/` or
-`skipped/` directory.
+Unresolved projects use the global `failures/` or `skipped/` directories. Original
+Kafka messages remain in `outputs/dump/dump_messages_<date>.jsonl`.
 
-Dumped messages are written to:
+Catalog harvest stops immediately on an unresolved event without acknowledging it.
+Fix the cause and repeat `harvest`; checkpoints prevent previously stored patches
+from being reapplied. To rebuild a catalog, use `--clean-project NAME` or
+`--clean-catalog`, provided Kafka still retains the necessary original publications.
+There is currently no harvest option to skip an unresolved event.
 
-```
-outputs/dump/dump_messages_<date>.jsonl
-```
-
-Retry previously persisted items:
-
-```bash
-piddi retry <path...> [--delete-after] [-v]
-```
-
-Retry remaps without contacting the Handle Service and writes a distinct batch
-to `outputs/<project>/handles/retry_handles_<timestamp>.jsonl`. The command
-prints every created path; publish only the recovered batch when it is ready:
+Mapping stops at the configured `consumer.max_errors` threshold. Fix the problem
+and repeat the normal command using its catalog selection:
 
 ```bash
-piddi publish --project cmip6 outputs/cmip6/handles/retry_handles_<timestamp>.jsonl
+piddi map --project cmip6 --date today-1
+# Or select an inclusive window and a bounded portion of catalog items
+piddi map --project cmip6 --from 2026-10-08 --to today-1 --offset 1000 --limit 1000
 ```
 
-Use `retry --publish` only when immediate publication is intentional.
+Map and publish share date selectors and default to `last`; use `--date all` for
+full filling. Mapping appends Handles to files named for each item's UTC event day.
+An item's assets produce several Handle records, so publication offsets count a
+different unit from mapping offsets. Inspect prepared files before publication:
 
-Implementation details:
-- Retry logic: [src/piddiplatsch/runners/retry.py](https://github.com/ESGF/piddiplatsch/blob/main/src/piddiplatsch/runners/retry.py)
-- Recorders: `src/piddiplatsch/persist/`
+```bash
+piddi publish --project cmip6 --date today-1
+piddi publish --project cmip6 --from 2026-10-08 --to today-1
+```
 
+Publication keeps its inputs and writes per-record receipts. Repeating a completed
+input uses Handle overwrite semantics. `publish --retries` remains available for
+transient HTTP failures within a run; it is independent of diagnostic files.
+See [Operations](operations.md) for selection, ordering, and receipt details.

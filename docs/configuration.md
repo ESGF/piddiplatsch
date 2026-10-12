@@ -117,7 +117,7 @@ written as `-`.
 Each named profile inherits `[handles.defaults]` and overrides those values
 with its own table. All projects inherit `[handles].default`. A project may select another named
 profile with `plugins.<name>.handle`, and `--handle-profile NAME` temporarily
-overrides both settings for `consume`, `map`, `publish`, or `retry`. Existing
+overrides both settings for `consume`, `map`, or `publish`. Existing
 Handle files retain their mapped prefix, so publication still rejects an
 override whose prefix does not match the records.
 
@@ -222,7 +222,7 @@ collection = "CMIP7"
 
 Project settings inherit unspecified values from `[stac]`. A project-specific
 `base_url` or `timeout` can therefore be added later if that collection moves to
-another service. Legacy direct consumption/retry PATCH events use their own
+another service. Legacy direct consumption PATCH events use their own
 `collection_id`. Catalog mapping uses stored collections and does not contact
 this endpoint. Its predecessor queries are controlled by `[catalog].version_history`.
 

@@ -5,13 +5,14 @@ import sqlite3
 import zlib
 from collections.abc import Iterator
 from contextlib import contextmanager
+from datetime import date
 from pathlib import Path
 
 from piddiplatsch.catalog.base import BaseCatalog, BaseCatalogTransaction
 from piddiplatsch.catalog.models import CatalogEntry, KafkaCheckpoint
 from piddiplatsch.exceptions import CatalogError
 
-_SCHEMA_VERSION = 2
+_SCHEMA_VERSION = 3
 
 
 def _decode_entry(row: tuple) -> CatalogEntry:
@@ -30,8 +31,10 @@ class SQLiteCatalog(BaseCatalog):
 
     Payloads use compact UTF-8 JSON compressed independently with zlib level 3,
     available in the standard library. Identity/version indexes remain outside
-    the payload. Version 2 adds publication time, migrating version 1 on write-open.
-    Read-only opens support both versions without migrating or creating files.
+    the payload. Version 2 adds publication time; version 3 indexes UTC event days.
+    Writer opens migrate older schemas and backfill dates once with bounded memory.
+    Read-only opens support all versions without migrating or creating files;
+    date selections require version 3.
 
     One instance belongs to one thread. WAL permits separate instances/processes
     to read while a writer holds a transaction; writers serialize with a bounded
@@ -91,7 +94,7 @@ class SQLiteCatalog(BaseCatalog):
         if (
             metadata is None
             or metadata[0] != self.project
-            or metadata[1] not in (1, _SCHEMA_VERSION)
+            or metadata[1] not in (1, 2, _SCHEMA_VERSION)
         ):
             raise CatalogError(
                 "Catalog project or schema version does not match: "
@@ -121,14 +124,20 @@ class SQLiteCatalog(BaseCatalog):
                 "CREATE TABLE IF NOT EXISTS items ("
                 "collection_id TEXT NOT NULL, item_id TEXT NOT NULL, "
                 "dataset_id TEXT NOT NULL, version_number INTEGER NOT NULL, "
-                "payload BLOB NOT NULL, publication_time TEXT, PRIMARY KEY (collection_id, item_id))"
+                "payload BLOB NOT NULL, publication_time TEXT, event_date TEXT, PRIMARY KEY (collection_id, item_id))"
             )
             if metadata is not None and metadata[1] == 1:
                 connection.execute("ALTER TABLE items ADD COLUMN publication_time TEXT")
+            if metadata is not None and metadata[1] < 3:
+                connection.execute("ALTER TABLE items ADD COLUMN event_date TEXT")
+                self._backfill_event_dates(connection)
                 connection.execute(
                     "UPDATE catalog_metadata SET schema_version = ? WHERE singleton = 1",
                     (_SCHEMA_VERSION,),
                 )
+            connection.execute(
+                "CREATE INDEX IF NOT EXISTS items_event_dates ON items (event_date, collection_id, item_id)"
+            )
             connection.execute(
                 "CREATE INDEX IF NOT EXISTS items_versions "
                 "ON items (collection_id, dataset_id, version_number, item_id)"
@@ -143,6 +152,41 @@ class SQLiteCatalog(BaseCatalog):
         except BaseException:
             connection.execute("ROLLBACK")
             raise
+
+    @staticmethod
+    def _backfill_event_dates(connection: sqlite3.Connection) -> None:
+        cursor = connection.execute(
+            "SELECT collection_id, dataset_id, version_number, payload, publication_time, item_id FROM items"
+        )
+        try:
+            while rows := cursor.fetchmany(256):
+                updates = []
+                for row in rows:
+                    day = _decode_entry(row[:5]).event_date
+                    updates.append((day.isoformat() if day else None, row[0], row[5]))
+                connection.executemany(
+                    "UPDATE items SET event_date = ? WHERE collection_id = ? AND item_id = ?",
+                    updates,
+                )
+        finally:
+            cursor.close()
+
+    def latest_event_date(self) -> date | None:
+        self._require_date_index()
+        value = self._execute("SELECT MAX(event_date) FROM items").fetchone()[0]
+        try:
+            return date.fromisoformat(value) if value is not None else None
+        except ValueError as exc:
+            raise CatalogError(
+                f"Invalid indexed catalog event date: {value!r}"
+            ) from exc
+
+    def _require_date_index(self) -> None:
+        self._require_connection()
+        if self._schema_version < 3:
+            raise CatalogError(
+                "Catalog date index is missing; run harvest once to upgrade before using date selectors"
+            )
 
     def _require_connection(self) -> sqlite3.Connection:
         if self._connection is None:
@@ -215,8 +259,17 @@ class SQLiteCatalog(BaseCatalog):
         finally:
             self._active_transaction = None
 
-    def iter_items(self, *, collection_id: str | None = None) -> Iterator[CatalogEntry]:
+    def iter_items(
+        self,
+        *,
+        collection_id: str | None = None,
+        from_date: date | None = None,
+        to_date: date | None = None,
+    ) -> Iterator[CatalogEntry]:
         self._require_connection()
+        dated = from_date is not None or to_date is not None
+        if dated:
+            self._require_date_index()
         reader = None
         cursor = None
         try:
@@ -239,13 +292,25 @@ class SQLiteCatalog(BaseCatalog):
                 if self._schema_version >= 2
                 else "SELECT collection_id, dataset_id, version_number, payload, NULL FROM items"
             )
-            parameters = ()
+            parameters = []
+            conditions = []
             if collection_id is not None:
-                sql += " WHERE collection_id = ?"
-                parameters = (collection_id,)
-            cursor = reader.execute(
-                sql + " ORDER BY collection_id, item_id", parameters
+                conditions.append("collection_id = ?")
+                parameters.append(collection_id)
+            if from_date is not None:
+                conditions.append("event_date >= ?")
+                parameters.append(from_date.isoformat())
+            if to_date is not None:
+                conditions.append("event_date <= ?")
+                parameters.append(to_date.isoformat())
+            if conditions:
+                sql += " WHERE " + " AND ".join(conditions)
+            order = (
+                "event_date, collection_id, item_id"
+                if dated
+                else "collection_id, item_id"
             )
+            cursor = reader.execute(sql + " ORDER BY " + order, parameters)
             while True:
                 self._require_connection()
                 row = cursor.fetchone()
@@ -327,6 +392,10 @@ class SQLiteCatalogTransaction(BaseCatalogTransaction):
         self._require_active()
         return self._catalog.get_checkpoint(topic, partition)
 
+    def latest_event_date(self) -> date | None:
+        self._require_active()
+        return self._catalog.latest_event_date()
+
     def put_item(self, entry: CatalogEntry) -> None:
         self._require_active()
         try:
@@ -341,11 +410,12 @@ class SQLiteCatalogTransaction(BaseCatalogTransaction):
                 ).encode("utf-8"),
                 level=3,
             )
+            day = entry.event_date
             self._catalog._execute(
-                "INSERT INTO items VALUES (?, ?, ?, ?, ?, ?) "
+                "INSERT INTO items VALUES (?, ?, ?, ?, ?, ?, ?) "
                 "ON CONFLICT(collection_id, item_id) DO UPDATE SET "
                 "dataset_id = excluded.dataset_id, version_number = excluded.version_number, "
-                "payload = excluded.payload, publication_time = excluded.publication_time",
+                "payload = excluded.payload, publication_time = excluded.publication_time, event_date = excluded.event_date",
                 (
                     entry.collection_id,
                     entry.item_id,
@@ -353,6 +423,7 @@ class SQLiteCatalogTransaction(BaseCatalogTransaction):
                     entry.version_number,
                     payload,
                     entry.publication_time,
+                    day.isoformat() if day else None,
                 ),
             )
         except (

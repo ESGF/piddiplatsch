@@ -3,6 +3,7 @@
 from abc import ABC, abstractmethod
 from collections.abc import Iterator
 from contextlib import AbstractContextManager
+from datetime import date
 from types import TracebackType
 from typing import Self
 
@@ -30,6 +31,10 @@ class BaseCatalogReader(ABC):
         Search only this project, collection, and dataset using index metadata;
         do not decompress item payloads. Equal versions must not be predecessors.
         """
+
+    @abstractmethod
+    def latest_event_date(self) -> date | None:
+        """Return the latest dated item's UTC event day without reading payloads."""
 
     @abstractmethod
     def get_checkpoint(self, topic: str, partition: int) -> KafkaCheckpoint | None:
@@ -84,8 +89,18 @@ class BaseCatalog(BaseCatalogReader):
         """
 
     @abstractmethod
-    def iter_items(self, *, collection_id: str | None = None) -> Iterator[CatalogEntry]:
-        """Stream entries in collection-ID/item-ID order with bounded memory.
+    def iter_items(
+        self,
+        *,
+        collection_id: str | None = None,
+        from_date: date | None = None,
+        to_date: date | None = None,
+    ) -> Iterator[CatalogEntry]:
+        """Stream entries with bounded memory, optionally by inclusive UTC days.
+
+        Unfiltered order is collection/item identity; date-filtered order is
+        event day then collection/item identity. Undated items are excluded from
+        date selections. Apply filtering through metadata indexes, not payloads.
 
         Yield one current complete state per versioned item. Callers must close
         the iterator when stopping early; backends release read resources on close.

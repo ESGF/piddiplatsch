@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import time
+from datetime import date
 from typing import Any, ClassVar
 
 import jsonpatch
@@ -136,6 +137,10 @@ class StacProjectProcessor(BaseProcessor):
 
         previous_version = metadata.get("previous_version")
         if self.catalog_reader is not None:
+            setter = getattr(self.handle_backend, "set_output_date", None)
+            if callable(setter):
+                day = metadata.get("catalog_date")
+                setter(date.fromisoformat(day) if day else None)
             previous_version = None
             if self.version_history:
                 dataset_id, version_number = get_plugin(self.plugin_name).catalog_index(

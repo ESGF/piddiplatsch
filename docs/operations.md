@@ -11,8 +11,8 @@ Piddiplatsch writes daily JSONL files beneath `consumer.output_dir`:
 | `<plugin>/handles/` | Handle records produced by that plugin. Direct REST/pyhandle publication writes the JSONL record before contacting the server; each line also includes `project`. |
 | `published/` | One run-scoped JSONL receipt per `publish` run, containing every successful or failed Handle outcome. |
 | `<plugin>/skipped/` | Records deferred after transient external failures. |
-| `<plugin>/failures/r<N>/` | Records that failed processing, grouped by retry count. |
-| `skipped/`, `failures/r<N>/` | Legacy or unresolved-project recovery records. |
+| `<plugin>/failures/r<N>/` | Failed records with diagnostic metadata; the historical `r0` layout is retained. |
+| `skipped/`, `failures/r<N>/` | Legacy or unresolved-project diagnostic records. |
 
 The raw dump is intentionally global and always written before routing. It preserves
 the consumed Kafka order and remains suitable for replay or investigation;
@@ -86,8 +86,8 @@ catalog: Kafka must still retain each full publication needed by later patches.
 Unknown projects, invalid publications, missing patch bases, and storage failures
 stop catalog harvesting without acknowledging the failed message. Decoded failed
 events are recorded in the existing failure files, including topic, partition,
-and offset. Repair the cause before resuming; the existing Handle retry command
-does not repair catalogs. Updates to an item must be ordered within one source
+and offset. Repair the cause and repeat `harvest`; the failed event remains
+unacknowledged. Updates to an item must be ordered within one source
 partition. Cross-partition ordering and force-refresh options are not implemented
 yet. Do not delete a catalog and expect an already committed Kafka group to
 reconstruct it automatically; use the clean options below.
@@ -118,7 +118,7 @@ Configure `[catalog].enabled = false` or use `--no-catalog` for raw-only harvest
 that mode retains the existing Kafka group and acknowledgement behavior.
 `[catalog].backend` currently supports `"sqlite"`; `[catalog].directory` overrides
 the default catalog directory. `map` reads complete local catalog items exclusively;
-raw dumps remain available for inspection and existing recovery workflows.
+raw dumps remain available for inspection.
 
 Tune broker acknowledgement frequency with `[catalog].kafka_commit_batch_size`
 and `[catalog].kafka_commit_interval_seconds`. Setting batch size to `1` restores
@@ -127,48 +127,63 @@ broker latency is high. SQLite item/checkpoint transactions remain durable per
 message regardless of broker batching. A crash can replay the unacknowledged batch;
 local checkpoints skip the already stored events, including non-idempotent patches.
 
-`map` accepts `--project`, `--all-projects`, `--catalog-dir`, `--limit`, `--offset`,
-and `--version-history/--no-version-history`. Without an explicit project selection
-it uses `consumer.projects`. Named selections require every selected project's
-catalog to exist; `--all-projects` selects the registered catalogs available in
-the directory. It opens read-only snapshots, streams one current state per versioned
-item, and performs no Kafka, remote STAC, or Handle Service calls. Patches were
-already applied during harvest. Pending catalog cleans block mapping until harvest
-finishes the reset.
+`map` accepts `--project`, `--all-projects`, `--catalog-dir`, and the same
+`--date`, `--from`, `--to`, `--limit`, and `--offset` selectors as `publish`.
+Without an explicit project selection it uses `consumer.projects`. Named selections
+require every selected project's catalog to exist; `--all-projects` selects the
+registered catalogs available in the directory. Mapping opens read-only snapshots
+and performs no Kafka, remote STAC, or Handle Service calls. Patches were already
+applied during harvest. Pending catalog cleans block mapping until harvest finishes
+the reset.
 
-Order follows the selected project order, then collection/item ID within each
-project. Offsets and limits count catalog items across that sequence. Mapping and
-predecessor lookup share the same snapshot for each project, so concurrent harvest
-writes are visible on the next map run. Rerunning map appends a new set of prepared
-Handle records; it does not mark catalog items as mapped. Existing error limits
-still apply, and output from earlier successfully mapped items remains written.
+Both commands default to `--date last`. Supported dates are `YYYY-MM-DD`, `today`,
+`yesterday`, `today-N` (including `today-0`), `last`, and `all`. Relative selectors
+use the local calendar. `last` means the greatest available day across selected
+catalogs for map, or daily Handle files for publish. Use `--date all` for full
+initial filling. Both commands accept inclusive `--from DATE --to DATE` ranges;
+both boundaries are required and cannot be `last` or `all`. A range cannot be
+combined with `--date`. Publish also accepts explicit Handle paths, which cannot
+be combined with date selectors.
+
+Catalog selection uses an indexed UTC event day: publication time, falling back
+to STAC `updated`, then `created`. Naive timestamps are treated as UTC. Undated
+items are included only by `--date all`. A selection reads the current item state
+whose latest event falls in that window; it does not reconstruct historical state.
+Map writes `handles_<event-day>.jsonl`, so the same date selector selects the
+corresponding daily publication files. Undated items use the current UTC output
+day. Handle record timestamps still describe the actual mapping run.
+
+Map order follows selected project order, then event day, collection, and item ID.
+Offsets and limits apply after date filtering and count catalog items; publish
+counts Handle input records, so an item with several assets has several publication
+records. Mapping and predecessor lookup share each project's snapshot. Concurrent
+harvest writes are visible on the next map run. Repeating map appends prepared
+Handles; it does not mark items as mapped. Mapping stops at `consumer.max_errors`
+when configured; earlier successful output remains written.
 
 Predecessor linking is disabled by default during initial filling. Enable
 `[catalog].version_history = true` or pass `--version-history`; a per-run
 `--no-version-history` overrides the setting. Every built-in project uses an
 indexed search for the greatest version strictly below the current version within
-the same collection and dataset. Legacy `[lookup]` backend/enabled settings do not
-control catalog mapping. Direct `consume` and existing raw-event retry paths retain
-their separate remote PATCH handling for now.
+the same collection and dataset, including versions outside the selected date
+window. Legacy `[lookup]` settings do not control catalog mapping. Direct `consume`
+retains its separate remote PATCH handling for now.
 
-Existing version-1 SQLite catalogs are readable without rebuilding. The next
-writer open migrates them to version 2, which preserves publication event time
-for subsequently harvested entries. Earlier entries cannot recover discarded
-event timestamps: map falls back to STAC `updated`, then `created`, then its existing
-current-time fallback. Publication times are retained for new updates, including
-retractions.
+SQLite schema version 3 adds the event-day index. Run `harvest` once to upgrade
+existing catalogs, even if no new Kafka events arrive. Migration derives dates
+from retained timestamps without changing compressed payloads. Dates discarded by
+older schemas cannot be recovered. Read-only legacy catalogs support unfiltered
+library reads; CLI date selection requires this upgrade.
 
-Mapping failures retain the complete item, publication time, and any resolved
-predecessor in their recovery envelope. The existing retry path can preserve those
-links when retrying Handle preparation. For catalog corruption or failed history
-queries, repair the catalog and rerun map to resolve the missing information.
+Failures preserve the complete STAC record and diagnostic metadata for inspection.
+They are never used as command inputs. Fix the cause and repeat map using the
+original catalog and date window, optionally with an offset and limit. There is
+no `retry` command.
 
-Migration: `map PATH`, `map --date ...`, and `map --force` are removed. Run harvest
-with catalog mode enabled, then `map --project NAME`; `--catalog-dir` selects an
-alternate catalog directory. A raw-only harvest dump is not a map input anymore.
-`publish` continues accepting Handle files/directories and `--date` selectors
-(`YYYY-MM-DD`, `today`, `yesterday`, `today-N`, or `last`). Its default remains the
-greatest dated Handle batch, independent of file modification time.
+Migration: `map PATH` and `map --force` remain removed. Run harvest with catalog
+mode enabled, then `map --project NAME --date all` for full initial filling.
+`map --date` now selects catalog event days, rather than raw dump files.
+`--catalog-dir` selects an alternate catalog directory.
 
 ## Deferred publication
 
@@ -202,8 +217,8 @@ Use `--from DATE --to DATE` with `--project` to select an inclusive date range.
 Both boundaries are required and accept `YYYY-MM-DD`, `today`, `yesterday`, or
 `today-N`, using the local calendar date. Available daily Handle files are
 published oldest first; days without files are skipped. An empty range fails
-before publication. The start must be on or before the end; `last` is not a
-range boundary. Range options cannot be combined with `--date` or explicit
+before publication. The start must be on or before the end; `last` and `all` are not
+range boundaries. Range options cannot be combined with `--date` or explicit
 paths. Offsets and limits apply across the whole range in one publication run.
 
 `--retries` covers transient connection errors, timeouts, rate limiting, and
@@ -267,41 +282,20 @@ project's cleanup targets. There is no automatic retention policy. Dump and
 Handle JSONL files can grow quickly, so monitor disk usage and archive or remove
 old files according to the site's operational policy.
 
-## Safe inspection and retry
+## Inspection and repetition
 
-See [Recovery & retry](recovery.md) in the advanced documentation for recovery
-file locations and the retry workflow.
-
-Retry remaps failed events without contacting the Handle Service. Each command
-creates and prints a distinct project-scoped
-`retry_handles_<timestamp>.jsonl`, keeping late recovery work separate from
-normal daily mapping output:
+See [Recovery](recovery.md) for diagnostic file locations and restart behavior.
+After fixing a mapping problem, repeat the normal command against the catalog:
 
 ```bash
-piddi retry outputs/cmip6/failures/r0
-piddi publish --project cmip6 \
-  outputs/cmip6/handles/retry_handles_<timestamp>.jsonl
+piddi map --project cmip6 --date today-1 --offset 1000 --limit 1000
+piddi publish --project cmip6 --date today-1
 ```
 
-Use `retry --publish` only for intentional immediate publication.
-Recovery records store the canonical project in `__infos__.project`; `retry`
-uses it instead of the current configured project selection. Older records
-without this metadata still use the configured selection. Retry opens each
-source once and processes batches of at most 256 records in source order,
-including when projects are interleaved. Retry counts are incremented once per
-record. The reader stops at the file size captured when it opens, so records
-appended during recovery are left for a later run.
-
-Malformed JSON and invalid retry metadata are logged with their source location;
-valid records continue to process. The summary retains at most 100 input error
-messages, while all input errors are logged. A missing input is a reported
-failure rather than an empty successful run.
-
-`--delete-after` removes an input file only when all records succeed. Malformed
-JSONL and skipped records are failures for this decision, so the source remains
-available for inspection. Inputs changed during processing are also retained,
-so newly appended recovery records are not deleted. Earlier successful output
-remains written if a later record fails.
+Mapping failures and skipped records are inspection artifacts. Commands do not
+read them again or delete them. Repeating mapping appends to the selected daily
+Handle files; publication preserves its input and uses overwrite semantics.
+Inspect output and use an explicit date or completed file when repeating a batch.
 
 ## Terminal progress
 

@@ -29,7 +29,7 @@ def _parse_range_date(
 ) -> datetime | None:
     selected = _parse_date_selector(ctx, param, value)
     if isinstance(selected, str):
-        raise click.BadParameter("last cannot be used as a range boundary")
+        raise click.BadParameter(f"{selected} cannot be used as a range boundary")
     return selected
 
 
@@ -205,6 +205,27 @@ def harvest(
 
 @cli.command("map")
 @click.option(
+    "--date",
+    "input_date",
+    metavar="DATE",
+    callback=_parse_date_selector,
+    help=f"Select a catalog event day ({DATE_FORMATS}; default: last).",
+)
+@click.option(
+    "--from",
+    "from_date",
+    metavar="DATE",
+    callback=_parse_range_date,
+    help="First date to map, inclusive (YYYY-MM-DD, today, yesterday, today-N). Requires --to.",
+)
+@click.option(
+    "--to",
+    "to_date",
+    metavar="DATE",
+    callback=_parse_range_date,
+    help="Last date to map, inclusive (YYYY-MM-DD, today, yesterday, today-N). Requires --from.",
+)
+@click.option(
     "--catalog-dir",
     "directory",
     type=click.Path(file_okay=False, path_type=Path),
@@ -246,6 +267,9 @@ def harvest(
 def map_messages(
     ctx: click.Context,
     directory: Path | None,
+    input_date: datetime | str | None,
+    from_date: datetime | None,
+    to_date: datetime | None,
     projects: tuple[str, ...],
     all_projects: bool,
     limit: int | None,
@@ -257,6 +281,9 @@ def map_messages(
     commands.MapCommand(
         verbose=ctx.obj["verbose"],
         directory=directory,
+        input_date=input_date,
+        from_date=from_date,
+        to_date=to_date,
         projects=projects,
         all_projects=all_projects,
         limit=limit,
@@ -366,55 +393,6 @@ def publish(
         retry_delay=retry_delay,
         workers=workers,
         project=project,
-        handle_profile=handle_profile,
-    ).execute()
-
-
-# command retry
-
-
-@cli.command("retry")
-@click.argument(
-    "path", type=click.Path(exists=True, path_type=Path), nargs=-1, required=True
-)
-@click.option(
-    "--delete-after", is_flag=True, help="Delete files after successful retry."
-)
-@click.option(
-    "--publish",
-    is_flag=True,
-    help="Publish successfully remapped Handles immediately.",
-)
-@click.option(
-    "--handle-profile",
-    help="Override the configured Handle profile for this command.",
-)
-@click.pass_context
-def retry(
-    ctx: click.Context,
-    path: tuple[Path, ...],
-    delete_after: bool,
-    publish: bool,
-    handle_profile: str | None,
-) -> None:
-    """Retry failed items from failure .jsonl file(s) or directory.
-
-    Accepts multiple arguments:
-
-    \b
-      Individual files: retry file1.jsonl file2.jsonl
-      Directories: retry outputs/failures/r0/
-      Glob patterns: retry outputs/failures/r0/*.jsonl
-
-    Internals: This command uses `RetryRunner` to aggregate results across
-    inputs, invoke the processing pipeline, and optionally remove source files
-    when `--delete-after` is set and all items succeed.
-    """
-    commands.RetryCommand(
-        verbose=ctx.obj["verbose"],
-        paths=path,
-        delete_after=delete_after,
-        publish=publish,
         handle_profile=handle_profile,
     ).execute()
 

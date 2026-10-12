@@ -1,3 +1,9 @@
+"""Legacy library compatibility helpers; no CLI recovery path uses these.
+
+Operational recovery repeats harvest, catalog map, or Handle publication.
+Failure files are diagnostic inputs for inspection, not automatic replay.
+"""
+
 import logging
 from collections.abc import Callable, Iterator
 from contextlib import closing

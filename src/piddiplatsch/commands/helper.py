@@ -8,13 +8,13 @@ import click
 
 from piddiplatsch.config import config
 
-DATE_FORMATS = "YYYY-MM-DD, today, yesterday, today-N, or last"
+DATE_FORMATS = "YYYY-MM-DD, today, yesterday, today-N, last, or all"
 
 
 def parse_date_selector(value: str, *, today: date | None = None) -> datetime | str:
     """Parse an absolute or relative date selector."""
     normalized = value.strip().lower()
-    if normalized == "last":
+    if normalized in {"last", "all"}:
         return normalized
 
     current_date = today or date.today()
@@ -33,6 +33,31 @@ def parse_date_selector(value: str, *, today: date | None = None) -> datetime | 
             raise ValueError(f"must be one of: {DATE_FORMATS}")
 
     return datetime.combine(selected_date, time.min)
+
+
+def validate_date_selection(input_date, from_date, to_date, *, has_paths=False) -> None:
+    """Validate the shared single-day/range/path selection rules."""
+    if from_date is not None or to_date is not None:
+        if has_paths or input_date is not None:
+            raise ValueError("--from/--to cannot be combined with PATH or --date")
+        if from_date is None or to_date is None:
+            raise ValueError("--from and --to must be provided together")
+        if from_date > to_date:
+            raise ValueError("--from must be on or before --to")
+    elif has_paths and input_date is not None:
+        raise ValueError("PATH cannot be combined with --date")
+
+
+def resolve_all_dated_input(
+    *, relative_dir: Path, filename_prefix: str, missing_label: str
+) -> tuple[Path, ...]:
+    """Select every available dated daily file, oldest first."""
+    input_dir, candidates = _dated_input_candidates(relative_dir, filename_prefix)
+    if not candidates:
+        raise click.ClickException(
+            f"No dated {missing_label} files found in: {input_dir}"
+        )
+    return tuple(path for _, path in sorted(candidates))
 
 
 def resolve_latest_dated_input(

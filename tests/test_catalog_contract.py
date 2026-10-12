@@ -102,6 +102,9 @@ class LifecycleCatalog(BaseCatalog):
     def get_checkpoint(self, topic, partition):
         raise NotImplementedError
 
+    def latest_event_date(self):
+        raise NotImplementedError
+
     def transaction(self):
         raise NotImplementedError
 

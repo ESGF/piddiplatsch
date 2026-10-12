@@ -178,11 +178,9 @@ def test_cli_history_option_overrides_catalog_configuration(tmp_path, testdata_p
     assert "PREVIOUS_VERSION" not in handles(tmp_path, "cmip6")[0]["data"]
 
 
-def test_mapping_failure_retains_resolved_predecessor_for_retry(
+def test_mapping_failure_is_inspectable_and_command_can_be_repeated(
     tmp_path, testdata_path, monkeypatch
 ):
-    from piddiplatsch.plugins.cmip6.processor import CMIP6Processor
-
     config._set("consumer", "output_dir", str(tmp_path))
     config._set("consumer", "max_errors", 1)
     original = sample(testdata_path, "cmip6")
@@ -203,5 +201,23 @@ def test_mapping_failure_retains_resolved_predecessor_for_retry(
     failure_path = next((tmp_path / "cmip6/failures/r0").glob("*.jsonl"))
     failure = json.loads(failure_path.read_text())
     assert failure["metadata"]["previous_version"] == older_id
-    assert CMIP6Processor().process("retry", failure).success
+    before = failure_path.read_bytes()
+    repeated = CliRunner().invoke(
+        cli,
+        [
+            "--no-progress",
+            "map",
+            "--project",
+            "cmip6",
+            "--date",
+            "last",
+            "--offset",
+            "1",
+            "--limit",
+            "1",
+            "--version-history",
+        ],
+    )
+    assert repeated.exit_code == 0, repeated.output
+    assert failure_path.read_bytes() == before
     assert handles(tmp_path, "cmip6")[0]["data"]["PREVIOUS_VERSION"] == older_id

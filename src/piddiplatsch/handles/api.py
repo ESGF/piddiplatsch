@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+from datetime import date
 from typing import Any, Literal, Protocol
 
 from piddiplatsch.config import config
@@ -42,6 +43,12 @@ class HandleAPI(HandleAPIProtocol):
 
     def get(self, pid: str) -> dict[str, Any] | None:
         return self.backend.get(pid)
+
+    def set_output_date(self, day: date | None) -> None:
+        """Set the logical day of a prepared JSONL batch when supported."""
+        setter = getattr(self.backend, "set_output_date", None)
+        if callable(setter):
+            setter(day)
 
 
 # --- Factory Function ---

@@ -51,7 +51,7 @@ You can also harvest a small sample, then map it separately:
 
 ```bash
 piddi harvest --limit 100
-piddi map --project cmip6
+piddi map --project cmip6 --date all
 # Optional predecessor links from the local catalog
 piddi map --project cmip6 --version-history
 ```
@@ -63,6 +63,11 @@ harvested patches, without fetching STAC items or replaying raw dumps.
 Use `harvest --clean-catalog` to clear and rebuild all registered project catalogs,
 or repeat `--clean-project NAME` to rebuild selected projects from retained Kafka
 history. Cleaning uses a fresh harvest group and compacts the cleared databases.
+
+Map and publish share `--date` (`today-1`, `last`, `all`, or a calendar date),
+inclusive `--from`/`--to` ranges, and `--offset`/`--limit`. Both default to `last`;
+use `--date all` for full initial filling. Map writes daily Handle files for the
+selected catalog event days.
 
 Once your Handle service profile is configured, publish a completed daily file:
 
@@ -80,6 +85,6 @@ selection, publication, retries, logging, and monitoring.
 ## Learn more
 
 - [Architecture and project plugins](https://esgf.github.io/piddiplatsch/architecture/)
-- [Recovery and retry](https://esgf.github.io/piddiplatsch/recovery/)
+- [Recovery](https://esgf.github.io/piddiplatsch/recovery/)
 - [Production deployment with Ansible](https://github.com/ESGF/piddiplatsch/blob/main/deploy/README.md)
 - [Contributing](https://github.com/ESGF/piddiplatsch/blob/main/CONTRIBUTING.md): development, testing, and local Docker services. Run `make test` for unit and integration tests.

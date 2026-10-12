@@ -32,18 +32,16 @@ is separated by input source:
   Broker acknowledgements batch explicit durable offsets by count/time and flush
   on shutdown or revocation, avoiding a network round trip for every record.
 - `runners/mapping.py` opens read-only per-project catalog snapshots, applies the
-  selected item offset and limit, and sends complete items lazily to the pipeline.
+  indexed event-day selection followed by item offset and limit, and sends complete items lazily to the pipeline.
   Processors use the same snapshots for optional predecessor queries and do not
   fetch or reapply patches. `catalog.api` owns backend and path selection.
-- `runners/retry.py` streams recovery records in bounded batches and owns
-  persisted project routing, retry counts, and input-retention/deletion rules.
 - `core/pipeline.py` owns processor selection, record execution, counters,
   failure/skipped-record persistence, progress updates, and stop policies. Its
   `ProcessingPipeline` accepts an iterable directly and returns per-run results;
-  `process_messages` also manages progress created for a mapping or retry call.
+  `process_messages` also manages progress created for a mapping call.
   It does not import Kafka or file-input readers.
 - `runners/publish.py` publishes already prepared Handles independently of the
-  mapping pipeline, using the same `jsonl_stream.py` reader as retry.
+  mapping pipeline, using the bounded `jsonl_stream.py` reader.
 
 Input lifetimes belong to the runners: they close file/Kafka streams on limits,
 errors, or interruption. A caller that injects a progress display retains
@@ -113,7 +111,10 @@ Generated JSONL Handle records are plugin-scoped at
 `outputs/<plugin>/handles/handles_<date>.jsonl`; every outbox line also carries
 the canonical plugin name in `project`. This prevents records from concurrent
 project mappings being mixed and gives downstream publishers an explicit
-routing hint.
+routing hint. Catalog mapping names daily files using the UTC event day, so
+map and publish can use matching date selectors. Failure files are diagnostic
+artifacts; recovery repeats normal commands against their original inputs.
+Legacy retry library helpers remain for compatibility, without a CLI command.
 
 The raw dump remains a single pre-routing stream under `outputs/dump` and is
 mandatory for queue-consuming commands.

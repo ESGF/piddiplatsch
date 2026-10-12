@@ -53,6 +53,12 @@ class CatalogHarvester:
                 raise ValueError("Clean projects must be registered plugin names")
             if clean_projects:
                 self._state.request_clean(clean_projects)
+            # Upgrade existing catalogs even when Kafka has no new messages.
+            for project in self.project_names:
+                if get_catalog_path(
+                    project, directory=self.directory, backend=self.backend
+                ).is_file():
+                    self._get_catalog(project)
             if set(self._state.pending_clean) - known_projects:
                 raise CatalogError("Pending clean references an unregistered project")
             for project in self._state.pending_clean:

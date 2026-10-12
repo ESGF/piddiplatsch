@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import date
 from typing import Any
 
 from piddiplatsch.handles.base import HandleBackend
@@ -34,3 +35,6 @@ class RecordingHandleBackend:
 
     def get(self, pid: str) -> dict[str, Any] | None:
         return self.backend.get(pid)
+
+    def set_output_date(self, day: date | None) -> None:
+        self.recorder.set_output_date(day)

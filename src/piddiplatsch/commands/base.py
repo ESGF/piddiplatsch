@@ -9,7 +9,7 @@ from typing import Literal, overload
 
 import click
 
-from piddiplatsch.commands.helper import resolve_dated_input
+from piddiplatsch.commands.helper import resolve_dated_input, validate_date_selection
 from piddiplatsch.config import config
 from piddiplatsch.monitoring.progress import (
     STREAM_PROGRESS_LEGEND,
@@ -113,18 +113,32 @@ class KafkaCommand(Command, ABC):
 
 
 @dataclass(kw_only=True)
-class FileBatchCommand(Command, ABC):
-    """Common inputs and path resolution for dated file batches."""
+class DatedBatchCommand(Command, ABC):
+    """Common day/range and position selections for map and publish."""
 
-    paths: tuple[Path, ...] = ()
     input_date: datetime | str | None = None
+    from_date: datetime | None = None
+    to_date: datetime | None = None
     limit: int | None = None
     offset: int = 0
 
     def validate_input(self) -> None:
-        """Validate the mutually exclusive explicit-path and date inputs."""
-        if self.paths and self.input_date is not None:
-            raise click.UsageError("PATH cannot be combined with --date")
+        try:
+            validate_date_selection(
+                self.input_date,
+                self.from_date,
+                self.to_date,
+                has_paths=bool(getattr(self, "paths", ())),
+            )
+        except ValueError as exc:
+            raise click.UsageError(str(exc)) from exc
+
+
+@dataclass(kw_only=True)
+class FileBatchCommand(DatedBatchCommand, ABC):
+    """Common path resolution for dated file batches."""
+
+    paths: tuple[Path, ...] = ()
 
     def resolve_paths(
         self,

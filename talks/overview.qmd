@@ -168,7 +168,8 @@ piddi publish --project cmip6 --date last --limit 100
 ::: notes
 Examples assume installed Piddi and configured site credentials; these code
 blocks are never executed by Quarto. last selects the greatest valid date in
-the relevant files. publish performs real Handle writes when run.
+the catalog event days or daily Handle files. Both commands default to last;
+use --date all for full initial filling. publish performs real Handle writes when run.
 Map checks the publication envelope and consumed field shapes, then validates
 the generated Handle records with Pydantic. It does not validate the complete
 STAC schema. Schema strictness is configurable; it defaults to true.
@@ -345,7 +346,7 @@ outputs/
 :::
 
 - `map` streams local catalog snapshots with the chosen project selection.
-- `retry` writes `retry_handles_<timestamp>.jsonl` in the project's handles folder.
+- Failure files contain STAC records and diagnostic details for inspection.
 - `publish` preserves its inputs and reports each attempted Handle's outcome.
 
 ::: notes
@@ -354,32 +355,25 @@ for dumps, Handles, failures, logs, and receipts. Sources: README.md and
 docs/operations.md.
 :::
 
-## Appendix: recovery with `retry`
+## Appendix: recovery by repeating commands
 
-Remap a saved failure file after fixing the underlying problem:
-
-```bash
-piddi retry outputs/cmip6/failures/r0/failed_items_2026-09-22.jsonl
-```
-
-Inspect the recovered Handle JSONL, then publish **the path printed by `retry`**:
+Fix the cause, then repeat mapping from the catalog and publish the selected day:
 
 ```bash
-# Example output path; use the timestamp from your retry run.
-piddi publish --project cmip6 \
-  outputs/cmip6/handles/retry_handles_2026-09-22_14-30-00-123456.jsonl
+piddi map --project cmip6 --date today-1
+piddi publish --project cmip6 --date today-1
 ```
 
-`retry` prepares a separate batch; publication is explicit. Logs and JSONL
-receipts record publication outcomes.
+Both commands accept inclusive `--from`/`--to` windows and `--offset`/`--limit`.
+Failure JSONL is for inspection. There is no `retry` command.
 
 ::: notes
-Deferred publication retries transient failures with backoff, continues after
-individual Handle failures, and exits non-zero if any Handle failed. A saved
-immutable batch can be rerun with overwrite semantics. This is not an
-exactly-once delivery claim. Sources: README.md and docs/operations.md.
-The failure path and recovered-batch timestamp are illustrative; select an
-existing failure or skipped file and use the exact output path printed by retry.
+Harvest stops immediately without acknowledging an unresolved event. Mapping
+stops at the configured error threshold. Mapping appends to daily Handle files;
+publication preserves inputs and uses overwrite semantics. Map offsets count
+catalog items; publish offsets count Handle records. Deferred publication retains
+transient HTTP retries and per-record receipts. Sources: docs/recovery.md and
+docs/operations.md.
 :::
 
 ## Appendix: service mode and Ansible

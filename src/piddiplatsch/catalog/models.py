@@ -1,6 +1,7 @@
 """Storage-neutral metadata for a project-scoped STAC catalog."""
 
 from dataclasses import dataclass
+from datetime import UTC, date, datetime
 from typing import Any
 
 
@@ -41,6 +42,31 @@ class CatalogEntry:
     @property
     def item_id(self) -> str:
         return self.item["id"]
+
+    @property
+    def event_date(self) -> date | None:
+        """UTC day of the latest event, falling back to STAC update/create time.
+
+        Naive timestamps are treated as UTC. Undated/invalid values never acquire
+        today's date just because mapping is repeated.
+        """
+        properties = self.item.get("properties")
+        properties = properties if isinstance(properties, dict) else {}
+        for value in (
+            self.publication_time,
+            properties.get("updated"),
+            properties.get("created"),
+        ):
+            if not isinstance(value, str) or not value:
+                continue
+            try:
+                timestamp = datetime.fromisoformat(value)
+                if timestamp.tzinfo is None:
+                    timestamp = timestamp.replace(tzinfo=UTC)
+                return timestamp.astimezone(UTC).date()
+            except (ValueError, OverflowError):
+                continue
+        return None
 
 
 @dataclass(frozen=True)

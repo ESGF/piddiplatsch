@@ -5,7 +5,7 @@ from pathlib import Path
 
 import click
 
-from piddiplatsch.commands.base import Command
+from piddiplatsch.commands.base import DatedBatchCommand
 from piddiplatsch.commands.helper import select_projects
 from piddiplatsch.config import config
 from piddiplatsch.core.pipeline import configured_projects
@@ -16,18 +16,17 @@ from piddiplatsch.runners.mapping import map_catalog
 
 
 @dataclass(kw_only=True)
-class MapCommand(Command):
+class MapCommand(DatedBatchCommand):
     """Map complete cached STAC items through the selected project plugins."""
 
     projects: tuple[str, ...] = ()
     all_projects: bool = False
     directory: Path | None = None
-    limit: int | None = None
-    offset: int = 0
     version_history: bool | None = None
     handle_profile: str | None = None
 
     def execute(self) -> None:
+        self.validate_input()
         progress = self.progress(title="map", stream=True)
         selection = select_projects(self.projects, self.all_projects)
         try:
@@ -35,6 +34,15 @@ class MapCommand(Command):
             with progress:
                 result = map_catalog(
                     directory=self.directory,
+                    input_date=(
+                        "last"
+                        if self.input_date is None
+                        and self.from_date is None
+                        and self.to_date is None
+                        else self.input_date
+                    ),
+                    from_date=self.from_date,
+                    to_date=self.to_date,
                     projects=selection,
                     limit=self.limit,
                     offset=self.offset,

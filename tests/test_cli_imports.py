@@ -79,7 +79,6 @@ assert "confluent_kafka" not in sys.modules
                 "piddiplatsch.lookup",
             ],
         ),
-        ("piddiplatsch.commands.retry", ["piddiplatsch.consumer", "confluent_kafka"]),
     ],
 )
 def test_processing_boundaries_do_not_import_input_adapters(tmp_path, module, blocked):
