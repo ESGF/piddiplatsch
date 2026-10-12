@@ -66,6 +66,9 @@ piddi = "piddiplatsch.cli:cli"
 [tool.flit.module]
 name = "piddiplatsch"
 
+[tool.flit.sdist]
+include = ["CHANGES.md"]
+
 [tool.ruff]
 src = ["src"]
 line-length = 150
