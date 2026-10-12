@@ -38,6 +38,8 @@ class KafkaConsumer:
         idle_timeout: float | None = None,
         clock=time.monotonic,
         with_source: bool = False,
+        commit_batch_size: int = 100,
+        commit_interval: float = 1.0,
     ):
         # Configuration and file-only commands must not load Kafka's native
         # extension (which can enable the GIL on free-threaded Python).
@@ -45,10 +47,20 @@ class KafkaConsumer:
 
         if idle_timeout is not None and idle_timeout <= 0:
             raise ValueError("idle timeout must be positive")
+        if type(commit_batch_size) is not int or commit_batch_size < 1:
+            raise ValueError("commit batch size must be a positive integer")
+        if commit_interval <= 0:
+            raise ValueError("commit interval must be positive")
         self.topic = topic
         self.idle_timeout = idle_timeout
         self.clock = clock
         self.with_source = with_source
+        self.commit_batch_size = commit_batch_size
+        self.commit_interval = commit_interval
+        self._pending_offsets: dict[tuple[str, int], int] = {}
+        self._pending_messages = 0
+        self._last_commit_at = self.clock() if with_source else None
+        self._commit_failed = False
         if with_source:
             kafka_cfg = {
                 **kafka_cfg,
@@ -56,13 +68,21 @@ class KafkaConsumer:
                 "enable.auto.offset.store": False,
             }
         self.consumer = ConfluentConsumer(kafka_cfg)
-        self.consumer.subscribe([self.topic])
+        if with_source:
+            self.consumer.subscribe(
+                [self.topic], on_revoke=self._on_revoke, on_lost=self._on_lost
+            )
+        else:
+            self.consumer.subscribe([self.topic])
 
     def consume(self):
         last_message_at = self.clock()
         try:
             while True:
                 poll_timeout = 1.0
+                if self.with_source:
+                    self._maybe_commit()
+                    poll_timeout = min(poll_timeout, self.commit_interval)
                 if self.idle_timeout is not None:
                     remaining = self.idle_timeout - (self.clock() - last_message_at)
                     if remaining <= 0:
@@ -99,15 +119,75 @@ class KafkaConsumer:
                 else:
                     yield key, value
         finally:
-            self.consumer.close()
+            try:
+                if self.with_source and not self._commit_failed:
+                    self.flush_acknowledgements()
+            finally:
+                self.consumer.close()
 
     def _acknowledge(self, message) -> None:
-        from confluent_kafka import KafkaException
+        """Queue only an offset whose catalog changes have already committed."""
+        identity = (message.topic(), message.partition())
+        next_offset = message.offset() + 1
+        self._pending_offsets[identity] = max(
+            next_offset, self._pending_offsets.get(identity, next_offset)
+        )
+        self._pending_messages += 1
+        self._maybe_commit()
 
-        partitions = self.consumer.commit(message=message, asynchronous=False)
-        for partition in partitions or ():
-            if partition.error is not None:
-                raise KafkaException(partition.error)
+    def _maybe_commit(self) -> None:
+        if self._pending_offsets and (
+            self._pending_messages >= self.commit_batch_size
+            or self.clock() - self._last_commit_at >= self.commit_interval
+        ):
+            self.flush_acknowledgements()
+
+    def flush_acknowledgements(self, partitions=None) -> None:
+        """Commit explicit durable offsets, never the consumer's polled position."""
+        from confluent_kafka import KafkaException, TopicPartition
+
+        identities = set(self._pending_offsets)
+        if partitions is not None:
+            identities &= {
+                (partition.topic, partition.partition) for partition in partitions
+            }
+        if not identities:
+            return
+        offsets = [
+            TopicPartition(topic, partition, self._pending_offsets[topic, partition])
+            for topic, partition in sorted(identities)
+        ]
+        started = time.perf_counter()
+        try:
+            committed = self.consumer.commit(offsets=offsets, asynchronous=False)
+            for partition in committed or ():
+                if partition.error is not None:
+                    raise KafkaException(partition.error)
+        except BaseException:
+            self._commit_failed = True
+            raise
+        logger.debug(
+            "Kafka commit: %d partition offsets, %d durable messages, %.3fs",
+            len(offsets),
+            self._pending_messages,
+            time.perf_counter() - started,
+        )
+        for identity in identities:
+            del self._pending_offsets[identity]
+        if not self._pending_offsets:
+            self._pending_messages = 0
+        self._last_commit_at = self.clock()
+
+    def _on_revoke(self, consumer, partitions) -> None:
+        self.flush_acknowledgements(partitions)
+
+    def _on_lost(self, consumer, partitions) -> None:
+        # Another owner may already be processing these partitions. Its replay
+        # will consult durable catalog checkpoints; do not commit lost ownership.
+        for partition in partitions:
+            self._pending_offsets.pop((partition.topic, partition.partition), None)
+        if not self._pending_offsets:
+            self._pending_messages = 0
 
 
 class HarvestProcessor:
@@ -245,10 +325,22 @@ def start_consumer(
 
     # Subscribe only after project selection, plugin construction, and preflight
     # have succeeded. Invalid selections must not create an orphaned consumer.
+    consumer = None
     if direct_messages is not None:
         input_context = nullcontext(direct_messages)
     elif topic and kafka_cfg:
-        options = {"with_source": True} if with_source else {}
+        catalog_cfg = config.get("catalog", {})
+        options = (
+            {
+                "with_source": True,
+                "commit_batch_size": catalog_cfg.get("kafka_commit_batch_size", 100),
+                "commit_interval": catalog_cfg.get(
+                    "kafka_commit_interval_seconds", 1.0
+                ),
+            }
+            if with_source
+            else {}
+        )
         consumer = KafkaConsumer(topic, kafka_cfg, idle_timeout=idle_timeout, **options)
         input_context = closing(consumer.consume())
     else:
@@ -276,6 +368,8 @@ def start_consumer(
 
         try:
             pipeline.run()
+            if with_source and consumer is not None:
+                consumer.flush_acknowledgements()
         except MaxErrorsExceededError as e:
             logger.error(str(e))
             _stop_pipeline(pipeline, cause=StopCause.MAX_ERRORS)

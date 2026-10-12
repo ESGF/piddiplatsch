@@ -70,8 +70,12 @@ catalog checkpoints and failure metadata, without changing raw dump payloads.
 
 Catalog harvesting uses `<kafka.group.id>.harvest`, starts at the earliest
 retained offset when that group has no committed position, and disables automatic
-offset storage/commits. It commits Kafka offsets synchronously only after the
-catalog transaction succeeds. Reruns resume from Kafka's committed position;
+offset storage/commits. After each catalog transaction succeeds, its Kafka offset
+is queued for acknowledgement. Explicit durable offsets are committed
+synchronously in batches, by default every 100 messages or 1 second, and flushed
+on idle, shutdown, limits, and partition revocation. Polling a record alone never
+makes its offset eligible for commit. Lost partitions are not committed.
+Reruns resume from Kafka's committed position;
 local checkpoints prevent already stored patches from being applied twice if
 Kafka acknowledgement failed. A fresh group is not a guarantee of a complete
 catalog: Kafka must still retain each full publication needed by later patches.
@@ -112,6 +116,13 @@ that mode retains the existing Kafka group and acknowledgement behavior.
 `[catalog].backend` currently supports `"sqlite"`; `[catalog].directory` overrides
 the default catalog directory. `map` still reads raw JSONL; catalog-backed mapping
 will be connected separately.
+
+Tune broker acknowledgement frequency with `[catalog].kafka_commit_batch_size`
+and `[catalog].kafka_commit_interval_seconds`. Setting batch size to `1` restores
+per-message synchronous broker commits, which can severely limit throughput when
+broker latency is high. SQLite item/checkpoint transactions remain durable per
+message regardless of broker batching. A crash can replay the unacknowledged batch;
+local checkpoints skip the already stored events, including non-idempotent patches.
 
 `map` accepts files or directories plus
 `--project`, `--all-projects`,

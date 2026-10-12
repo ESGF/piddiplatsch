@@ -22,6 +22,12 @@ class KafkaSource:
 
 @dataclass(frozen=True)
 class SourceMessage:
+    """Payload plus source position and a signal that processing is durable.
+
+    ``acknowledge`` may queue a broker offset for a later batch commit. It must
+    only be called after successful processing; input adapters own final flushing.
+    """
+
     key: str | None
     value: dict[str, Any]
     source: KafkaSource

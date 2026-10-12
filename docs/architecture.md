@@ -29,6 +29,8 @@ is separated by input source:
   catalog writes only after their local transaction commits; unresolved events
   stop harvesting. SQLite provides compressed storage, indexed version queries,
   and atomic item/checkpoint writes through the shared catalog contracts.
+  Broker acknowledgements batch explicit durable offsets by count/time and flush
+  on shutdown or revocation, avoiding a network round trip for every record.
 - `runners/mapping.py` opens raw JSONL through `jsonl_stream.py`, applies the
   selected offset and limit, and sends a lazy iterable to the pipeline.
 - `runners/retry.py` streams recovery records in bounded batches and owns

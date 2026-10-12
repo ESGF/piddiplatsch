@@ -51,9 +51,9 @@ local predecessor lookup, but overwrite successive updates to the same item.
   identities, patch targets/operations, and the resulting STAC item structure.
   Keep Handle-specific validation in `map`.
 - [x] Attach SQLite catalogs to `harvest`, retaining raw dumps and a `--no-catalog`
-  compatibility mode. Use a separate Kafka group and synchronous acknowledgement
-  after durable catalog writes; stop on unresolved events and persist decoded
-  failure records with source coordinates. Test duplicate patch replay and failed
+  compatibility mode. Use a separate Kafka group and batched synchronous broker
+  acknowledgement after durable per-message catalog writes; stop on unresolved
+  events and persist decoded failure records with source coordinates. Test duplicate patch replay and failed
   Kafka acknowledgement without reapplying catalog updates.
 - [ ] Store full publication items and apply PATCH events to their cached base
   items in source order. Persist the resulting complete item for later patches.

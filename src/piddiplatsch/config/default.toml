@@ -33,6 +33,11 @@ max_errors = 1
 # --no-catalog retains the previous raw-dump-only behavior.
 enabled = true
 backend = "sqlite"
+# Batch broker acknowledgements after durable local writes. Flush pending offsets
+# on idle, shutdown, limits, and partition revocation. Set batch size 1 for
+# per-message commits (slower on remote brokers).
+kafka_commit_batch_size = 100
+kafka_commit_interval_seconds = 1.0
 # Default directory: <consumer.output_dir>/catalog. Override if needed:
 # directory = "/var/lib/piddi/catalog"
 

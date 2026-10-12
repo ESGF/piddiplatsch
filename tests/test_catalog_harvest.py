@@ -225,8 +225,12 @@ def test_harvest_cli_creates_project_databases_and_commits_after_store(
     assert settings["enable.auto.commit"] is False
     assert settings["enable.auto.offset.store"] is False
     assert settings["auto.offset.reset"] == "earliest"
-    assert client.commit.call_count == 2
-    client.commit.assert_called_with(message=messages[1], asynchronous=False)
+    assert client.commit.call_count == 1
+    assert client.commit.call_args.kwargs["asynchronous"] is False
+    assert [
+        (p.topic, p.partition, p.offset)
+        for p in client.commit.call_args.kwargs["offsets"]
+    ] == [("topic", 0, 2)]
     client.close.assert_called_once()
     assert sorted(
         path.name for path in (tmp_path / "outputs/catalog").glob("*.sqlite")
@@ -323,7 +327,7 @@ def test_partition_commit_error_is_not_treated_as_success(monkeypatch):
     failed_partition.error = KafkaError(KafkaError._TIMED_OUT)
     client.commit.return_value = [failed_partition]
     monkeypatch.setattr("confluent_kafka.Consumer", consumer_class)
-    consumer = KafkaConsumer("topic", {}, with_source=True)
+    consumer = KafkaConsumer("topic", {}, with_source=True, commit_batch_size=1)
     with closing(consumer.consume()) as messages:
         value = next(messages)
         with pytest.raises(KafkaException):
