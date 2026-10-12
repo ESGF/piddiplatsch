@@ -7,6 +7,7 @@ import jsonpatch
 
 from piddiplatsch.catalog.base import BaseCatalog, BaseCatalogTransaction
 from piddiplatsch.catalog.models import CatalogEntry, KafkaCheckpoint
+from piddiplatsch.catalog.state import HarvestState
 from piddiplatsch.core.messages import KafkaSource
 from piddiplatsch.core.plugin import normalize_project_id
 from piddiplatsch.core.registry import get_plugins
@@ -26,7 +27,13 @@ class CatalogHarvester:
     requires_kafka_source = True
     stop_on_error = True
 
-    def __init__(self, directory: Path, *, backend: str = "sqlite"):
+    def __init__(
+        self,
+        directory: Path,
+        *,
+        backend: str = "sqlite",
+        clean_projects: tuple[str, ...] = (),
+    ):
         if backend != "sqlite":
             raise ValueError(f"Unsupported catalog backend: {backend!r}")
         self.directory = Path(directory)
@@ -37,6 +44,29 @@ class CatalogHarvester:
             for project_id in plugin.project_ids
         }
         self._catalogs: dict[str, BaseCatalog] = {}
+        self._state = HarvestState(self.directory)
+        try:
+            known_projects = set(self.project_names)
+            if set(clean_projects) - known_projects:
+                raise ValueError("Clean projects must be registered plugin names")
+            if clean_projects:
+                self._state.request_clean(clean_projects)
+            if set(self._state.pending_clean) - known_projects:
+                raise CatalogError("Pending clean references an unregistered project")
+            for project in self._state.pending_clean:
+                # Do not create empty databases for projects never harvested.
+                if (self.directory / f"{project}.sqlite").exists():
+                    catalog = self._get_catalog(project)
+                    catalog.reset()
+                    catalog.compact()
+            self._state.complete_clean()
+        except BaseException:
+            self.close()
+            raise
+
+    @property
+    def kafka_group_suffix(self) -> str:
+        return self._state.kafka_group_suffix
 
     @property
     def project_names(self) -> tuple[str, ...]:

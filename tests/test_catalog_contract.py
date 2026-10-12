@@ -111,6 +111,9 @@ class LifecycleCatalog(BaseCatalog):
     def reset(self):
         raise NotImplementedError
 
+    def compact(self):
+        raise NotImplementedError
+
 
 @pytest.mark.parametrize("project", ["", None, 1])
 def test_catalog_requires_project_scope(project):

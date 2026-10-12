@@ -101,6 +101,14 @@ class BaseCatalog(BaseCatalogReader):
         """
 
     @abstractmethod
+    def compact(self) -> None:
+        """Reclaim unused storage without changing entries or checkpoints.
+
+        Reject compaction during active transactions or local read iterators.
+        Backends must report external reader/writer conflicts as ``CatalogError``.
+        """
+
+    @abstractmethod
     def close(self) -> None:
         """Release resources; repeated calls are safe, later operations raise.
 

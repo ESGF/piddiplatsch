@@ -40,6 +40,12 @@ piddi harvest --limit 100
 # Keep the previous raw-dump-only behavior
 piddi harvest --no-catalog --limit 100
 
+# Clear all registered project catalogs and replay retained Kafka history
+piddi harvest --clean-catalog
+
+# Clear selected projects; other catalogs retain their state
+piddi harvest --clean-project cmip6 --clean-project cmip7
+
 # raw JSONL -> project-scoped Handle JSONL only
 piddi map --project cmip6 --date 2026-08-27
 
@@ -75,9 +81,31 @@ stop catalog harvesting without acknowledging the failed message. Decoded failed
 events are recorded in the existing failure files, including topic, partition,
 and offset. Repair the cause before resuming; the existing Handle retry command
 does not repair catalogs. Updates to an item must be ordered within one source
-partition. Independent project rebuild/clean/force options and cross-partition
-ordering are not implemented yet. Do not delete a catalog and expect an already
-committed Kafka group to reconstruct it automatically.
+partition. Cross-partition ordering and force-refresh options are not implemented
+yet. Do not delete a catalog and expect an already committed Kafka group to
+reconstruct it automatically; use the clean options below.
+
+`--clean-catalog` clears items and checkpoints for all registered projects;
+repeatable `--clean-project NAME` limits clearing to those projects. SQLite files
+are compacted to reclaim unused space, while raw dumps, Handle outputs, failure
+records, and unrelated files remain unchanged. Projects never harvested do not
+get empty databases. These options require catalogs enabled and cannot be combined
+with each other.
+
+Cleaning persists a new group generation under `catalog/.harvest-state.json`.
+The resulting group is `<kafka.group.id>.harvest.<generation>`, so it replays from
+the earliest retained Kafka history even if the previous group already committed
+later offsets. Interrupted resets are completed before Kafka subscription on the
+next run. After resetting, normal runs keep the generation and resume the rebuild;
+specifying a clean option again intentionally starts another rebuild. Keep the
+control file with the catalogs when moving or backing up their directory.
+
+Project-scoped cleaning still replays the shared topic: other projects skip events
+covered by their retained checkpoints. Replay appends raw dumps again, and
+`--limit` counts all consumed messages, including skipped duplicates. Rebuilding
+still requires the original publications to remain in Kafka; missing patch bases
+stop the run. Run cleaning with other users of that catalog directory stopped;
+concurrent clean/harvest commands are not coordinated.
 
 Configure `[catalog].enabled = false` or use `--no-catalog` for raw-only harvest;
 that mode retains the existing Kafka group and acknowledgement behavior.

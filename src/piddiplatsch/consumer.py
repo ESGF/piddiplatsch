@@ -113,14 +113,20 @@ class KafkaConsumer:
 class HarvestProcessor:
     """Harvest raw dumps, optionally maintaining complete project catalogs."""
 
-    def __init__(self, *, catalog_dir=None, backend="sqlite"):
+    def __init__(self, *, catalog_dir=None, backend="sqlite", clean_projects=()):
         self._harvester = None
         if catalog_dir is not None:
             from piddiplatsch.catalog.harvest import CatalogHarvester
 
-            self._harvester = CatalogHarvester(catalog_dir, backend=backend)
+            self._harvester = CatalogHarvester(
+                catalog_dir, backend=backend, clean_projects=clean_projects
+            )
         self.requires_kafka_source = self._harvester is not None
         self.stop_on_error = self.requires_kafka_source
+
+    @property
+    def kafka_group_suffix(self) -> str:
+        return self._harvester.kafka_group_suffix if self._harvester else ".harvest"
 
     @property
     def project_names(self) -> tuple[str, ...]:
@@ -195,7 +201,8 @@ def start_consumer(
     if with_source and kafka_cfg is not None:
         kafka_cfg = {
             **kafka_cfg,
-            "group.id": str(kafka_cfg.get("group.id", "piddiplatsch")) + ".harvest",
+            "group.id": str(kafka_cfg.get("group.id", "piddiplatsch"))
+            + getattr(proc_instance, "kafka_group_suffix", ".harvest"),
             "auto.offset.reset": "earliest",
             "enable.auto.commit": False,
             "enable.auto.offset.store": False,

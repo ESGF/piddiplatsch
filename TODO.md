@@ -67,11 +67,14 @@ local predecessor lookup, but overwrite successive updates to the same item.
   existing items must still accept new patches and replacement publications.
   Define acknowledgement and unresolved-record durability rules before advancing
   checkpoints, including topics/partitions shared by several projects.
-- [ ] Add explicit clean/rebuild and force-refresh options. Reset the selected
-  catalog and its checkpoints together; define force semantics that never
-  blindly reapply already processed, potentially non-idempotent patches.
-  Support rebuilding a removed project independently of committed Kafka group
-  offsets, and report when retained Kafka history lacks required publications.
+- [x] Add `harvest --clean-catalog` and repeatable `--clean-project`: reset selected
+  items/checkpoints, compact SQLite files, and replay via a durable new Kafka group
+  generation. Recover interrupted resets before consuming; retain unaffected
+  project catalogs and resume partial rebuilds on normal restart.
+- [ ] Define and add force-refresh semantics that never blindly reapply already
+  processed, potentially non-idempotent patches. Missing retained publications
+  currently stop replay when their patches have no cached base; add any further
+  completeness reporting needed for production.
 - [ ] Add project-scoped cache inspection/removal with safe database closure and
   cleanup of associated journal files. Report item counts, unresolved records,
   checkpoints, and disk usage.

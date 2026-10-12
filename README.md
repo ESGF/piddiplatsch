@@ -57,6 +57,9 @@ piddi map --project cmip6 --date last
 Harvest also maintains per-project SQLite STAC catalogs under `outputs/catalog/`
 using a separate Kafka group (`<group.id>.harvest`). Use `--no-catalog` for the
 previous raw-only behavior. Mapping still reads raw dumps during this transition.
+Use `harvest --clean-catalog` to clear and rebuild all registered project catalogs,
+or repeat `--clean-project NAME` to rebuild selected projects from retained Kafka
+history. Cleaning uses a fresh harvest group and compacts the cleared databases.
 
 Once your Handle service profile is configured, publish a completed daily file:
 

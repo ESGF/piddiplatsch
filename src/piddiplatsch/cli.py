@@ -169,9 +169,25 @@ def consume(
     default=None,
     help="Maintain project catalogs alongside raw dumps (default: [catalog].enabled).",
 )
+@click.option(
+    "--clean-catalog",
+    is_flag=True,
+    help="Clear all registered project catalogs and rebuild from retained Kafka history.",
+)
+@click.option(
+    "--clean-project",
+    "clean_projects",
+    multiple=True,
+    help="Clear and rebuild one project's catalog; repeat for several projects.",
+)
 @click.pass_context
 def harvest(
-    ctx: click.Context, idle_timeout: float, limit: int | None, catalog: bool | None
+    ctx: click.Context,
+    idle_timeout: float,
+    limit: int | None,
+    catalog: bool | None,
+    clean_catalog: bool,
+    clean_projects: tuple[str, ...],
 ) -> None:
     """Harvest Kafka messages into raw JSONL and local catalogs without mapping."""
     commands.HarvestCommand(
@@ -179,6 +195,8 @@ def harvest(
         idle_timeout=idle_timeout,
         limit=limit,
         catalog=catalog,
+        clean_catalog=clean_catalog,
+        clean_projects=clean_projects,
     ).execute()
 
 

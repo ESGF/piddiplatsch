@@ -215,6 +215,20 @@ class SQLiteCatalog(BaseCatalog):
             self._connection = None
             self._active_transaction = None
 
+    def compact(self) -> None:
+        self._require_connection()
+        if self._active_transaction is not None or self._read_connections:
+            raise CatalogError(
+                "Cannot compact with an active transaction or read iterator"
+            )
+        if self._execute("PRAGMA wal_checkpoint(TRUNCATE)").fetchone()[0]:
+            raise CatalogError(
+                "Cannot compact while another connection holds a WAL snapshot"
+            )
+        self._execute("VACUUM")
+        if self._execute("PRAGMA wal_checkpoint(TRUNCATE)").fetchone()[0]:
+            raise CatalogError("Could not checkpoint compacted catalog")
+
 
 class SQLiteCatalogTransaction(BaseCatalogTransaction):
     """Transaction handle owned by ``SQLiteCatalog.transaction()``."""

@@ -342,3 +342,30 @@ def test_reset_failure_preserves_items_and_checkpoints(catalog):
         catalog.reset()
     assert catalog.get_item("CMIP6", entry().item_id) == entry()
     assert catalog.get_checkpoint("topic", 0).next_offset == 10
+
+
+def test_compaction_reclaims_reset_storage_without_losing_remaining_state(catalog):
+    with catalog.transaction() as transaction:
+        for version in range(200):
+            transaction.put_item(entry(version))
+    catalog.reset()
+    with catalog.transaction() as transaction:
+        transaction.put_item(entry(1))
+        transaction.set_checkpoint(KafkaCheckpoint("topic", 0, 1))
+    catalog.compact()
+    with sqlite3.connect(catalog.path) as connection:
+        assert connection.execute("PRAGMA freelist_count").fetchone()[0] == 0
+    assert catalog.get_item("CMIP6", entry(1).item_id) == entry(1)
+    assert catalog.get_checkpoint("topic", 0).next_offset == 1
+
+
+def test_compaction_rejects_active_transaction_and_iterator(catalog):
+    with catalog.transaction() as transaction:
+        transaction.put_item(entry())
+        with pytest.raises(CatalogError, match="active"):
+            catalog.compact()
+    with closing(catalog.iter_items()) as items:
+        next(items)
+        with pytest.raises(CatalogError, match="active"):
+            catalog.compact()
+    catalog.compact()
