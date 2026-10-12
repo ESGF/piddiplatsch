@@ -9,6 +9,7 @@ from contextlib import closing, nullcontext
 from enum import StrEnum
 
 from piddiplatsch.config import config
+from piddiplatsch.core.messages import KafkaSource, SourceMessage
 from piddiplatsch.core.pipeline import ProcessingPipeline, build_processing_target
 from piddiplatsch.exceptions import MaxErrorsExceededError, StopOnTransientSkipError
 from piddiplatsch.monitoring.progress import BaseProgress
@@ -36,6 +37,7 @@ class KafkaConsumer:
         *,
         idle_timeout: float | None = None,
         clock=time.monotonic,
+        with_source: bool = False,
     ):
         # Configuration and file-only commands must not load Kafka's native
         # extension (which can enable the GIL on free-threaded Python).
@@ -46,6 +48,13 @@ class KafkaConsumer:
         self.topic = topic
         self.idle_timeout = idle_timeout
         self.clock = clock
+        self.with_source = with_source
+        if with_source:
+            kafka_cfg = {
+                **kafka_cfg,
+                "enable.auto.commit": False,
+                "enable.auto.offset.store": False,
+            }
         self.consumer = ConfluentConsumer(kafka_cfg)
         self.consumer.subscribe([self.topic])
 
@@ -72,17 +81,53 @@ class KafkaConsumer:
                 key = msg.key().decode("utf-8") if msg.key() else None
                 try:
                     value = json.loads(msg.value().decode("utf-8"))
-                except json.JSONDecodeError as e:
+                except (json.JSONDecodeError, UnicodeError) as e:
+                    if self.with_source:
+                        raise ValueError(
+                            f"Invalid Kafka JSON at {msg.topic()}/{msg.partition()}/{msg.offset()}: {e}"
+                        ) from e
                     logger.error(f"Failed to decode message: {e}")
                     continue
 
-                yield key, value
+                if self.with_source:
+                    yield SourceMessage(
+                        key,
+                        value,
+                        KafkaSource(msg.topic(), msg.partition(), msg.offset()),
+                        acknowledge=lambda msg=msg: self._acknowledge(msg),
+                    )
+                else:
+                    yield key, value
         finally:
             self.consumer.close()
 
+    def _acknowledge(self, message) -> None:
+        from confluent_kafka import KafkaException
+
+        partitions = self.consumer.commit(message=message, asynchronous=False)
+        for partition in partitions or ():
+            if partition.error is not None:
+                raise KafkaException(partition.error)
+
 
 class HarvestProcessor:
-    """Accept raw messages after they have been dumped."""
+    """Harvest raw dumps, optionally maintaining complete project catalogs."""
+
+    def __init__(self, *, catalog_dir=None, backend="sqlite"):
+        self._harvester = None
+        if catalog_dir is not None:
+            from piddiplatsch.catalog.harvest import CatalogHarvester
+
+            self._harvester = CatalogHarvester(catalog_dir, backend=backend)
+        self.requires_kafka_source = self._harvester is not None
+        self.stop_on_error = self.requires_kafka_source
+
+    @property
+    def project_names(self) -> tuple[str, ...]:
+        return self._harvester.project_names if self._harvester else ()
+
+    def plugin_name_for(self, value: dict) -> str | None:
+        return self._harvester.plugin_name_for(value) if self._harvester else None
 
     def __str__(self) -> str:
         return "harvest"
@@ -91,7 +136,18 @@ class HarvestProcessor:
         return None
 
     def process(self, key: str, value: dict) -> ProcessingResult:
+        if self._harvester:
+            return self._harvester.process(key, value)
         return ProcessingResult(key=key, success=True)
+
+    def process_with_source(self, key, value, source) -> ProcessingResult:
+        if self._harvester:
+            return self._harvester.process_with_source(key, value, source)
+        return self.process(key, value)
+
+    def close(self) -> None:
+        if self._harvester:
+            self._harvester.close()
 
 
 def _stop_pipeline(pipeline: ProcessingPipeline, cause: StopCause = StopCause.MANUAL):
@@ -135,6 +191,15 @@ def start_consumer(
         publish=publish,
         handle_profile=handle_profile,
     )
+    with_source = bool(getattr(proc_instance, "requires_kafka_source", False))
+    if with_source and kafka_cfg is not None:
+        kafka_cfg = {
+            **kafka_cfg,
+            "group.id": str(kafka_cfg.get("group.id", "piddiplatsch")) + ".harvest",
+            "auto.offset.reset": "earliest",
+            "enable.auto.commit": False,
+            "enable.auto.offset.store": False,
+        }
     stats_config = config.get("stats", {})
     selected_projects = getattr(proc_instance, "project_names", ())
     stats.configure_for_run(
@@ -142,7 +207,7 @@ def start_consumer(
         db_path=stats_config.get("db_path"),
         log_interval_seconds=stats_config.get("interval_seconds"),
         log_interval_messages=stats_config.get("summary_interval"),
-        command="consume",
+        command="harvest" if isinstance(proc_instance, HarvestProcessor) else "consume",
         topic=topic,
         consumer_group=(kafka_cfg or {}).get("group.id"),
         selected_projects=selected_projects,
@@ -176,7 +241,8 @@ def start_consumer(
     if direct_messages is not None:
         input_context = nullcontext(direct_messages)
     elif topic and kafka_cfg:
-        consumer = KafkaConsumer(topic, kafka_cfg, idle_timeout=idle_timeout)
+        options = {"with_source": True} if with_source else {}
+        consumer = KafkaConsumer(topic, kafka_cfg, idle_timeout=idle_timeout, **options)
         input_context = closing(consumer.consume())
     else:
         raise ValueError("Either Kafka config or direct_messages must be provided")
@@ -215,6 +281,10 @@ def start_consumer(
             logger.warning("Consumer interrupted.")
             _stop_pipeline(pipeline, cause=StopCause.KEYBOARD_INTERRUPT)
             sys.exit(0)
+        except Exception as exc:
+            pipeline.close_progress()
+            stats.close(status="failed", error_summary=str(exc))
+            raise
         else:
             pipeline.close_progress()
             stats.close(status="completed")

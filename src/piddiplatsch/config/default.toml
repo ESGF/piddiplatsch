@@ -11,6 +11,7 @@
 # - logging: log level and destination
 # - plugins.*: project-specific mapping options
 # - lookup: choose STAC or ES backend
+# - catalog: local project catalogs maintained by harvest
 # - stats: logging/SQLite reporter settings
 #
 # Full reference defaults; for site setup, start with etc/esgf-example.toml.
@@ -26,6 +27,14 @@ output_dir = "outputs"
 # Maximum number of errors before stopping; -1 = unlimited.
 # Conservative default: stop on first error.
 max_errors = 1
+
+[catalog]
+# Harvest maintains one SQLite database per registered project encountered.
+# --no-catalog retains the previous raw-dump-only behavior.
+enabled = true
+backend = "sqlite"
+# Default directory: <consumer.output_dir>/catalog. Override if needed:
+# directory = "/var/lib/piddi/catalog"
 
 [logging]
 # WARNING keeps normal runs compact. Use -v for INFO or -vv/--debug for DEBUG.

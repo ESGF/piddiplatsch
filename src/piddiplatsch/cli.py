@@ -164,11 +164,21 @@ def consume(
     type=click.IntRange(min=1),
     help="Stop after harvesting this many Kafka messages.",
 )
+@click.option(
+    "--catalog/--no-catalog",
+    default=None,
+    help="Maintain project catalogs alongside raw dumps (default: [catalog].enabled).",
+)
 @click.pass_context
-def harvest(ctx: click.Context, idle_timeout: float, limit: int | None) -> None:
-    """Harvest Kafka messages into raw JSONL without mapping."""
+def harvest(
+    ctx: click.Context, idle_timeout: float, limit: int | None, catalog: bool | None
+) -> None:
+    """Harvest Kafka messages into raw JSONL and local catalogs without mapping."""
     commands.HarvestCommand(
-        verbose=ctx.obj["verbose"], idle_timeout=idle_timeout, limit=limit
+        verbose=ctx.obj["verbose"],
+        idle_timeout=idle_timeout,
+        limit=limit,
+        catalog=catalog,
     ).execute()
 
 

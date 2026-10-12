@@ -36,18 +36,25 @@ before mapping. `map` reads the latest complete state of each versioned item fro
 that catalog, with no remote STAC dependency. Keep older dataset versions for
 local predecessor lookup, but overwrite successive updates to the same item.
 
-- [ ] Define a shared catalog interface for exact item lookup, predecessor
+- [x] Define a shared catalog interface for exact item lookup, predecessor
   lookup, bounded-memory iteration, transactional item/checkpoint writes, reset,
   and close. Keep patch application, project routing, version parsing, and
   duplicate-message handling independent of the storage backend.
-- [ ] Implement SQLite and DuckDB backends with configurable backend and path.
+- [x] Implement the SQLite catalog with compressed JSON, indexed lookups,
+  transactional checkpoints, project ownership checks, reset, and streaming reads.
+- [ ] Add the DuckDB backend alongside SQLite with configurable backend and path.
   Use one database file per project so projects can be removed, rebuilt, and
   compacted independently; scope item identity by collection and item ID.
   Document backend concurrency constraints, including sequential harvest/map
   access for separate processes using a conventional local DuckDB file.
-- [ ] Make `harvest` recognize projects and validate publication envelopes,
+- [x] Make `harvest` recognize projects and validate publication envelopes,
   identities, patch targets/operations, and the resulting STAC item structure.
   Keep Handle-specific validation in `map`.
+- [x] Attach SQLite catalogs to `harvest`, retaining raw dumps and a `--no-catalog`
+  compatibility mode. Use a separate Kafka group and synchronous acknowledgement
+  after durable catalog writes; stop on unresolved events and persist decoded
+  failure records with source coordinates. Test duplicate patch replay and failed
+  Kafka acknowledgement without reapplying catalog updates.
 - [ ] Store full publication items and apply PATCH events to their cached base
   items in source order. Persist the resulting complete item for later patches.
   Establish ordering assumptions when an item can appear in several partitions

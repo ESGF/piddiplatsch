@@ -1,8 +1,8 @@
 """Project-scoped local STAC catalog contracts.
 
 Import storage adapters explicitly, for example ``catalog.sqlite.SQLiteCatalog``,
-to keep this package independent of database drivers. Existing harvest, mapping,
-and remote lookup paths are not wired to the catalog yet.
+to keep this package independent of database drivers. Harvest uses the SQLite
+adapter explicitly; mapping and remote lookup paths remain independent for now.
 """
 
 from piddiplatsch.catalog.base import (

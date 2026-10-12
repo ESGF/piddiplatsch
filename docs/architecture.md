@@ -23,6 +23,12 @@ is separated by input source:
 - `consumer.py` owns Kafka polling, preflight, signals, and run shutdown for
   `consume` and `harvest`. It feeds decoded keyed records into the shared
   processing pipeline and closes the Kafka input on completion or early exit.
+- `catalog/harvest.py` reconstructs complete STAC items in per-project catalogs.
+  Harvest source messages carry topic/partition/offset and an acknowledgement
+  callback separately from their raw payload. The pipeline acknowledges successful
+  catalog writes only after their local transaction commits; unresolved events
+  stop harvesting. SQLite provides compressed storage, indexed version queries,
+  and atomic item/checkpoint writes through the shared catalog contracts.
 - `runners/mapping.py` opens raw JSONL through `jsonl_stream.py`, applies the
   selected offset and limit, and sends a lazy iterable to the pipeline.
 - `runners/retry.py` streams recovery records in bounded batches and owns
@@ -88,7 +94,10 @@ independently generated identifiers.
 `consumer.projects` selects a list of plugin names or `all`. Repeated
 `--project NAME` options and `--all-projects` on `consume` or `map` override
 config for a run. `harvest` intentionally has no project selection: it retains
-every raw queue message so a different mapping selection can be applied later.
+every raw queue message and caches each registered project encountered, so a
+different mapping selection can be applied later. Unknown or malformed events
+stop catalog harvesting and remain unacknowledged; `--no-catalog` keeps the previous
+raw-only behavior. Harvest uses plugin metadata without constructing processors.
 
 Only selected plugins are constructed and preflighted.
 

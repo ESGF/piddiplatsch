@@ -219,6 +219,14 @@ class LookupConfig(BaseModel):
     enabled: bool = False
 
 
+class CatalogConfig(BaseModel):
+    model_config = ConfigDict(extra="forbid", allow_inf_nan=False)
+
+    enabled: bool = Field(default=True, strict=True)
+    backend: Literal["sqlite"] = "sqlite"
+    directory: str | None = Field(default=None, min_length=1)
+
+
 class SchemaConfig(BaseModel):
     model_config = ConfigDict(extra="allow")
     strict_mode: bool = True
@@ -266,6 +274,7 @@ class AppConfig(BaseModel):
     stac: StacConfig | None = None
     elasticsearch: ElasticsearchConfig | None = None
     lookup: LookupConfig | None = None
+    catalog: CatalogConfig | None = None
     schema_config: SchemaConfig | None = Field(None, alias="schema")
     logging_config: LoggingConfig | None = Field(None, alias="logging")
     plugins: PluginsConfig | None = None

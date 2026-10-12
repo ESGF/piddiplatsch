@@ -7,6 +7,7 @@ Piddiplatsch writes daily JSONL files beneath `consumer.output_dir`:
 | Directory | Contents |
 | --- | --- |
 | `dump/` | Original Kafka messages written by every `harvest` or `consume` run. |
+| `catalog/` | One SQLite STAC catalog per registered project encountered by `harvest`, unless disabled. |
 | `<plugin>/handles/` | Handle records produced by that plugin. Direct REST/pyhandle publication writes the JSONL record before contacting the server; each line also includes `project`. |
 | `published/` | One run-scoped JSONL receipt per `publish` run, containing every successful or failed Handle outcome. |
 | `<plugin>/skipped/` | Records deferred after transient external failures. |
@@ -33,8 +34,11 @@ stable ordering and provenance.
 ## Staged commands
 
 ```bash
-# Kafka -> raw JSONL only
+# Kafka -> raw JSONL and project STAC catalogs (no Handle mapping)
 piddi harvest --limit 100
+
+# Keep the previous raw-dump-only behavior
+piddi harvest --no-catalog --limit 100
 
 # raw JSONL -> project-scoped Handle JSONL only
 piddi map --project cmip6 --date 2026-08-27
@@ -50,7 +54,38 @@ piddi consume --publish
 ```
 
 `harvest --limit N` stops normally after dumping `N` messages, which is useful
-for bounded tests against a live topic. `map` accepts files or directories plus
+for bounded tests against a live topic. By default it also maintains
+`<consumer.output_dir>/catalog/<plugin>.sqlite` for every registered project it
+encounters, regardless of `consumer.projects`. Catalogs open on first use;
+harvest does not construct Handle processors or contact STAC/Handle services.
+Full publications replace an existing item's state; patches apply to its local
+base. Older dataset versions remain available. Kafka coordinates are kept in
+catalog checkpoints and failure metadata, without changing raw dump payloads.
+
+Catalog harvesting uses `<kafka.group.id>.harvest`, starts at the earliest
+retained offset when that group has no committed position, and disables automatic
+offset storage/commits. It commits Kafka offsets synchronously only after the
+catalog transaction succeeds. Reruns resume from Kafka's committed position;
+local checkpoints prevent already stored patches from being applied twice if
+Kafka acknowledgement failed. A fresh group is not a guarantee of a complete
+catalog: Kafka must still retain each full publication needed by later patches.
+
+Unknown projects, invalid publications, missing patch bases, and storage failures
+stop catalog harvesting without acknowledging the failed message. Decoded failed
+events are recorded in the existing failure files, including topic, partition,
+and offset. Repair the cause before resuming; the existing Handle retry command
+does not repair catalogs. Updates to an item must be ordered within one source
+partition. Independent project rebuild/clean/force options and cross-partition
+ordering are not implemented yet. Do not delete a catalog and expect an already
+committed Kafka group to reconstruct it automatically.
+
+Configure `[catalog].enabled = false` or use `--no-catalog` for raw-only harvest;
+that mode retains the existing Kafka group and acknowledgement behavior.
+`[catalog].backend` currently supports `"sqlite"`; `[catalog].directory` overrides
+the default catalog directory. `map` still reads raw JSONL; catalog-backed mapping
+will be connected separately.
+
+`map` accepts files or directories plus
 `--project`, `--all-projects`,
 `--limit`, `--offset`, and `--force`. It never contacts Kafka or a Handle
 Service and does not modify its input dumps. It opens each source once and maps

@@ -54,6 +54,10 @@ piddi harvest --limit 100
 piddi map --project cmip6 --date last
 ```
 
+Harvest also maintains per-project SQLite STAC catalogs under `outputs/catalog/`
+using a separate Kafka group (`<group.id>.harvest`). Use `--no-catalog` for the
+previous raw-only behavior. Mapping still reads raw dumps during this transition.
+
 Once your Handle service profile is configured, publish a completed daily file:
 
 ```bash

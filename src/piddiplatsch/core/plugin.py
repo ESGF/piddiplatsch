@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import re
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Protocol
 
@@ -12,6 +14,14 @@ class ProcessorFactory(Protocol):
         ...
 
 
+def dataset_version_index(item_id: str) -> tuple[str, int]:
+    """Default index for built-in projects' final ``.v<digits>`` component."""
+    dataset_id, separator, version = item_id.rpartition(".")
+    if not separator or not dataset_id or not re.fullmatch(r"v[0-9]+", version):
+        raise ValueError(f"Invalid versioned dataset identifier: {item_id!r}")
+    return dataset_id, int(version[1:])
+
+
 @dataclass(frozen=True)
 class PluginSpec:
     """Metadata and factory for one project processing plugin."""
@@ -20,6 +30,7 @@ class PluginSpec:
     project_ids: tuple[str, ...]
     make_processor: ProcessorFactory
     description: str | None = None
+    catalog_index: Callable[[str], tuple[str, int]] = dataset_version_index
 
     def __post_init__(self) -> None:
         name = normalize_project_id(self.name)
