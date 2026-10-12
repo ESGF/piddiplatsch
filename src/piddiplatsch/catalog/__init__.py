@@ -1,7 +1,8 @@
 """Project-scoped local STAC catalog contracts.
 
-SQLite and DuckDB adapters will implement these contracts. Existing harvest,
-mapping, and remote lookup paths are not wired to the catalog yet.
+Import storage adapters explicitly, for example ``catalog.sqlite.SQLiteCatalog``,
+to keep this package independent of database drivers. Existing harvest, mapping,
+and remote lookup paths are not wired to the catalog yet.
 """
 
 from piddiplatsch.catalog.base import (
