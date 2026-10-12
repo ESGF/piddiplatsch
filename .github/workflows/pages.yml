@@ -53,11 +53,33 @@ jobs:
             console.log(load("puppeteer").executablePath({headless: "shell"}));
           ' "$(npm root --global)")
           "$browser" --version
+          timeout --kill-after=5s 15s "$browser" --headless --no-sandbox --dump-dom about:blank > /dev/null
           echo "QUARTO_CHROMIUM=$browser" >> "$GITHUB_ENV"
 
       - name: Build and check documentation and slides
         timeout-minutes: 5
-        run: make docs docs-check
+        env:
+          QUARTO_LOG_LEVEL: DEBUG
+        run: |
+          # Quarto's Mermaid browser navigation can wait indefinitely. Retry
+          # only timeouts; syntax, dependency, and other build errors fail now.
+          for attempt in 1 2; do
+            echo "Documentation build attempt $attempt/2"
+            status=0
+            timeout --kill-after=10s 120s make docs || status=$?
+            if [ "$status" -eq 0 ]; then
+              break
+            fi
+            if [ "$status" -ne 124 ] && [ "$status" -ne 137 ]; then
+              exit "$status"
+            fi
+            if [ "$attempt" -eq 2 ]; then
+              echo "Documentation rendering timed out twice." >&2
+              exit "$status"
+            fi
+            echo "Rendering timed out; retrying with a fresh Quarto process." >&2
+          done
+          make docs-check
 
       - name: Configure GitHub Pages
         if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
