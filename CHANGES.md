@@ -4,40 +4,13 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
-### Changed
-- Add inclusive `publish --from DATE --to DATE` selection for available daily
-  project Handle files, including relative boundaries such as `today-1`.
-- Separate Kafka lifecycle (`consumer.py`), shared iterable processing
-  (`core/pipeline.py`), and file runners (`runners/mapping.py`,
-  `runners/retry.py`, `runners/publish.py`). Remove `DirectConsumer` and replace
-  the internal
-  `ConsumerPipeline`/`feed_messages_direct` APIs with
-  `ProcessingPipeline`/`process_messages`. Preserve streaming, routing,
-  counters, stop policies, and retry safeguards; fixture replay helpers now
-  live in `testing/processing.py`.
-
-### Removed
-- Removed the legacy list loaders `helpers.read_jsonl` and
-  `persist.retry.load_failed_messages`. Use `jsonl_stream.iter_jsonl_records`
-  and `runners.retry.iter_failed_messages` instead.
-
-### Fixed
-- Stream `retry` through the shared JSONL reader in bounded batches, preserving
-  source order and persisted project routing. Ignore records appended after the
-  source is opened, retain changed or unsuccessful inputs, report malformed
-  records individually, and cap retained input-error summaries at 100 messages.
-- Stream `map` JSONL inputs end to end, removing whole-file lists and the direct
-  consumer's eager copy. Share a single-pass JSONL reader with `publish` for
-  source locations, offsets, limits, error handling, and cleanup. Mapping stops
-  on malformed selected records while retaining output already written.
-- Stream `publish` input in a single pass using batches of at most 256 records,
-  preserving per-Handle update order without a staging database. Validate each
-  record independently and continue after invalid records; earlier writes remain
-  published. Stream receipts, cap error summaries at 100 messages, and report
-  progress without a precomputed total (`batch_total` is now `null`). Parent
-  metadata is no longer inferred from other input records.
+## [2.3.0] - 2026-10-12
 
 ### Added
+- Added CMIP7, CMIP6Plus, and CORDEX-CMIP6 plugins alongside CMIP6, with
+  shared STAC processing and Handle record models.
+- Added `piddi top` for active-run and per-project monitoring from SQLite,
+  including heartbeats, stale-run detection, recent history, and JSON output.
 - Added per-project `force_dataset_pid` to regenerate dataset PIDs from versioned STAC
   item IDs despite existing source PIDs, keeping file parent links consistent
   and preserving file tracking IDs. Disabled by default.
@@ -72,6 +45,15 @@ All notable changes to this project are documented here.
   inputs.
 
 ### Changed
+- Added inclusive `publish --from DATE --to DATE` selection for available daily
+  project Handle files, including relative boundaries such as `today-1`.
+- Separated Kafka lifecycle (`consumer.py`), shared iterable processing
+  (`core/pipeline.py`), and file runners (`runners/mapping.py`,
+  `runners/retry.py`, `runners/publish.py`). Removed `DirectConsumer` and replaced
+  the internal `ConsumerPipeline`/`feed_messages_direct` APIs with
+  `ProcessingPipeline`/`process_messages`. Preserved streaming, routing,
+  counters, stop policies, and retry safeguards; fixture replay helpers now
+  live in `testing/processing.py`.
 - CI and `make config-validate` validate the complete ESGF example and local
   test configuration over packaged defaults, which intentionally omit SASL credentials.
 - Configuration inspection skips file logging, so it works with unwritable
@@ -100,8 +82,6 @@ All notable changes to this project are documented here.
 - Failure and skipped records now store their canonical project, use
   project-scoped paths, and retry through the persisted project. Unresolved and
   legacy records retain the global recovery path and configured selection.
-- Removed the obsolete `retry --dry-run` option. Internal processing now uses
-  explicit `publish=False` semantics; Handle JSONL is always written.
 - `piddi retry` now defers Handle publication by default and writes each retry
   invocation to distinct `retry_handles_<timestamp>.jsonl` files; immediate
   publication requires `--publish`.
@@ -119,12 +99,35 @@ All notable changes to this project are documented here.
 - Cleaned up dependencies, development tools, CI, and packaging.
 
 ### Fixed
+- Stream `retry` through the shared JSONL reader in bounded batches, preserving
+  source order and persisted project routing. Ignore records appended after the
+  source is opened, retain changed or unsuccessful inputs, report malformed
+  records individually, and cap retained input-error summaries at 100 messages.
+- Stream `map` JSONL inputs end to end, removing whole-file lists and the direct
+  consumer's eager copy. Share a single-pass JSONL reader with `publish` for
+  source locations, offsets, limits, error handling, and cleanup. Mapping stops
+  on malformed selected records while retaining output already written.
+- Stream `publish` input in a single pass using batches of at most 256 records,
+  preserving per-Handle update order without a staging database. Validate each
+  record independently and continue after invalid records; earlier writes remain
+  published. Stream receipts, cap error summaries at 100 messages, and report
+  progress without a precomputed total (`batch_total` is now `null`). Parent
+  metadata is no longer inferred from other input records.
 - Made retries safer and fixed retry counts and skipped records.
 - Fixed configured output folders, statistics, HTTPS defaults, and Docker builds.
 - Fixed a few small code issues.
 
+### Removed
+- Removed the obsolete `retry --dry-run` option. Internal processing now uses
+  explicit `publish=False` semantics; Handle JSONL is always written.
+- Removed the legacy list loaders `helpers.read_jsonl` and
+  `persist.retry.load_failed_messages`. Use `jsonl_stream.iter_jsonl_records`
+  and `runners.retry.iter_failed_messages` instead.
+
 ### Documentation
 - Added short configuration and operations guides.
+- Added a MkDocs documentation site with configuration, architecture,
+  deployment, and recovery guides, plus HTML presentation slides.
 
 ## [2.2.1] - 2026-08-25
 ### Changed

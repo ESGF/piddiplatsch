@@ -4,7 +4,7 @@ build-backend = "flit_core.buildapi"
 
 [project]
 name = "piddiplatsch"
-version = "2.2.1"
+version = "2.3.0"
 description = "A Kafka consumer for CMIP6+ records with Handle Service integration"
 readme = "README.md"
 authors = [
@@ -167,7 +167,7 @@ skip_gitignore = true
 
 # bump-my-version configuration
 [tool.bumpversion]
-current_version = "2.2.1"
+current_version = "2.3.0"
 commit = true
 tag = true
 tag_name = "v{new_version}"
