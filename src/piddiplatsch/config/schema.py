@@ -209,7 +209,7 @@ class StacConfig(BaseModel):
 class LookupConfig(BaseModel):
     model_config = ConfigDict(extra="allow")
 
-    backend: Literal["stac"] | None = None
+    backend: Literal["catalog", "stac"] = "catalog"
     enabled: bool = False
 
 

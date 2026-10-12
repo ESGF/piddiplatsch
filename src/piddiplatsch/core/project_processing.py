@@ -14,6 +14,7 @@ from piddiplatsch.core.processing import BaseProcessor
 from piddiplatsch.core.project_records import ProjectDatasetRecord, ProjectFileRecord
 from piddiplatsch.core.registry import get_plugin
 from piddiplatsch.exceptions import TransientExternalError
+from piddiplatsch.lookup.catalog import CatalogLookup
 from piddiplatsch.result import ProcessingResult
 from piddiplatsch.utils.stac import get_stac_client
 
@@ -48,6 +49,11 @@ class StacProjectProcessor(BaseProcessor):
         )
         self.catalog_reader = catalog_reader
         self.version_history = version_history
+        self.version_lookup = (
+            CatalogLookup(self.plugin_name, reader=catalog_reader)
+            if catalog_reader is not None
+            else None
+        )
         self.stac_client = (
             None if catalog_reader is not None else get_stac_client(self.plugin_name)
         )
@@ -147,11 +153,11 @@ class StacProjectProcessor(BaseProcessor):
                     item["id"]
                 )
                 collection_id = payload.get("collection_id") or item.get("collection")
-                previous_version = self.catalog_reader.find_previous_version(
+                previous_version = self.version_lookup.find_previous_version(
                     collection_id, dataset_id, version_number
                 )
             # Catalog inputs are synthetic envelopes owned by the mapping runner.
-            # Preserve resolved history in failure records for the retry path.
+            # Preserve resolved history in diagnostic failure records.
             metadata["previous_version"] = previous_version
         record = self.dataset_record(
             item,

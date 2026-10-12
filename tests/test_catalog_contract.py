@@ -99,6 +99,9 @@ class LifecycleCatalog(BaseCatalog):
     def find_previous_version(self, collection_id, dataset_id, version_number):
         raise NotImplementedError
 
+    def find_versions(self, collection_id, dataset_id, limit=100):
+        raise NotImplementedError
+
     def get_checkpoint(self, topic, partition):
         raise NotImplementedError
 

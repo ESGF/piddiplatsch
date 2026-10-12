@@ -231,6 +231,20 @@ class SQLiteCatalog(BaseCatalog):
         ).fetchone()
         return None if row is None else row[0]
 
+    def find_versions(
+        self, collection_id: str, dataset_id: str, limit: int = 100
+    ) -> list[str]:
+        if type(limit) is not int or limit < 1:
+            raise ValueError("limit must be a positive integer")
+        return [
+            row[0]
+            for row in self._execute(
+                "SELECT item_id FROM items WHERE collection_id = ? AND dataset_id = ? "
+                "ORDER BY version_number DESC, item_id DESC LIMIT ?",
+                (collection_id, dataset_id, limit),
+            ).fetchall()
+        ]
+
     def get_checkpoint(self, topic: str, partition: int) -> KafkaCheckpoint | None:
         row = self._execute(
             "SELECT topic, partition, next_offset FROM checkpoints "
@@ -391,6 +405,12 @@ class SQLiteCatalogTransaction(BaseCatalogTransaction):
         return self._catalog.find_previous_version(
             collection_id, dataset_id, version_number
         )
+
+    def find_versions(
+        self, collection_id: str, dataset_id: str, limit: int = 100
+    ) -> list[str]:
+        self._require_active()
+        return self._catalog.find_versions(collection_id, dataset_id, limit)
 
     def get_checkpoint(self, topic: str, partition: int) -> KafkaCheckpoint | None:
         self._require_active()

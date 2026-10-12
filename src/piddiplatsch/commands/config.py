@@ -111,7 +111,7 @@ class ConfigExplainCommand(Command):
         )
         show("Catalog directory", catalog_directory, directory_source)
         click.echo(
-            "Map uses local catalogs; legacy [lookup] settings do not control map."
+            "Map uses the catalog version lookup on its local snapshot; [catalog].version_history controls linking."
         )
         self._explain_paths(show)
         click.echo(

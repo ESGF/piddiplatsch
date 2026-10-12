@@ -197,7 +197,9 @@ Predecessor linking is disabled by default during initial filling. Enable
 `--no-version-history` overrides the setting. Every built-in project uses an
 indexed search for the greatest version strictly below the current version within
 the same collection and dataset, including versions outside the selected date
-window. Legacy `[lookup]` settings do not control catalog mapping. Direct `consume`
+window. Mapping uses the `CatalogLookup` adapter with its item snapshot.
+`[lookup].backend` defaults to `catalog`; selecting `stac` affects separate version
+queries and does not enable network calls in map. Direct `consume`
 retains its separate remote PATCH handling for now.
 
 SQLite schema version 4 retains the event-day index and adds remote-refresh

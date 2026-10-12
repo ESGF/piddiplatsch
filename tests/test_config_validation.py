@@ -70,6 +70,7 @@ def test_invalid_logging_level_is_reported():
 
 def test_lookup_is_disabled_by_default():
     assert LookupConfig().enabled is False
+    assert LookupConfig().backend == "catalog"
 
 
 def test_lookup_without_enabled_flag_uses_dummy_backend():
@@ -382,3 +383,11 @@ def test_force_dataset_pid_requires_a_boolean(value):
         assert not errors
     else:
         assert any("plugins.cmip7.force_dataset_pid" in error for error in errors)
+
+
+def test_catalog_lookup_requires_no_remote_stac_endpoint():
+    cfg = _base_config()
+    cfg["kafka"] = {"bootstrap.servers": "localhost:39092"}
+    cfg["lookup"] = {"enabled": True, "backend": "catalog"}
+    errors, _ = validate_config(cfg)
+    assert errors == []

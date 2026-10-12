@@ -9,7 +9,7 @@
 # - schema: validation strictness
 # - logging: log level and destination
 # - plugins.*: project-specific mapping options
-# - lookup: legacy remote lookup helper settings (unused by map)
+# - lookup: dataset version lookup adapters (map uses its catalog snapshot)
 # - catalog: local project catalogs maintained by harvest
 # - stats: logging/SQLite reporter settings
 #
@@ -176,9 +176,9 @@ excluded_asset_keys = ["reference_file", "globus", "thumbnail", "quicklook"]
 collection = "CMIP6Plus"
 
 [lookup]
-# Legacy remote version lookup helper; only "stac" is supported.
-# Catalog version linking uses [catalog].version_history instead.
-backend = "stac"
+# Dataset version lookup: local catalog by default; "stac" is an explicit alternative.
+# Map always uses its catalog snapshot; linking is enabled by [catalog].version_history.
+backend = "catalog"
 enabled = false
 
 [stats]

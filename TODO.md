@@ -107,8 +107,10 @@ local predecessor lookup, but overwrite successive updates to the same item.
 - [ ] Add a configurable publication failure limit aligned with mapping.
 - [x] Remove the manual Elasticsearch version lookup, its dependency, and defaults.
   Catalog indexes provide predecessor links; remote STAC recovery remains available.
-- [ ] Retire legacy remote lookup helpers/configuration and decide how direct
-  `consume` should integrate with the catalog; it retains
+- [x] Add `CatalogLookup` as the default version lookup adapter, retaining explicit
+  STAC version queries. Reuse map snapshots and indexed metadata without payload
+  scans; keep remote item recovery separate from version lookup.
+- [ ] Decide how direct `consume` should integrate with the catalog; it retains
   its existing remote PATCH handling for now.
 - [ ] Keep full STAC JSON losslessly, with compact serialization and benchmarked
   per-item compression. Index exact identities and dataset/version metadata so

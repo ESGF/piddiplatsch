@@ -33,6 +33,12 @@ class BaseCatalogReader(ABC):
         """
 
     @abstractmethod
+    def find_versions(
+        self, collection_id: str, dataset_id: str, limit: int = 100
+    ) -> list[str]:
+        """Return indexed item IDs latest-first without reading JSON payloads."""
+
+    @abstractmethod
     def latest_event_date(self) -> date | None:
         """Return the latest dated item's UTC event day without reading payloads."""
 

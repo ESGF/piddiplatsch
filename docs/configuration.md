@@ -234,6 +234,28 @@ section and any `[lookup].backend = "es"` setting from site configuration.
 Dataset predecessor links use `[catalog].version_history`. Remote harvest recovery
 continues to use the project STAC endpoint.
 
+## Dataset version lookup
+
+The `lookup` module handles dataset versions only. It provides `CatalogLookup`
+(default) and the retained `STACLookup` implementation:
+
+```toml
+[lookup]
+backend = "catalog"  # explicit remote alternative: "stac"
+enabled = false
+```
+
+`get_lookup(project)` uses this configuration. Catalog lookup opens the project's
+local database read-only for each query, or reuses a caller-owned injected reader.
+It lists version IDs and finds the nearest predecessor through metadata indexes,
+without decompressing STAC payloads. Missing catalogs are errors, not empty results.
+
+Map always uses `CatalogLookup` with its existing item snapshot, regardless of
+`[lookup].backend`; `[catalog].version_history` or the map CLI option controls
+whether it adds predecessor links. This preserves offline mapping. STAC remains
+an explicit adapter for separate version queries; it is independent of harvest's
+complete-item remote recovery.
+
 ## Local catalog
 
 ```toml
@@ -314,7 +336,7 @@ The CLI `--force` option remains separate and controls transient failure handlin
 | `catalog` | `enabled`, `backend`, `directory` | Harvest maintenance and per-project local catalog storage. |
 | `catalog` | `version_history` | Optional local predecessor linking during map; disabled by default. |
 | `catalog` | `kafka_commit_batch_size`, `kafka_commit_interval_seconds` | Broker acknowledgement batching after durable local writes. |
-| `lookup` | `enabled`, `backend` | Legacy compatibility lookup helpers; unused by catalog mapping. |
+| `lookup` | `enabled`, `backend` | Version lookup adapter: `catalog` (default) or explicit `stac`; map uses its catalog snapshot and separate history switch. |
 | `stats` | `interval_seconds`, `summary_interval` | Statistics reporting intervals. |
 | `stats` | `enable_db`, `db_path`, heartbeat/sample/history intervals | Local SQLite state and history for `piddi consume` and `piddi map`. |
 

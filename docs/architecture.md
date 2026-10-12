@@ -87,7 +87,10 @@ checks only the envelope and the object/field shapes consumed by mapping;
 Pydantic validates the Handle records produced by each plugin. Thin plugin
 classes declare project PID fields and retain genuine differences, such as
 version index metadata. Predecessor lookup during catalog mapping is shared by
-all built-in project processors and uses the local catalog index.
+all built-in project processors and uses `lookup/catalog.py` on the local catalog
+index. The version lookup factory defaults to `catalog`, retains explicit `stac`
+queries, and can reuse caller-owned snapshots. Remote full-item recovery remains
+a separate harvest concern.
 
 Canonical PID fields currently are `cmip6:pid` / `cmip6:tracking_id` and
 `cmip7:pid` / `cmip7:tracking_id`, plus `cordex-cmip6:pid` /
