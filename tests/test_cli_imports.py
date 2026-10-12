@@ -51,6 +51,18 @@ assert "confluent_kafka" not in sys.modules
     "module, blocked",
     [
         (
+            "piddiplatsch.catalog",
+            [
+                "sqlite3",
+                "duckdb",
+                "confluent_kafka",
+                "requests",
+                "pystac_client",
+                "piddiplatsch.config",
+                "piddiplatsch.consumer",
+            ],
+        ),
+        (
             "piddiplatsch.core.pipeline",
             [
                 "piddiplatsch.consumer",
