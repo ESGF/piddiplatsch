@@ -5,6 +5,8 @@ All notable changes to this project are documented here.
 ## [Unreleased]
 
 ### Changed
+- Add inclusive `publish --from DATE --to DATE` selection for available daily
+  project Handle files, including relative boundaries such as `today-1`.
 - Separate Kafka lifecycle (`consumer.py`), shared iterable processing
   (`core/pipeline.py`), and file runners (`runners/mapping.py`,
   `runners/retry.py`, `runners/publish.py`). Remove `DirectConsumer` and replace

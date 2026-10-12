@@ -1,12 +1,16 @@
 """Publish command implementation."""
 
 from dataclasses import dataclass
+from datetime import datetime
 from pathlib import Path
 
 import click
 
 from piddiplatsch.commands.base import FileBatchCommand
-from piddiplatsch.commands.helper import resolve_latest_dated_input
+from piddiplatsch.commands.helper import (
+    resolve_dated_range_input,
+    resolve_latest_dated_input,
+)
 from piddiplatsch.core.plugin import normalize_project_id
 from piddiplatsch.result import PublishResult
 from piddiplatsch.runners.publish import HandlePublisher
@@ -21,6 +25,8 @@ class PublishCommand(FileBatchCommand):
     workers: int = 1
     project: str | None = None
     handle_profile: str | None = None
+    from_date: datetime | None = None
+    to_date: datetime | None = None
 
     def execute(self) -> None:
         paths = self._resolve_paths()
@@ -57,6 +63,24 @@ class PublishCommand(FileBatchCommand):
     def _resolve_paths(self) -> tuple[Path, ...]:
         self.validate_input()
         project_name = normalize_project_id(self.project or "")
+        if self.from_date is not None or self.to_date is not None:
+            if self.paths or self.input_date is not None:
+                raise click.UsageError(
+                    "--from/--to cannot be combined with PATH or --date"
+                )
+            if self.from_date is None or self.to_date is None:
+                raise click.UsageError("--from and --to must be provided together")
+            if not project_name:
+                raise click.UsageError("--from/--to requires --project")
+            if self.from_date > self.to_date:
+                raise click.UsageError("--from must be on or before --to")
+            return resolve_dated_range_input(
+                relative_dir=Path(project_name) / "handles",
+                filename_prefix="handles_",
+                missing_label=f"{project_name} Handle",
+                from_date=self.from_date,
+                to_date=self.to_date,
+            )
         if not self.paths and not project_name:
             if self.input_date is None:
                 raise click.UsageError("Provide PATH or --project")

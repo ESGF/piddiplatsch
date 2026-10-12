@@ -24,6 +24,15 @@ def _parse_date_selector(
         raise click.BadParameter(str(exc)) from exc
 
 
+def _parse_range_date(
+    ctx: click.Context, param: click.Parameter, value: str | None
+) -> datetime | None:
+    selected = _parse_date_selector(ctx, param, value)
+    if isinstance(selected, str):
+        raise click.BadParameter("last cannot be used as a range boundary")
+    return selected
+
+
 @click.group(context_settings=CONTEXT_SETTINGS)
 @click.version_option()
 @click.option(
@@ -250,6 +259,20 @@ def map_messages(
     help=f"Select a dated Handle file ({DATE_FORMATS}; default: last).",
 )
 @click.option(
+    "--from",
+    "from_date",
+    metavar="DATE",
+    callback=_parse_range_date,
+    help="First date to publish, inclusive (YYYY-MM-DD, today, yesterday, today-N). Requires --to.",
+)
+@click.option(
+    "--to",
+    "to_date",
+    metavar="DATE",
+    callback=_parse_range_date,
+    help="Last date to publish, inclusive (YYYY-MM-DD, today, yesterday, today-N). Requires --from.",
+)
+@click.option(
     "--project", help="Validate that every selected Handle belongs to this project."
 )
 @click.option(
@@ -294,6 +317,8 @@ def publish(
     ctx: click.Context,
     path: tuple[Path, ...],
     input_date: datetime | str | None,
+    from_date: datetime | None,
+    to_date: datetime | None,
     limit: int | None,
     offset: int,
     retries: int,
@@ -311,6 +336,8 @@ def publish(
         verbose=ctx.obj["verbose"],
         paths=path,
         input_date=input_date,
+        from_date=from_date,
+        to_date=to_date,
         limit=limit,
         offset=offset,
         retries=retries,

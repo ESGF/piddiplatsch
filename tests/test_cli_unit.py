@@ -588,6 +588,123 @@ class TestPublishCommand:
         assert "--project" in result.output
         assert "--handle-profile" in result.output
         assert "--date" in result.output
+        assert "--from" in result.output
+        assert "--to" in result.output
+
+    @pytest.mark.parametrize("relative", (False, True))
+    @patch("piddiplatsch.commands.publish.HandlePublisher")
+    def test_publish_selects_inclusive_date_range(
+        self, publisher_cls, runner, tmp_path, relative
+    ):
+        end = date.today() - timedelta(days=1)
+        start = end - timedelta(days=3)
+        handles_dir = tmp_path / "cmip6" / "handles"
+        handles_dir.mkdir(parents=True)
+        selected = tuple(
+            handles_dir / f"handles_{day.isoformat()}.jsonl"
+            for day in (start, start + timedelta(days=2), end)
+        )
+        for source in reversed(selected):
+            source.touch()
+        for day in (start - timedelta(days=1), end + timedelta(days=1)):
+            (handles_dir / f"handles_{day.isoformat()}.jsonl").touch()
+        (handles_dir / "handles_last.jsonl").touch()
+        (handles_dir / "handles_2026-02-30.jsonl").touch()
+        (
+            handles_dir / f"handles_{(start + timedelta(days=1)).isoformat()}.jsonl"
+        ).mkdir()
+        config._set("consumer", "output_dir", str(tmp_path))
+        publisher_cls.return_value.run.return_value = PublishResult(
+            total=3, succeeded=3
+        )
+
+        result = runner.invoke(
+            cli,
+            [
+                "publish",
+                "--project",
+                "CMIP6",
+                "--from",
+                "today-4" if relative else start.isoformat(),
+                "--to",
+                "today-1" if relative else end.isoformat(),
+                "--offset",
+                "1",
+                "--limit",
+                "2",
+            ],
+        )
+
+        assert result.exit_code == 0, result.output
+        publisher_cls.return_value.run.assert_called_once()
+        assert publisher_cls.return_value.run.call_args.args[0] == selected
+        assert publisher_cls.return_value.run.call_args.kwargs["offset"] == 1
+        assert publisher_cls.return_value.run.call_args.kwargs["limit"] == 2
+
+    @pytest.mark.parametrize(
+        ("args", "message"),
+        [
+            (["--from", "today"], "must be provided together"),
+            (["--to", "today"], "must be provided together"),
+            (["--from", "today", "--to", "yesterday"], "on or before"),
+            (["--from", "last", "--to", "today"], "range boundary"),
+            (["--from", "today", "--to", "last"], "range boundary"),
+            (["--from", "2026-02-30", "--to", "today"], "Invalid value"),
+            (
+                ["--from", "today", "--to", "today", "--date", "last"],
+                "cannot be combined",
+            ),
+        ],
+    )
+    @patch("piddiplatsch.commands.publish.HandlePublisher")
+    def test_publish_rejects_invalid_ranges(self, publisher_cls, runner, args, message):
+        result = runner.invoke(cli, ["publish", "--project", "cmip6", *args])
+
+        assert result.exit_code == 2
+        assert message in result.output
+        publisher_cls.assert_not_called()
+
+    @patch("piddiplatsch.commands.publish.HandlePublisher")
+    def test_publish_range_requires_project(self, publisher_cls, runner):
+        result = runner.invoke(cli, ["publish", "--from", "yesterday", "--to", "today"])
+
+        assert result.exit_code == 2
+        assert "requires --project" in result.output
+        publisher_cls.assert_not_called()
+
+    @patch("piddiplatsch.commands.publish.HandlePublisher")
+    def test_publish_rejects_path_and_range(self, publisher_cls, runner, tmp_path):
+        result = runner.invoke(
+            cli,
+            [
+                "publish",
+                str(tmp_path),
+                "--project",
+                "cmip6",
+                "--from",
+                "today",
+                "--to",
+                "today",
+            ],
+        )
+
+        assert result.exit_code == 2
+        assert "cannot be combined" in result.output
+        publisher_cls.assert_not_called()
+
+    @patch("piddiplatsch.commands.publish.HandlePublisher")
+    def test_publish_range_requires_matching_files(
+        self, publisher_cls, runner, tmp_path
+    ):
+        config._set("consumer", "output_dir", str(tmp_path))
+        result = runner.invoke(
+            cli,
+            ["publish", "--project", "cmip6", "--from", "today", "--to", "today"],
+        )
+
+        assert result.exit_code == 1
+        assert "No dated cmip6 Handle files found from" in result.output
+        publisher_cls.assert_not_called()
 
     @patch("piddiplatsch.commands.publish.HandlePublisher")
     def test_publish_reports_success(self, publisher_cls, runner, tmp_path):
