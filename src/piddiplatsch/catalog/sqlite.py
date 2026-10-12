@@ -12,15 +12,16 @@ from piddiplatsch.catalog.base import BaseCatalog, BaseCatalogTransaction
 from piddiplatsch.catalog.models import CatalogEntry, KafkaCheckpoint
 from piddiplatsch.exceptions import CatalogError
 
-_SCHEMA_VERSION = 3
+_SCHEMA_VERSION = 4
 
 
 def _decode_entry(row: tuple) -> CatalogEntry:
     try:
-        collection_id, dataset_id, version_number, payload, publication_time = row
+        collection_id, dataset_id, version_number, payload, publication_time = row[:5]
+        recovery = json.loads(row[5]) if len(row) > 5 and row[5] is not None else None
         item = json.loads(zlib.decompress(payload))
         return CatalogEntry(
-            collection_id, item, dataset_id, version_number, publication_time
+            collection_id, item, dataset_id, version_number, publication_time, recovery
         )
     except (ValueError, TypeError, zlib.error) as exc:
         raise CatalogError(f"Invalid stored catalog entry: {exc}") from exc
@@ -32,6 +33,7 @@ class SQLiteCatalog(BaseCatalog):
     Payloads use compact UTF-8 JSON compressed independently with zlib level 3,
     available in the standard library. Identity/version indexes remain outside
     the payload. Version 2 adds publication time; version 3 indexes UTC event days.
+    Version 4 adds persistent remote-refresh provenance and a partial index.
     Writer opens migrate older schemas and backfill dates once with bounded memory.
     Read-only opens support all versions without migrating or creating files;
     date selections require version 3.
@@ -94,7 +96,7 @@ class SQLiteCatalog(BaseCatalog):
         if (
             metadata is None
             or metadata[0] != self.project
-            or metadata[1] not in (1, 2, _SCHEMA_VERSION)
+            or metadata[1] not in (1, 2, 3, _SCHEMA_VERSION)
         ):
             raise CatalogError(
                 "Catalog project or schema version does not match: "
@@ -124,19 +126,24 @@ class SQLiteCatalog(BaseCatalog):
                 "CREATE TABLE IF NOT EXISTS items ("
                 "collection_id TEXT NOT NULL, item_id TEXT NOT NULL, "
                 "dataset_id TEXT NOT NULL, version_number INTEGER NOT NULL, "
-                "payload BLOB NOT NULL, publication_time TEXT, event_date TEXT, PRIMARY KEY (collection_id, item_id))"
+                "payload BLOB NOT NULL, publication_time TEXT, event_date TEXT, remote_refresh TEXT, PRIMARY KEY (collection_id, item_id))"
             )
             if metadata is not None and metadata[1] == 1:
                 connection.execute("ALTER TABLE items ADD COLUMN publication_time TEXT")
             if metadata is not None and metadata[1] < 3:
                 connection.execute("ALTER TABLE items ADD COLUMN event_date TEXT")
                 self._backfill_event_dates(connection)
+            if metadata is not None and metadata[1] < 4:
+                connection.execute("ALTER TABLE items ADD COLUMN remote_refresh TEXT")
                 connection.execute(
                     "UPDATE catalog_metadata SET schema_version = ? WHERE singleton = 1",
                     (_SCHEMA_VERSION,),
                 )
             connection.execute(
                 "CREATE INDEX IF NOT EXISTS items_event_dates ON items (event_date, collection_id, item_id)"
+            )
+            connection.execute(
+                "CREATE INDEX IF NOT EXISTS items_remote_refresh ON items (collection_id, item_id) WHERE remote_refresh IS NOT NULL"
             )
             connection.execute(
                 "CREATE INDEX IF NOT EXISTS items_versions "
@@ -199,18 +206,14 @@ class SQLiteCatalog(BaseCatalog):
         except (sqlite3.Error, OverflowError) as exc:
             raise CatalogError(f"SQLite catalog operation failed: {exc}") from exc
 
+    def _entry_select(self) -> str:
+        publication = "publication_time" if self._schema_version >= 2 else "NULL"
+        recovery = "remote_refresh" if self._schema_version >= 4 else "NULL"
+        # Column expressions are fixed internal constants, never user input.
+        return f"SELECT collection_id, dataset_id, version_number, payload, {publication}, {recovery} FROM items"  # noqa: S608
+
     def get_item(self, collection_id: str, item_id: str) -> CatalogEntry | None:
-        sql = (
-            (
-                "SELECT collection_id, dataset_id, version_number, payload, publication_time "
-                "FROM items WHERE collection_id = ? AND item_id = ?"
-            )
-            if self._schema_version >= 2
-            else (
-                "SELECT collection_id, dataset_id, version_number, payload, NULL "
-                "FROM items WHERE collection_id = ? AND item_id = ?"
-            )
-        )
+        sql = self._entry_select() + " WHERE collection_id = ? AND item_id = ?"
         row = self._execute(
             sql,
             (collection_id, item_id),
@@ -265,6 +268,7 @@ class SQLiteCatalog(BaseCatalog):
         collection_id: str | None = None,
         from_date: date | None = None,
         to_date: date | None = None,
+        remote_refresh_only: bool = False,
     ) -> Iterator[CatalogEntry]:
         self._require_connection()
         dated = from_date is not None or to_date is not None
@@ -287,13 +291,13 @@ class SQLiteCatalog(BaseCatalog):
             if not self.read_only:
                 self._read_connections.add(reader)
                 reader.execute("BEGIN")
-            sql = (
-                "SELECT collection_id, dataset_id, version_number, payload, publication_time FROM items"
-                if self._schema_version >= 2
-                else "SELECT collection_id, dataset_id, version_number, payload, NULL FROM items"
-            )
+            sql = self._entry_select()
             parameters = []
             conditions = []
+            if remote_refresh_only:
+                if self._schema_version < 4:
+                    return
+                conditions.append("remote_refresh IS NOT NULL")
             if collection_id is not None:
                 conditions.append("collection_id = ?")
                 parameters.append(collection_id)
@@ -412,10 +416,11 @@ class SQLiteCatalogTransaction(BaseCatalogTransaction):
             )
             day = entry.event_date
             self._catalog._execute(
-                "INSERT INTO items VALUES (?, ?, ?, ?, ?, ?, ?) "
+                "INSERT INTO items VALUES (?, ?, ?, ?, ?, ?, ?, ?) "
                 "ON CONFLICT(collection_id, item_id) DO UPDATE SET "
                 "dataset_id = excluded.dataset_id, version_number = excluded.version_number, "
-                "payload = excluded.payload, publication_time = excluded.publication_time, event_date = excluded.event_date",
+                "payload = excluded.payload, publication_time = excluded.publication_time, "
+                "event_date = excluded.event_date, remote_refresh = excluded.remote_refresh",
                 (
                     entry.collection_id,
                     entry.item_id,
@@ -424,6 +429,13 @@ class SQLiteCatalogTransaction(BaseCatalogTransaction):
                     payload,
                     entry.publication_time,
                     day.isoformat() if day else None,
+                    (
+                        json.dumps(
+                            entry.remote_refresh, separators=(",", ":"), allow_nan=False
+                        )
+                        if entry.remote_refresh is not None
+                        else None
+                    ),
                 ),
             )
         except (

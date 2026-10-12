@@ -57,7 +57,9 @@ piddi map --project cmip6 --version-history
 ```
 
 Harvest also maintains per-project SQLite STAC catalogs under `outputs/catalog/`
-using a separate Kafka group (`<group.id>.harvest`). Use `--no-catalog` for the
+using a separate Kafka group (`<group.id>.harvest`). Missing PATCH bases recover
+the current item from remote STAC without reapplying the patch; recovered items
+stay in remote refresh mode for subsequent events and harvest restarts. Use `--no-catalog` for the
 previous raw-only behavior. Map reads complete local catalog items, including
 harvested patches, without fetching STAC items or replaying raw dumps.
 Use `harvest --clean-catalog` to clear and rebuild all registered project catalogs,

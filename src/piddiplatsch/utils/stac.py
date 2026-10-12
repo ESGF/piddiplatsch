@@ -1,6 +1,7 @@
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from typing import Any
+from urllib.parse import quote
 
 import requests
 from pystac import Item
@@ -63,7 +64,7 @@ class RemoteStacClient(BaseStacClient):
         self.timeout = timeout
 
     def get_item(self, collection_id: str, item_id: str) -> dict[str, Any]:
-        url = f"{self.base_url}/collections/{collection_id}/items/{item_id}"
+        url = f"{self.base_url}/collections/{quote(collection_id, safe='')}/items/{quote(item_id, safe='')}"
         resp = requests.get(url, timeout=self.timeout)
         resp.raise_for_status()
         return resp.json()

@@ -221,3 +221,37 @@ def test_mapping_failure_is_inspectable_and_command_can_be_repeated(
     assert repeated.exit_code == 0, repeated.output
     assert failure_path.read_bytes() == before
     assert handles(tmp_path, "cmip6")[0]["data"]["PREVIOUS_VERSION"] == older_id
+
+
+def test_recovered_remote_item_maps_dataset_and_files_without_network(
+    tmp_path, testdata_path, monkeypatch
+):
+    config._set("consumer", "output_dir", str(tmp_path))
+    current = sample(testdata_path, "cmip7")
+    item = current["data"]["payload"]["item"]
+    fetched = deepcopy(item)
+    # This operation must not be applied to the fetched current state.
+    patch = {
+        "metadata": current.get("metadata", {}),
+        "data": {
+            "payload": {
+                "method": "PATCH",
+                "collection_id": item["collection"],
+                "item_id": item["id"],
+                "patch": [{"op": "remove", "path": "/assets"}],
+            }
+        },
+    }
+    monkeypatch.setattr(
+        "piddiplatsch.utils.stac.RemoteStacClient.get_item", lambda *args: fetched
+    )
+    harvest(tmp_path / "catalog", [patch])
+
+    def unexpected_network(*args, **kwargs):
+        pytest.fail("Mapping a recovered catalog entry must remain offline")
+
+    monkeypatch.setattr("requests.get", unexpected_network)
+    monkeypatch.setattr("requests.sessions.Session.request", unexpected_network)
+    result = map_catalog(projects=["cmip7"])
+    assert result.succeeded == 1
+    assert len(handles(tmp_path, "cmip7")) == 1 + len(item["assets"])

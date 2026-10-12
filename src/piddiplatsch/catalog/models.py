@@ -11,7 +11,9 @@ class CatalogEntry:
 
     ``dataset_id`` excludes the version; ``version_number`` is a sortable integer
     supplied by the project plugin, not inferred by the storage backend. The item
-    retains all source fields. Its dictionary remains mutable; backends must
+    ``remote_refresh`` is local recovery provenance, separate from source JSON.
+    A non-None value marks the item for current-state remote refresh in harvest.
+    The item retains all source fields. Its dictionary remains mutable; backends must
     persist a snapshot and return detached dictionaries on reads.
     """
 
@@ -20,6 +22,7 @@ class CatalogEntry:
     dataset_id: str
     version_number: int
     publication_time: str | None = None
+    remote_refresh: dict[str, Any] | None = None
 
     def __post_init__(self) -> None:
         if not isinstance(self.collection_id, str) or not self.collection_id:
@@ -38,6 +41,11 @@ class CatalogEntry:
             self.publication_time, str
         ):
             raise ValueError("publication_time must be a string or None")
+
+        if self.remote_refresh is not None and not isinstance(
+            self.remote_refresh, dict
+        ):
+            raise ValueError("remote_refresh must be an object or None")
 
     @property
     def item_id(self) -> str:

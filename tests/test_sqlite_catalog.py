@@ -447,3 +447,49 @@ def test_version_one_catalog_remains_readable_and_migrates_on_writer_open(tmp_pa
             transaction.put_item(updated)
     with SQLiteCatalog("cmip6", path, read_only=True) as reader:
         assert reader.get_item("CMIP6", original.item_id) == updated
+
+
+def test_version_three_migrates_without_rewriting_payload_and_indexes_recovery(
+    tmp_path,
+):
+    path = tmp_path / "cmip6.sqlite"
+    value = entry()
+    payload = zlib.compress(json.dumps(value.item).encode())
+    with sqlite3.connect(path) as connection:
+        connection.execute(
+            "CREATE TABLE catalog_metadata (singleton INTEGER PRIMARY KEY, project TEXT, schema_version INTEGER)"
+        )
+        connection.execute("INSERT INTO catalog_metadata VALUES (1, 'cmip6', 3)")
+        connection.execute(
+            "CREATE TABLE items (collection_id TEXT, item_id TEXT, dataset_id TEXT, "
+            "version_number INTEGER, payload BLOB, publication_time TEXT, event_date TEXT, "
+            "PRIMARY KEY (collection_id, item_id))"
+        )
+        connection.execute(
+            "INSERT INTO items VALUES (?, ?, ?, ?, ?, NULL, NULL)",
+            (
+                value.collection_id,
+                value.item_id,
+                value.dataset_id,
+                value.version_number,
+                payload,
+            ),
+        )
+    with SQLiteCatalog("cmip6", path, read_only=True) as legacy:
+        assert legacy.get_item(value.collection_id, value.item_id) == value
+        assert list(legacy.iter_items(remote_refresh_only=True)) == []
+    with SQLiteCatalog("cmip6", path) as upgraded:
+        assert upgraded.get_item(value.collection_id, value.item_id) == value
+        assert list(upgraded.iter_items(remote_refresh_only=True)) == []
+    with sqlite3.connect(path) as connection:
+        assert connection.execute("SELECT payload FROM items").fetchone()[0] == payload
+        assert (
+            connection.execute(
+                "SELECT schema_version FROM catalog_metadata"
+            ).fetchone()[0]
+            == 4
+        )
+        plan = connection.execute(
+            "EXPLAIN QUERY PLAN SELECT payload FROM items WHERE remote_refresh IS NOT NULL ORDER BY collection_id, item_id"
+        ).fetchall()
+        assert any("items_remote_refresh" in row[3] for row in plan)

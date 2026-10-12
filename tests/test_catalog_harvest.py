@@ -113,6 +113,7 @@ def test_patch_replay_is_idempotent_and_new_updates_replace_existing_item(
 
 def test_missing_base_stops_before_acknowledgement_and_records_source(tmp_path):
     config._set("consumer", "output_dir", str(tmp_path))
+    config._set("stac", "base_url", "")
     patch = patch_message([])
     acknowledge = MagicMock()
     following_ack = MagicMock()
@@ -289,6 +290,7 @@ def test_kafka_commit_failure_can_be_replayed_without_reapplying_patch(tmp_path)
 def test_cli_failed_event_does_not_commit_or_consume_following_records(
     value, monkeypatch
 ):
+    config._set("stac", "base_url", "")
     consumer_class = MagicMock()
     client = consumer_class.return_value
     client.poll.side_effect = [kafka_message(value), kafka_message(publication(), 1)]
@@ -352,3 +354,118 @@ def test_configured_catalog_directory_and_disable_setting(tmp_path, monkeypatch)
     result = CliRunner().invoke(cli, ["--no-progress", "harvest", "--limit", "1"])
     assert result.exit_code == 0, result.output
     assert not (directory / "cmip7.sqlite").exists()
+
+
+def test_remote_recovery_never_reapplies_patch_and_survives_restart(
+    tmp_path, monkeypatch
+):
+    from copy import deepcopy
+
+    from piddiplatsch.catalog.remote import fetch_current_item
+
+    config._set("stac", "base_url", "https://stac.example")
+    current = publication()["data"]["payload"]["item"]
+    current["properties"]["updates"] = ["already-applied"]
+    calls = []
+
+    def get_item(client, collection_id, item_id):
+        calls.append((collection_id, item_id))
+        return deepcopy(current)
+
+    monkeypatch.setattr("piddiplatsch.utils.stac.RemoteStacClient.get_item", get_item)
+    patch = patch_message(
+        [{"op": "add", "path": "/properties/updates/-", "value": "already-applied"}]
+    )
+    with closing(CatalogHarvester(tmp_path)) as harvester:
+        harvester.process_with_source("patch", patch, KafkaSource("topic", 0, 5))
+        # Duplicate offsets do not fetch again or apply a patch.
+        assert harvester.process_with_source(
+            "patch", patch, KafkaSource("topic", 0, 5)
+        ).filtered
+    with SQLiteCatalog("cmip6", tmp_path / "cmip6.sqlite", read_only=True) as catalog:
+        entry = catalog.get_item("CMIP6", "CMIP6.dataset.v1")
+        assert entry.item == current
+        assert entry.remote_refresh["trigger"] == {
+            "topic": "topic",
+            "partition": 0,
+            "offset": 5,
+        }
+        assert entry.remote_refresh["endpoint"] == "https://stac.example"
+        assert entry.remote_refresh["fetched_at"]
+        assert list(catalog.iter_items(remote_refresh_only=True)) == [entry]
+        assert catalog.get_checkpoint("topic", 0).next_offset == 6
+    current["properties"]["updates"].append("newer")
+    with closing(CatalogHarvester(tmp_path)) as harvester:
+        # Startup catches up marked items without needing another Kafka event.
+        assert (
+            harvester._get_catalog("cmip6").get_item("CMIP6", "CMIP6.dataset.v1").item
+            == current
+        )
+        harvester.process_with_source("patch", patch, KafkaSource("topic", 0, 6))
+        # An older full publication cannot regress the recovered item or clear mode.
+        harvester.process_with_source("post", publication(), KafkaSource("topic", 0, 7))
+    assert len(calls) == 4
+    with SQLiteCatalog("cmip6", tmp_path / "cmip6.sqlite", read_only=True) as catalog:
+        entry = catalog.get_item("CMIP6", "CMIP6.dataset.v1")
+        assert entry.item == current
+        assert entry.remote_refresh["trigger"]["offset"] == 5
+        assert catalog.get_checkpoint("topic", 0).next_offset == 8
+    # No placeholder is ever returned without a configured remote service.
+    config._set("stac", "base_url", "")
+    with pytest.raises(CatalogError, match="base_url"):
+        fetch_current_item("cmip6", "CMIP6", "CMIP6.dataset.v1")
+
+
+@pytest.mark.parametrize(
+    "fault",
+    ["unavailable", "wrong-id", "wrong-collection", "wrong-project", "invalid-assets"],
+)
+def test_remote_recovery_failures_are_atomic(tmp_path, monkeypatch, fault):
+    import requests
+
+    config._set("stac", "base_url", "https://stac.example")
+    item = publication()["data"]["payload"]["item"]
+    if fault == "wrong-id":
+        item["id"] = "CMIP6.other.v1"
+    if fault == "wrong-collection":
+        item["collection"] = "CMIP7"
+    if fault == "wrong-project":
+        item["properties"]["project"] = "CMIP7"
+    if fault == "invalid-assets":
+        item["assets"] = []
+
+    def get_item(*args):
+        if fault == "unavailable":
+            raise requests.Timeout("service unavailable")
+        return item
+
+    monkeypatch.setattr("piddiplatsch.utils.stac.RemoteStacClient.get_item", get_item)
+    with closing(CatalogHarvester(tmp_path)) as harvester:
+        with pytest.raises((CatalogError, ValueError)):
+            harvester.process_with_source(
+                "patch", patch_message([]), KafkaSource("topic", 0, 0)
+            )
+    with SQLiteCatalog("cmip6", tmp_path / "cmip6.sqlite") as catalog:
+        assert catalog.get_item("CMIP6", "CMIP6.dataset.v1") is None
+        assert catalog.get_checkpoint("topic", 0) is None
+
+
+def test_failed_refresh_retains_previous_item_and_checkpoint(tmp_path, monkeypatch):
+    config._set("stac", "base_url", "https://stac.example")
+    item = publication()["data"]["payload"]["item"]
+    client = MagicMock(return_value=item)
+    monkeypatch.setattr("piddiplatsch.utils.stac.RemoteStacClient.get_item", client)
+    with closing(CatalogHarvester(tmp_path)) as harvester:
+        harvester.process_with_source(
+            "patch", patch_message([]), KafkaSource("topic", 0, 0)
+        )
+        client.side_effect = OSError("offline")
+        with pytest.raises(CatalogError, match="Remote refresh failed"):
+            harvester.process_with_source(
+                "patch", patch_message([]), KafkaSource("topic", 0, 1)
+            )
+    with pytest.raises(CatalogError, match="Remote refresh failed"):
+        CatalogHarvester(tmp_path)
+    with SQLiteCatalog("cmip6", tmp_path / "cmip6.sqlite", read_only=True) as catalog:
+        assert catalog.get_item("CMIP6", "CMIP6.dataset.v1").item == item
+        assert catalog.get_checkpoint("topic", 0).next_offset == 1

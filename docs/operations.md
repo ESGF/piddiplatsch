@@ -66,7 +66,9 @@ piddi consume --publish
 for bounded tests against a live topic. By default it also maintains
 `<consumer.output_dir>/catalog/<plugin>.sqlite` for every registered project it
 encounters, regardless of `consumer.projects`. Catalogs open on first use;
-harvest does not construct Handle processors or contact STAC/Handle services.
+harvest does not construct Handle processors or contact Handle services. Healthy
+items are maintained locally; missing PATCH bases use remote current-item recovery
+as described below.
 Full publications replace an existing item's state; patches apply to its local
 base. Older dataset versions remain available. Kafka coordinates are kept in
 catalog checkpoints and failure metadata, without changing raw dump payloads.
@@ -83,7 +85,7 @@ local checkpoints prevent already stored patches from being applied twice if
 Kafka acknowledgement failed. A fresh group is not a guarantee of a complete
 catalog: Kafka must still retain each full publication needed by later patches.
 
-Unknown projects, invalid publications, missing patch bases, and storage failures
+Unknown projects, invalid publications, failed remote recovery, and storage failures
 stop catalog harvesting without acknowledging the failed message. Decoded failed
 events are recorded in the existing failure files, including topic, partition,
 and offset. Repair the cause and repeat `harvest`; the failed event remains
@@ -110,9 +112,38 @@ control file with the catalogs when moving or backing up their directory.
 Project-scoped cleaning still replays the shared topic: other projects skip events
 covered by their retained checkpoints. Replay appends raw dumps again, and
 `--limit` counts all consumed messages, including skipped duplicates. Rebuilding
-still requires the original publications to remain in Kafka; missing patch bases
-stop the run. Run cleaning with other users of that catalog directory stopped;
+uses original publications retained in Kafka where available; missing patch bases
+are recovered from remote STAC when possible. Run cleaning with other users of that catalog directory stopped;
 concurrent clean/harvest commands are not coordinated.
+
+### Remote current-item recovery
+
+When a PATCH has no local base, harvest fetches the complete current item from the
+project's configured `[stac].base_url` (or `[plugins.<name>.stac]` override), using
+its configured timeout. Identity, collection, project, and item structure are
+validated before writing. The triggering patch is **not applied** to the fetched
+item. There is no whole-catalog bootstrap and no dummy-item fallback.
+
+Recovered entries retain remote-refresh provenance outside the source STAC JSON:
+endpoint, UTC fetch time, and original triggering Kafka coordinates. Subsequent
+PATCH and POST events for those entries refresh from remote STAC instead of
+modifying or replacing them with potentially older queued state. Checkpoints and
+recovered state commit atomically. Duplicate Kafka offsets do not trigger another
+fetch. Healthy entries continue using local patches without network calls.
+
+On each harvest startup, marked entries are refreshed even without new Kafka
+messages, using a partial SQLite index rather than scanning healthy entries. An
+unavailable service, missing item, or invalid response stops harvest and preserves
+the previous item/checkpoint. Markers remain until their project catalog is cleaned
+and rebuilt; without a revision contract, a full queued publication cannot prove
+it is newer than recovered remote state.
+
+This mode follows current remote state; it does not prove the triggering patch
+has been applied. A lagging remote service can temporarily omit changes. Repeat
+harvest before mapping to refresh marked items after the service catches up. Map
+always uses its local snapshot and never performs a remote refresh itself.
+Catalog event-day selection retains the triggering/latest consumed event time;
+`fetched_at` is recovery provenance, not a revision or freshness guarantee.
 
 Configure `[catalog].enabled = false` or use `--no-catalog` for raw-only harvest;
 that mode retains the existing Kafka group and acknowledgement behavior.
@@ -169,7 +200,8 @@ the same collection and dataset, including versions outside the selected date
 window. Legacy `[lookup]` settings do not control catalog mapping. Direct `consume`
 retains its separate remote PATCH handling for now.
 
-SQLite schema version 3 adds the event-day index. Run `harvest` once to upgrade
+SQLite schema version 4 retains the event-day index and adds remote-refresh
+provenance with a partial index. Run `harvest` once to upgrade
 existing catalogs, even if no new Kafka events arrive. Migration derives dates
 from retained timestamps without changing compressed payloads. Dates discarded by
 older schemas cannot be recovered. Read-only legacy catalogs support unfiltered

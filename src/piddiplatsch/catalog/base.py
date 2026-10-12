@@ -95,12 +95,15 @@ class BaseCatalog(BaseCatalogReader):
         collection_id: str | None = None,
         from_date: date | None = None,
         to_date: date | None = None,
+        remote_refresh_only: bool = False,
     ) -> Iterator[CatalogEntry]:
         """Stream entries with bounded memory, optionally by inclusive UTC days.
 
         Unfiltered order is collection/item identity; date-filtered order is
         event day then collection/item identity. Undated items are excluded from
         date selections. Apply filtering through metadata indexes, not payloads.
+
+        ``remote_refresh_only`` selects marked recovery entries using an index.
 
         Yield one current complete state per versioned item. Callers must close
         the iterator when stopping early; backends release read resources on close.

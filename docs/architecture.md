@@ -29,6 +29,10 @@ is separated by input source:
   catalog writes only after their local transaction commits; unresolved events
   stop harvesting. SQLite provides compressed storage, indexed version queries,
   and atomic item/checkpoint writes through the shared catalog contracts.
+  Missing PATCH bases fetch current remote state without applying the patch.
+  Persistent per-item remote-refresh mode also covers later POST/PATCH events
+  and startup refreshes. A partial index selects only marked entries; mapping
+  remains offline.
   Broker acknowledgements batch explicit durable offsets by count/time and flush
   on shutdown or revocation, avoiding a network round trip for every record.
 - `runners/mapping.py` opens read-only per-project catalog snapshots, applies the

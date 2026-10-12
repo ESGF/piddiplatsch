@@ -73,9 +73,12 @@ local predecessor lookup, but overwrite successive updates to the same item.
   generation. Recover interrupted resets before consuming; retain unaffected
   project catalogs and resume partial rebuilds on normal restart.
 - [ ] Define and add force-refresh semantics that never blindly reapply already
-  processed, potentially non-idempotent patches. Missing retained publications
-  currently stop replay when their patches have no cached base; add any further
+  processed, potentially non-idempotent patches. Missing bases now use per-item remote current-state recovery; add further
   completeness reporting needed for production.
+- [x] Recover missing PATCH bases from remote current STAC items without applying
+  queued patches to fetched state. Persist per-item refresh mode/provenance;
+  refresh marked items on later POST/PATCH events and harvest startup. Keep
+  checkpoints atomic and map offline; reject failed/invalid remote responses.
 - [ ] Add project-scoped cache inspection/removal with safe database closure and
   cleanup of associated journal files. Report item counts, unresolved records,
   checkpoints, and disk usage.

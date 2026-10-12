@@ -15,9 +15,18 @@ Unresolved projects use the global `failures/` or `skipped/` directories. Origin
 Kafka messages remain in `outputs/dump/dump_messages_<date>.jsonl`.
 
 Catalog harvest stops immediately on an unresolved event without acknowledging it.
+Missing PATCH bases trigger per-item remote recovery: fetch the complete current
+item without applying the patch, then persist remote-refresh mode. Later events
+for that item also fetch current state. Harvest startup refreshes marked items
+without new Kafka events; map remains local. A failed fetch stops harvest without
+advancing the event checkpoint. See [remote recovery](operations.md#remote-current-item-recovery).
+
 Fix the cause and repeat `harvest`; checkpoints prevent previously stored patches
 from being reapplied. To rebuild a catalog, use `--clean-project NAME` or
-`--clean-catalog`, provided Kafka still retains the necessary original publications.
+`--clean-catalog`, using retained Kafka publications and per-item remote recovery where available.
+Recovery requires the item to remain available in remote STAC; it does not restore
+missing historical versions. Remote lag can temporarily omit an update, so repeat
+harvest after the service catches up before mapping.
 There is currently no harvest option to skip an unresolved event.
 
 Mapping stops at the configured `consumer.max_errors` threshold. Fix the problem

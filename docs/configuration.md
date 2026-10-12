@@ -224,7 +224,10 @@ Project settings inherit unspecified values from `[stac]`. A project-specific
 `base_url` or `timeout` can therefore be added later if that collection moves to
 another service. Legacy direct consumption PATCH events use their own
 `collection_id`. Catalog mapping uses stored collections and does not contact
-this endpoint. Its predecessor queries are controlled by `[catalog].version_history`.
+this endpoint. Harvest uses the same project endpoint and timeout for missing-base
+recovery and persistent per-item remote refresh. This is independent of the legacy
+`[lookup].enabled` setting; an absent endpoint stops recovery instead of creating
+a placeholder. Its predecessor queries are controlled by `[catalog].version_history`.
 
 ## Local catalog
 
