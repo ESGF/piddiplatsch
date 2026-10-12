@@ -39,6 +39,37 @@ def resolve_latest_dated_input(
     *, relative_dir: Path, filename_prefix: str, missing_label: str
 ) -> tuple[Path, ...]:
     """Find the input whose filename contains the greatest valid ISO date."""
+    input_dir, candidates = _dated_input_candidates(relative_dir, filename_prefix)
+    if not candidates:
+        raise click.ClickException(
+            f"No dated {missing_label} files found in: {input_dir}"
+        )
+    return (max(candidates)[1],)
+
+
+def resolve_dated_range_input(
+    *,
+    relative_dir: Path,
+    filename_prefix: str,
+    missing_label: str,
+    from_date: datetime,
+    to_date: datetime,
+) -> tuple[Path, ...]:
+    """Select available daily files in an inclusive range, oldest first."""
+    input_dir, candidates = _dated_input_candidates(relative_dir, filename_prefix)
+    start, end = from_date.date().isoformat(), to_date.date().isoformat()
+    paths = tuple(path for day, path in sorted(candidates) if start <= day <= end)
+    if not paths:
+        raise click.ClickException(
+            f"No dated {missing_label} files found from {start} to {end} in: {input_dir}"
+        )
+    return paths
+
+
+def _dated_input_candidates(
+    relative_dir: Path, filename_prefix: str
+) -> tuple[Path, list[tuple[str, Path]]]:
+    """Find regular JSONL files with canonical ISO dates in their names."""
     output_dir = Path(config.get("consumer", {}).get("output_dir", "outputs"))
     input_dir = output_dir / relative_dir
     suffix = ".jsonl"
@@ -52,11 +83,7 @@ def resolve_latest_dated_input(
         if path.is_file() and parsed_date.isoformat() == date_text:
             candidates.append((date_text, path))
 
-    if not candidates:
-        raise click.ClickException(
-            f"No dated {missing_label} files found in: {input_dir}"
-        )
-    return (max(candidates)[1],)
+    return input_dir, candidates
 
 
 def select_projects(

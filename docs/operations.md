@@ -79,6 +79,9 @@ configuration file.
 # Publish yesterday's prepared CMIP6 Handles
 piddi publish --project cmip6 --date yesterday
 
+# Publish available daily files from October 8 through yesterday
+piddi publish --project cmip6 --from 2026-10-08 --to today-1
+
 # Try the first 1,000 records of a specific completed file
 piddi publish --project cmip6 --date 2026-08-25 --limit 1000
 
@@ -92,6 +95,14 @@ nonblank input lines across the selected files; limits cap attempted records,
 including failures. Publication never changes or deletes its inputs. Handle
 writes use overwrite semantics, so a completed, immutable input can be replayed
 after interruption. The command exits non-zero if any record fails.
+
+Use `--from DATE --to DATE` with `--project` to select an inclusive date range.
+Both boundaries are required and accept `YYYY-MM-DD`, `today`, `yesterday`, or
+`today-N`, using the local calendar date. Available daily Handle files are
+published oldest first; days without files are skipped. An empty range fails
+before publication. The start must be on or before the end; `last` is not a
+range boundary. Range options cannot be combined with `--date` or explicit
+paths. Offsets and limits apply across the whole range in one publication run.
 
 `--retries` covers transient connection errors, timeouts, rate limiting, and
 server errors. The delay starts at one second and doubles up to 60 seconds;

@@ -58,6 +58,9 @@ Once your Handle service profile is configured, publish a completed daily file:
 
 ```bash
 piddi publish --project cmip6 --date yesterday
+
+# Or publish an inclusive range of available daily files
+piddi publish --project cmip6 --from 2026-10-08 --to today-1
 ```
 
 Use `piddi COMMAND --help` for options. The
