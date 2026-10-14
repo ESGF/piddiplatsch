@@ -105,4 +105,4 @@ force_dataset_pid = false
 # Both map/publish support inclusive --from/--to and --offset/--limit.
 # Map counts catalog items; publish counts Handle records. Failure files are for
 # inspection only; fix the cause and repeat the normal command. No retry command.
-# Legacy consume remains available for direct ingestion outside this staged path.
+# The old consume command is removed; harvest owns queue ingestion.

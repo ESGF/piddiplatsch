@@ -79,13 +79,16 @@ not open the file during inspection.
 
 ## Routine operation
 
-Plain `piddi consume` prepares JSONL files. Use `piddi consume --publish` for
-immediate delivery or `piddi publish` for deferred delivery. Publication mode is
-a command choice rather than another site configuration setting.
+Production runs `piddi harvest --idle-timeout 0` continuously and schedules
+`piddi batch` to map pending catalog items and publish sealed batches. Manual
+`map` and `publish` remain available for selected dates/windows.
+
+`consume` has been removed. Use `harvest` for ingestion and `map`/`publish` for
+manual operation, or `batch` for the scheduled workflow.
 
 Select projects with `[consumer].projects`, repeated `--project` flags, or
-`--all-projects`. Command-line selection takes precedence. Processes filtering
-different projects from the same topic must use different Kafka `group.id` values.
+`--all-projects`. Map command-line selection takes precedence; the batch worker uses the configured
+selection. Harvest caches all registered projects and uses a separate Kafka group.
 
 Use `-v` for INFO logging, `-vv` for DEBUG, and `--log PATH` to select a log file.
 For permanent changes, set `[logging].level` and `[logging].file`.
@@ -117,7 +120,7 @@ written as `-`.
 Each named profile inherits `[handles.defaults]` and overrides those values
 with its own table. All projects inherit `[handles].default`. A project may select another named
 profile with `plugins.<name>.handle`, and `--handle-profile NAME` temporarily
-overrides both settings for `consume`, `map`, or `publish`. Existing
+overrides both settings for `map` or `publish`. Existing
 Handle files retain their mapped prefix, so publication still rejects an
 override whose prefix does not match the records.
 
@@ -181,7 +184,7 @@ protocols and mechanisms can still be selected there.
 
 The Docker test cluster uses unauthenticated Kafka. Its `tests/config.toml`
 explicitly overrides the protocol, so run it with
-`piddi --config tests/config.toml consume`. For another local configuration, add:
+`piddi --config tests/config.toml harvest`. For another local configuration, add:
 
 ```toml
 [kafka]
@@ -222,7 +225,7 @@ collection = "CMIP7"
 
 Project settings inherit unspecified values from `[stac]`. A project-specific
 `base_url` or `timeout` can therefore be added later if that collection moves to
-another service. Legacy direct consumption PATCH events use their own
+another service. Harvest PATCH recovery uses the event
 `collection_id`. Catalog mapping uses stored collections and does not contact
 this endpoint. Harvest uses the same project endpoint and timeout for missing-base
 recovery and persistent per-item remote refresh. This is independent of the legacy
@@ -338,20 +341,21 @@ enable the override only for affected projects in your configuration:
 force_dataset_pid = true
 ```
 
-This applies to mapping, consumption, and retries. Piddi uses its deterministic
+This applies to manual and scheduled catalog mapping. Piddi uses its deterministic
 UUIDv3 generator with the complete STAC item `id` (the versioned `instance_id`).
 Source dataset PID fields are ignored, including conflicting compatibility fields.
 File `IS_PART_OF` links point to the generated dataset PID, while file tracking
 IDs and dataset `HAS_PARTS` links retain their existing behavior. The input STAC
 JSON is not modified. This does not create redirects for previously published
 PIDs; existing mapped Handle JSONL must be regenerated to use the new policy.
-The CLI `--force` option remains separate and controls transient failure handling.
+`batch --force-map` skips mapping thresholds for pending items; harvest remains
+fail-fast and has no force option.
 
 ### Advanced tuning and optional services
 
 | Section | Key | Purpose |
 | --- | --- | --- |
-| `consumer.transient` | `stop_on_skip` | Stop after a transient external failure unless `--force` is used. |
+| `consumer.transient` | `stop_on_skip` | Legacy library setting; catalog harvest always stops on failed recovery. |
 | `consumer.transient` | `retries` | Number of retries for transient STAC patch retrieval. |
 | `consumer.transient` | `backoff_initial`, `backoff_max` | Exponential retry delay bounds in seconds. |
 | `consumer.transient` | `preflight_stac` | Probe the configured STAC service before consuming; disabled by default. |
@@ -360,7 +364,7 @@ The CLI `--force` option remains separate and controls transient failure handlin
 | `catalog` | `kafka_commit_batch_size`, `kafka_commit_interval_seconds` | Broker acknowledgement batching after durable local writes. |
 | `lookup` | `enabled`, `backend` | Version lookup adapter: `catalog` (default) or explicit `stac`; map uses its catalog snapshot and separate history switch. |
 | `stats` | `interval_seconds`, `summary_interval` | Statistics reporting intervals. |
-| `stats` | `enable_db`, `db_path`, heartbeat/sample/history intervals | Local SQLite state and history for `piddi consume` and `piddi map`. |
+| `stats` | `enable_db`, `db_path`, heartbeat/sample/history intervals | Local SQLite state and history for mapping and batch mapping runs. |
 
 ## Compatibility with older configuration
 

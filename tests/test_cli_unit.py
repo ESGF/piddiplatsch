@@ -8,10 +8,10 @@ from click.testing import CliRunner
 
 from piddiplatsch.cli import cli
 from piddiplatsch.commands import (
+    BatchCommand,
     Command,
     ConfigShowCommand,
     ConfigValidateCommand,
-    ConsumeCommand,
     HarvestCommand,
     MapCommand,
     PublishCommand,
@@ -37,7 +37,7 @@ class TestCLIBasics:
 
     def test_commands_implement_common_api(self):
         command_types = (
-            ConsumeCommand,
+            BatchCommand,
             HarvestCommand,
             MapCommand,
             PublishCommand,
@@ -52,11 +52,18 @@ class TestCLIBasics:
         result = runner.invoke(cli, ["--help"])
         assert result.exit_code == 0
         assert "CLI to interact with Kafka and Handle Service" in result.output
-        assert "consume" in result.output
+        assert "consume" not in result.output
         assert "harvest" in result.output
         assert "map" in result.output
         assert "publish" in result.output
         assert "retry" not in result.output
+
+    @patch("piddiplatsch.consumer.start_consumer")
+    def test_consume_command_is_removed(self, start_consumer, runner):
+        result = runner.invoke(cli, ["consume"])
+        assert result.exit_code == 2
+        assert "No such command 'consume'" in result.output
+        start_consumer.assert_not_called()
 
     def test_cli_help_short(self, runner):
         """Test that CLI shows help with -h flag."""
@@ -76,109 +83,6 @@ class TestCLIBasics:
         # Click returns exit code 2 when required command is missing
         assert result.exit_code == 2 or result.exit_code == 0
         assert "Usage:" in result.output or "Commands:" in result.output
-
-
-class TestConsumeCommand:
-    """Test consume command."""
-
-    @patch("piddiplatsch.commands.ConsumeCommand")
-    def test_cli_delegates_to_command(self, command_cls, runner):
-        result = runner.invoke(
-            cli,
-            [
-                "--verbose",
-                "consume",
-                "--publish",
-                "--force",
-                "--project",
-                "cmip6",
-                "--handle-profile",
-                "dkrz-test",
-            ],
-        )
-
-        assert result.exit_code == 0
-        command_cls.assert_called_once_with(
-            verbose=True,
-            publish=True,
-            force=True,
-            projects=("cmip6",),
-            all_projects=False,
-            handle_profile="dkrz-test",
-        )
-        command_cls.return_value.execute.assert_called_once_with()
-
-    def test_consume_help(self, runner):
-        """Test consume command help."""
-        result = runner.invoke(cli, ["consume", "--help"])
-        assert result.exit_code == 0
-        assert "Harvest and map Kafka messages" in result.output
-        assert "--publish" in result.output
-        assert "--project" in result.output
-        assert "--all-projects" in result.output
-
-    @patch("piddiplatsch.consumer.start_consumer")
-    def test_consume_basic(self, mock_start_consumer, runner):
-        """Test consume command calls start_consumer."""
-        runner.invoke(cli, ["consume"])
-        assert mock_start_consumer.called
-        call_kwargs = mock_start_consumer.call_args.kwargs
-        assert call_kwargs["dump_messages"] is True
-        assert call_kwargs["publish"] is False
-        assert call_kwargs["monitor_db"] is True
-
-    @patch("piddiplatsch.consumer.start_consumer")
-    def test_consume_with_publish(self, mock_start_consumer, runner):
-        runner.invoke(cli, ["consume", "--publish"])
-        assert mock_start_consumer.called
-        call_kwargs = mock_start_consumer.call_args.kwargs
-        assert call_kwargs["dump_messages"] is True
-        assert call_kwargs["publish"] is True
-
-    @patch("piddiplatsch.consumer.start_consumer")
-    def test_consume_is_verbose_by_default(self, mock_start_consumer, runner):
-        """Test consume command shows progress by default."""
-        result = runner.invoke(cli, ["consume"])
-        assert mock_start_consumer.called
-        assert "msg/hdl messages/handles" in result.output
-        assert "E/F/W/D errors/filtered/warnings/retracted" in result.output
-        call_kwargs = mock_start_consumer.call_args.kwargs
-        assert call_kwargs.get("verbose") is True
-        assert isinstance(call_kwargs["progress"], Progress)
-
-    @patch("piddiplatsch.consumer.start_consumer")
-    def test_consume_silent_disables_progress(self, mock_start_consumer, runner):
-        result = runner.invoke(cli, ["--silent", "consume"])
-
-        assert result.exit_code == 0
-        call_kwargs = mock_start_consumer.call_args.kwargs
-        assert call_kwargs["verbose"] is False
-        assert isinstance(call_kwargs["progress"], NoOpProgress)
-
-    @patch("piddiplatsch.consumer.start_consumer")
-    def test_consume_with_several_projects(self, mock_start_consumer, runner):
-        result = runner.invoke(
-            cli,
-            ["consume", "--project", "cmip6", "--project", "cmip7"],
-        )
-        assert result.exit_code == 0
-        assert mock_start_consumer.call_args.kwargs["projects"] == ("cmip6", "cmip7")
-
-    @patch("piddiplatsch.consumer.start_consumer")
-    def test_consume_with_all_projects(self, mock_start_consumer, runner):
-        result = runner.invoke(cli, ["consume", "--all-projects"])
-        assert result.exit_code == 0
-        assert mock_start_consumer.call_args.kwargs["projects"] == "all"
-
-    @patch("piddiplatsch.consumer.start_consumer")
-    def test_consume_rejects_named_and_all_projects(self, mock_start_consumer, runner):
-        result = runner.invoke(
-            cli,
-            ["consume", "--project", "cmip6", "--all-projects"],
-        )
-        assert result.exit_code == 2
-        assert "cannot be combined" in result.output
-        mock_start_consumer.assert_not_called()
 
 
 class TestHarvestCommand:
@@ -830,27 +734,27 @@ class TestCLIOptions:
     @patch("piddiplatsch.consumer.start_consumer")
     def test_debug_flag(self, mock_start_consumer, runner):
         """Test --debug flag."""
-        runner.invoke(cli, ["--debug", "consume"])
+        runner.invoke(cli, ["--debug", "harvest"])
         # Debug should configure logging but not affect command execution
         assert mock_start_consumer.called
 
     @patch("piddiplatsch.cli.config.configure_logging")
-    @patch("piddiplatsch.commands.ConsumeCommand")
+    @patch("piddiplatsch.commands.HarvestCommand")
     def test_repeated_verbose_controls_logging(
         self, command_cls, configure_logging, runner
     ):
-        result = runner.invoke(cli, ["-vv", "--no-progress", "consume"])
+        result = runner.invoke(cli, ["-vv", "--no-progress", "harvest"])
 
         assert result.exit_code == 0
         configure_logging.assert_called_once_with(verbosity=2, debug=False, log=None)
         assert command_cls.call_args.kwargs["verbose"] is False
 
     @patch("piddiplatsch.cli.config.configure_logging")
-    @patch("piddiplatsch.commands.ConsumeCommand")
+    @patch("piddiplatsch.commands.HarvestCommand")
     def test_debug_and_silent_remain_aliases(
         self, command_cls, configure_logging, runner
     ):
-        result = runner.invoke(cli, ["--debug", "--silent", "consume"])
+        result = runner.invoke(cli, ["--debug", "--silent", "harvest"])
 
         assert result.exit_code == 0
         configure_logging.assert_called_once_with(verbosity=0, debug=True, log=None)
@@ -860,7 +764,7 @@ class TestCLIOptions:
     def test_log_file_option(self, mock_start_consumer, runner, tmp_path):
         """Test --log option."""
         log_file = tmp_path / "test.log"
-        runner.invoke(cli, ["--log", str(log_file), "consume"])
+        runner.invoke(cli, ["--log", str(log_file), "harvest"])
         assert mock_start_consumer.called
 
     @patch("piddiplatsch.consumer.start_consumer")
@@ -869,7 +773,7 @@ class TestCLIOptions:
         self, mock_load_config_layers, mock_start_consumer, runner
     ):
         """Test that the default site and local layers are loaded."""
-        result = runner.invoke(cli, ["consume"])
+        result = runner.invoke(cli, ["harvest"])
 
         assert result.exit_code == 0
         mock_load_config_layers.assert_called_once_with("custom.toml")
@@ -883,7 +787,7 @@ class TestCLIOptions:
         config_file = tmp_path / "custom.toml"
         config_file.write_text('[plugin]\nprocessor = "test"\n')
 
-        result = runner.invoke(cli, ["--config", str(config_file), "consume"])
+        result = runner.invoke(cli, ["--config", str(config_file), "harvest"])
 
         assert result.exit_code == 0
         mock_load_config_layers.assert_called_once_with(str(config_file))

@@ -115,7 +115,7 @@ class ConfigExplainCommand(Command):
         )
         self._explain_paths(show)
         click.echo(
-            "Publication: consume writes JSONL; --publish enables immediate delivery."
+            "Publication: map prepares JSONL; publish sends selected files; batch publishes sealed ready batches."
         )
         click.echo("Deferred publish always uses REST. Credential fields are omitted.")
 

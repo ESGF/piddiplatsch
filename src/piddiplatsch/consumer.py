@@ -1,4 +1,4 @@
-"""Kafka polling and lifecycle for the consume and harvest commands."""
+"""Kafka polling and lifecycle for catalog harvest and reusable input adapters."""
 
 import json
 import logging

@@ -105,8 +105,8 @@ It maintains catalogs and raw dumps, and does not prepare or publish Handles.
 Map and publish remain available as explicit commands. Scheduled execution uses
 `piddi-batch.service` (oneshot) and `piddi-batch.timer`; the timer is installed but
 disabled until explicitly enabled.
-Legacy `consume` remains available manually. Existing deployments switching from
-consume use the separate harvest Kafka group and may replay retained history.
+The old `consume` command is removed. Existing deployments switching to harvest
+use its separate Kafka group and may replay retained history.
 Keep the catalog databases and `.harvest-state.json` together for backup/recovery.
 Do not use clean options automatically in the service.
 

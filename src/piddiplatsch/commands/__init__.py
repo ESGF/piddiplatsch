@@ -11,7 +11,6 @@ _EXPORTS = {  # noqa: RUF067 - lazy public re-exports avoid loading network clie
     "ConfigExplainCommand": "config",
     "ConfigShowCommand": "config",
     "ConfigValidateCommand": "config",
-    "ConsumeCommand": "consume",
     "HarvestCommand": "harvest",
     "MapCommand": "map",
     "PublishCommand": "publish",

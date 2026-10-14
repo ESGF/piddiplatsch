@@ -6,7 +6,7 @@ Piddiplatsch writes daily JSONL files beneath `consumer.output_dir`:
 
 | Directory | Contents |
 | --- | --- |
-| `dump/` | Original Kafka messages written by every `harvest` or `consume` run. |
+| `dump/` | Original Kafka messages written by every `harvest` run. |
 | `catalog/` | One SQLite STAC catalog per registered project encountered by `harvest`, unless disabled. |
 | `<plugin>/handles/` | Handle records produced by that plugin. Direct REST/pyhandle publication writes the JSONL record before contacting the server; each line also includes `project`. |
 | `published/` | One run-scoped JSONL receipt per `publish` run, containing every successful or failed Handle outcome. |
@@ -55,11 +55,8 @@ piddi map --project cmip6 --version-history
 # Handle JSONL -> REST Handle Service
 piddi publish --project cmip6 --date 2026-08-27
 
-# Kafka -> raw JSONL -> Handle JSONL (default production ingestion)
-piddi consume
-
-# All three stages in one process
-piddi consume --publish
+# Scheduled workflow: map due projects and publish ready batches
+piddi batch
 ```
 
 `harvest --idle-timeout 0` keeps consuming continuously for a service. The normal
@@ -202,8 +199,7 @@ indexed search for the greatest version strictly below the current version withi
 the same collection and dataset, including versions outside the selected date
 window. Mapping uses the `CatalogLookup` adapter with its item snapshot.
 `[lookup].backend` defaults to `catalog`; selecting `stac` affects separate version
-queries and does not enable network calls in map. Direct `consume`
-retains its separate remote PATCH handling for now.
+queries and does not enable network calls in map. The `consume` command has been removed; harvest owns remote item recovery.
 
 SQLite schema version 5 retains the event-day index and adds remote-refresh
 provenance with a partial index, and adds pending batch metadata. Run `harvest` once to upgrade
@@ -377,7 +373,7 @@ Inspect output and use an explicit date or completed file when repeating a batch
 
 ## Terminal progress
 
-Progress is displayed by default for `harvest`, `map`, `consume`, and `publish`.
+Progress is displayed by default for `harvest`, `map`, `batch`, and `publish`.
 Use the global `--silent` (or `-s`) or `--no-progress` option to hide it:
 
 ```bash
@@ -414,7 +410,7 @@ creates a replacement, Piddiplatsch switches to the new file on its next log
 write. Full recovery and skipped details remain available in JSONL independently
 of the selected logging level.
 The optional SQLite reporter is controlled by `[stats]` and is opened by
-`piddi consume`, `piddi map`, and the mapping phase of `piddi batch`. `harvest` and the read-only `top` command never
+`piddi map` and the mapping phase of `piddi batch`. `harvest` and the read-only `top` command never
 update the database.
 
 The database contains a versioned current-run status model. A heartbeat is

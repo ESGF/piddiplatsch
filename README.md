@@ -35,15 +35,15 @@ piddi config validate
 piddi --help
 ```
 
-Start harvesting and mapping Kafka messages into prepared Handle JSONL files:
+Start filling the local catalogs from Kafka:
 
 ```bash
-piddi consume
+piddi harvest
 ```
 
-By default, `consume` saves raw messages and prepares Handles **without
-publishing to a Handle service**. Kafka access is required; see
-[Configuration](https://esgf.github.io/piddiplatsch/configuration/) for site settings.
+`harvest` saves raw messages and maintains project catalogs. Run `map` to prepare
+Handle JSONL, or schedule `batch` for mapping and publication. Kafka access is
+required; see [Configuration](https://esgf.github.io/piddiplatsch/configuration/).
 
 ## Run in stages
 

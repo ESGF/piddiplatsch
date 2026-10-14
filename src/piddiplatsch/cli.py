@@ -111,55 +111,6 @@ def batch(ctx: click.Context, force_map: bool) -> None:
     commands.BatchCommand(verbose=ctx.obj["verbose"], force_map=force_map).execute()
 
 
-# command consume
-
-
-@cli.command()
-@click.option(
-    "--publish",
-    is_flag=True,
-    help="Also publish mapped Handles immediately; JSONL is always written first.",
-)
-@click.option(
-    "--project",
-    "projects",
-    multiple=True,
-    help="Project plugin to run; repeat to select several (overrides config).",
-)
-@click.option(
-    "--all-projects",
-    is_flag=True,
-    help="Run all registered project plugins (overrides config).",
-)
-@click.option(
-    "--handle-profile",
-    help="Override the configured Handle profile for this command.",
-)
-@click.option(
-    "--force",
-    is_flag=True,
-    help="Continue on transient external failures (e.g., STAC down).",
-)
-@click.pass_context
-def consume(
-    ctx: click.Context,
-    publish: bool,
-    force: bool,
-    projects: tuple[str, ...],
-    all_projects: bool,
-    handle_profile: str | None,
-) -> None:
-    """Harvest and map Kafka messages, deferring publication by default."""
-    commands.ConsumeCommand(
-        verbose=ctx.obj["verbose"],
-        publish=publish,
-        force=force,
-        projects=projects,
-        all_projects=all_projects,
-        handle_profile=handle_profile,
-    ).execute()
-
-
 # command harvest
 
 

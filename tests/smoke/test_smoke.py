@@ -1,9 +1,13 @@
 import json
 import time
 from pathlib import Path
+from uuid import uuid4
 
 import pytest
 
+from piddiplatsch.commands.harvest import HarvestCommand
+from piddiplatsch.config import config
+from piddiplatsch.runners.batch import BatchWorker
 from piddiplatsch.testing.kafka_client import send_message_to_kafka
 
 pytestmark = pytest.mark.smoke
@@ -74,7 +78,13 @@ def test_real_publication_for_each_project(
 ):
     publication: Path = testfile("publication_samples", filename)
 
+    config._set("stac", "base_url", "")  # Docker smoke tests never use production STAC.
+    config._set("kafka", "group.id", "piddiplatsch-smoke-" + uuid4().hex)
     send_message_to_kafka(publication)
+    HarvestCommand(idle_timeout=5).execute()
+    worker = BatchWorker()
+    worker.run(force_map=True)
+    assert not worker.errors
 
     dataset = wait_for_pid(handle_client, dataset_pid)
     file_record = wait_for_pid(handle_client, file_pid)

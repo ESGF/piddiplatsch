@@ -1,19 +1,17 @@
 # Architecture
 
-Piddiplatsch consumes one shared ESGF Kafka publication topic and routes each
-decoded event to zero or one selected project plugin.
+Piddiplatsch harvests the shared ESGF Kafka publication topic into per-project
+catalogs. Mapping reads complete local items and writes prepared Handles.
 
 ```text
-Kafka message
-  -> JSON decode
-  -> mandatory raw dump
-  -> extract project identity
-  -> selected project plugin
-  -> project record mapping
-  -> project-scoped Handle JSONL
-  -> optional Handle backend
-  -> result persistence and statistics
+Kafka -> raw JSONL + project catalogs (harvest)
+project catalogs -> daily or sealed batch Handle JSONL (map/batch)
+prepared Handle JSONL -> Handle Service + receipts (publish/batch)
 ```
+
+Harvest is the only continuous service. The scheduled batch worker maps due
+projects, seals immutable batches, and publishes ready batches sequentially.
+Manual map/publish commands remain available; the old consume command is removed.
 
 ## Command execution
 
@@ -21,7 +19,7 @@ CLI command classes handle arguments, progress display, and summaries. Execution
 is separated by input source:
 
 - `consumer.py` owns Kafka polling, preflight, signals, and run shutdown for
-  `consume` and `harvest`. It feeds decoded keyed records into the shared
+  `harvest`. It feeds decoded keyed records into the shared
   processing pipeline and closes the Kafka input on completion or early exit.
 - `catalog/harvest.py` reconstructs complete STAC items in per-project catalogs.
   Harvest source messages carry topic/partition/offset and an acknowledgement
@@ -102,8 +100,8 @@ independently generated identifiers.
 ## Selection
 
 `consumer.projects` selects a list of plugin names or `all`. Repeated
-`--project NAME` options and `--all-projects` on `consume` or `map` override
-config for a run. `harvest` intentionally has no project selection: it retains
+`--project NAME` options and `--all-projects` on `map` override
+config for a run. The batch worker uses the configured selection. `harvest` intentionally has no project selection: it retains
 every raw queue message and caches each registered project encountered, so a
 different mapping selection can be applied later. Unknown or malformed events
 stop catalog harvesting and remain unacknowledged; `--no-catalog` keeps the previous
@@ -132,16 +130,11 @@ individual filter decisions at DEBUG.
 
 ## Kafka consumer groups
 
-Kafka distributes each partition among members of one consumer group before
-piddi performs project filtering. Therefore:
-
-- one process may select several projects under one group;
-- separate project-specific processes must use distinct `group.id` values;
-- changing the projects associated with an existing group changes which records
-  are considered complete and requires an explicit offset/replay decision.
-
-Sharing a group between separate CMIP6 and CMIP7 processes is unsafe: either
-process may receive and filter records intended for the other.
+Harvest uses `<kafka.group.id>.harvest`; clean rebuilds persist a new group
+generation. Keep one harvest writer for a local catalog directory. Kafka shares
+partitions among members of a group, so multiple harvest instances require
+coordinated storage and update ownership rather than independent local caches.
+Map and batch project selection never changes Kafka group membership or offsets.
 
 ## Current scope
 

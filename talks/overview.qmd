@@ -83,7 +83,7 @@ flowchart LR
 Simplified logical view, not a deployment topology. The data-node box groups file hosting and publishing tools; the publication
 box groups the transaction API and Kafka. Catalog consumers and their STAC
 catalogs are grouped together. Catalog consumers and
-Piddi independently consume publication events. The legacy direct consume path may query STAC for PATCH processing;
+Piddi independently consume publication events. Harvest may query STAC for missing PATCH bases;
 staged harvest/map resolves patches and optional version links locally; STAC is not an
 extra mandatory hop between Kafka and Piddi. Data access bypasses Piddi.
 Sources: docs/architecture.md, docs/configuration.md;
@@ -175,8 +175,7 @@ the generated Handle records with Pydantic. It does not validate the complete
 STAC schema. Schema strictness is configurable; it defaults to true.
 Harvest preserves all raw events before project selection. Map writes one
 Handle batch per project; publish each project's batch separately.
-Legacy consume maps queue events directly; --publish enables
-direct publication. Sources: README.md, docs/architecture.md,
+The batch worker maps due catalog changes and publishes sealed batches. Sources: README.md, docs/architecture.md,
 docs/configuration.md.
 :::
 

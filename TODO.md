@@ -114,8 +114,9 @@ local predecessor lookup, but overwrite successive updates to the same item.
 - [x] Add `CatalogLookup` as the default version lookup adapter, retaining explicit
   STAC version queries. Reuse map snapshots and indexed metadata without payload
   scans; keep remote item recovery separate from version lookup.
-- [ ] Decide how direct `consume` should integrate with the catalog; it retains
-  its existing remote PATCH handling for now.
+- [x] Remove the consume CLI; production uses harvest and the batch worker.
+- [ ] Remove remaining legacy direct-processing library paths and obsolete
+  transient configuration after compatibility review.
 - [ ] Keep full STAC JSON losslessly, with compact serialization and benchmarked
   per-item compression. Index exact identities and dataset/version metadata so
   predecessor searches do not decompress or scan item payloads. Minimize redundant

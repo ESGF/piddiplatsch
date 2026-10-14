@@ -25,7 +25,7 @@ projects = ["cmip6"]
 topic = "CMIP6"
 output_dir = "outputs"
 # Maximum number of errors before stopping; -1 = unlimited.
-# Map/consume stop on first error. Catalog harvest always stops on any error.
+# Map/batch stop on first error. Catalog harvest always stops on any error.
 max_errors = 1
 
 [catalog]
@@ -68,8 +68,8 @@ file = "pid.log"
 [consumer.transient]
 # --- Transient External Failures (STAC/network) ---
 # Stop consumption on transient failures after bounded retries.
-# These transient options apply to legacy consume, not catalog harvest or map.
-# Override in consume with --force to continue; harvest recovery remains fail-fast.
+# These options remain for legacy processor library compatibility only.
+# Catalog harvest recovery is fail-fast; there is no consume or --force command.
 stop_on_skip = true
 # Retry attempts for transient STAC fetch/patch failures.
 retries = 3
@@ -84,7 +84,7 @@ preflight_stac = false
 "bootstrap.servers" = "localhost:39092"
 "group.id" = "piddiplatsch-001"
 # Harvest uses a separate .harvest group and overrides automatic commits/storage
-# to acknowledge only durable catalog writes. The setting below is for consume.
+# to acknowledge only durable catalog writes. Raw-only harvest inherits these settings.
 # ESGF production authentication. Local test Kafka overrides the protocol to PLAINTEXT.
 "security.protocol" = "SASL_SSL"
 "sasl.mechanisms" = "PLAIN"
@@ -111,8 +111,8 @@ default = "mock"
 
 [handles.defaults]
 # Handle publication backend: use "rest" or "pyhandle" for the legacy client.
-# Both backends always write the immutable JSONL audit record first. Plain
-# `consume` defers publication; use `consume --publish` for immediate delivery.
+# Map prepares JSONL without publication. Publish/batch send prepared Handles
+# through REST; pyhandle remains available for library compatibility.
 backend = "rest"
 # Keep certificate verification enabled in production. Disable only for a
 # deliberately trusted service using a self-signed certificate. When disabled,
@@ -209,7 +209,7 @@ interval_seconds = 10
 # Message count threshold before logging a stats snapshot.
 summary_interval = 1000
 
-# Enable SQLite monitoring for consume/map and the mapping phase of batch runs.
+# Enable SQLite monitoring for map and the mapping phase of batch runs.
 enable_db = true
 
 # Path to SQLite database file (used only if enable_db = true).
