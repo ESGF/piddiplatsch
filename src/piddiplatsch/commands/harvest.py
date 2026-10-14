@@ -68,6 +68,7 @@ class HarvestCommand(KafkaCommand):
                     force=True,
                     idle_timeout=None if self.idle_timeout == 0 else self.idle_timeout,
                     limit=self.limit,
+                    monitor_db=True,
                 )
         except (CatalogError, ValueError) as exc:
             raise click.ClickException(str(exc)) from exc

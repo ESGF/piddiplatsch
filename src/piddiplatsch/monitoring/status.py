@@ -22,7 +22,7 @@ def read_status(
         raise FileNotFoundError(f"Monitoring database does not exist: {path}")
 
     now = datetime.datetime.now(datetime.UTC)
-    with sqlite3.connect(path) as connection:
+    with sqlite3.connect(path.resolve().as_uri() + "?mode=ro", uri=True) as connection:
         connection.row_factory = sqlite3.Row
         try:
             version_row = connection.execute(
@@ -34,23 +34,28 @@ def read_status(
         except sqlite3.OperationalError as exc:
             raise ValueError(f"{path} is not a valid monitoring database") from exc
         version = int(version_row["value"]) if version_row else 0
-        if version != 2:
+        if version not in (2, 3):
             raise ValueError(
                 f"{path} uses unsupported monitoring schema version {version}"
             )
 
         result_runs = []
+        catalog_columns = (
+            "catalog_writes, catalog_refreshes"
+            if version >= 3
+            else "0 AS catalog_writes, 0 AS catalog_refreshes"
+        )
         history_cutoff = (now - datetime.timedelta(seconds=history_seconds)).isoformat()
         for run_row in runs:
             run = dict(run_row)
             project_rows = connection.execute(
-                """
+                f"""
                 SELECT project, consumed, routed, filtered, succeeded, skipped,
-                       failed, handles, updated_at
+                       failed, handles, updated_at, {catalog_columns}
                 FROM monitor_project_stats
                 WHERE run_id = ? AND (? IS NULL OR lower(project) = lower(?))
                 ORDER BY project
-                """,
+                """,  # noqa: S608 - columns are fixed schema-dependent literals
                 (run["run_id"], project, project),
             ).fetchall()
             selected = json.loads(run.pop("selected_projects"))
@@ -61,14 +66,14 @@ def read_status(
             ):
                 continue
             sample_rows = connection.execute(
-                """
+                f"""
                 SELECT project, sampled_at, consumed, routed, filtered,
-                       succeeded, skipped, failed, handles
+                       succeeded, skipped, failed, handles, {catalog_columns}
                 FROM monitor_samples
                 WHERE run_id = ? AND sampled_at >= ?
                   AND (? IS NULL OR lower(project) = lower(?))
                 ORDER BY project, sampled_at
-                """,
+                """,  # noqa: S608 - columns are fixed schema-dependent literals
                 (run["run_id"], history_cutoff, project, project),
             ).fetchall()
             heartbeat = datetime.datetime.fromisoformat(run["heartbeat_at"])
@@ -109,6 +114,8 @@ def _summarize_history(rows: list[sqlite3.Row]) -> list[dict]:
         "skipped",
         "failed",
         "handles",
+        "catalog_writes",
+        "catalog_refreshes",
     )
     for project, samples in grouped.items():
         first = samples[0]

@@ -15,11 +15,16 @@ import pytest
         ["config", "explain", "--project", "cmip6"],
         ["config", "validate"],
         ["config", "show", "--section", "consumer"],
+        ["top", "--db", "monitor.db", "--once"],
     ],
 )
 def test_config_commands_do_not_import_network_clients(tmp_path, command):
     source_root = Path(__file__).resolve().parents[1] / "src"
     config_path = Path(__file__).resolve().parent / "config.toml"
+    if command[0] == "top":
+        from piddiplatsch.monitoring.stats import SQLiteReporter
+
+        SQLiteReporter(str(tmp_path / "monitor.db")).close()
     # A fresh process is essential: other tests may already have imported Kafka.
     script = """
 import importlib.abc

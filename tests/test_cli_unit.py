@@ -128,7 +128,7 @@ class TestHarvestCommand:
         assert kwargs["force"] is True
         assert kwargs["idle_timeout"] == 5.0
         assert kwargs["limit"] is None
-        assert kwargs["monitor_db"] is False
+        assert kwargs["monitor_db"] is True
 
     @patch("piddiplatsch.consumer.start_consumer")
     def test_harvest_zero_idle_timeout_keeps_consuming(

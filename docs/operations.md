@@ -429,8 +429,8 @@ creates a replacement, Piddiplatsch switches to the new file on its next log
 write. Full recovery and skipped details remain available in JSONL independently
 of the selected logging level.
 The optional SQLite reporter is controlled by `[stats]` and is opened by
-`piddi map` and the mapping phase of `piddi sync`. `harvest` and the read-only `top` command never
-update the database.
+`piddi harvest`, `piddi map`, and the mapping phase of `piddi sync`. Publication
+does not yet report to this database. The read-only `top` command never updates it.
 
 The database contains a versioned current-run status model. A heartbeat is
 updated independently of Kafka traffic, and processing outcomes are split by
@@ -460,11 +460,18 @@ invalid monitoring database.
 The database appends cumulative per-project samples every
 `stats.sample_interval_seconds` (15 seconds by default), including samples at
 run startup and shutdown. The history table shows counter changes, average
-message throughput, and a compact throughput trend for the last
+input throughput, Handle throughput, catalog writes, and a compact input
+throughput trend for the last
 `stats.history_minutes` (60 minutes by default). `--history MINUTES` overrides
 that window. Samples older than `stats.sample_retention_days` (30 days by
 default) are removed; set it to `0` to retain them indefinitely. Samples contain
 counters only; raw messages and log lines are never stored.
+Harvest input is labeled as events, while map/sync input is labeled as items.
+Catalog writes count committed item writes, excluding duplicate Kafka replays.
+`top --json` also includes catalog refresh counts. Monitoring schema 3 adds these
+counters automatically when a writer opens an existing database; earlier history
+is preserved, with zero for the previously unrecorded catalog counters. `top` can
+also read schema 2 databases without migrating them.
 
 ## Shutdown behavior
 
