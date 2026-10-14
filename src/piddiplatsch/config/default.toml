@@ -5,7 +5,7 @@
 # - consumer: message processing pipeline defaults
 # - kafka: Kafka client settings (librdkafka options supported)
 # - handles: named Handle server profiles (use overrides for secrets)
-# - stac: STAC client and collection
+# - stac: harvest recovery endpoint and explicit remote version lookup
 # - schema: validation strictness
 # - logging: log level and destination
 # - plugins.*: project-specific mapping options
@@ -24,11 +24,13 @@ projects = ["cmip6"]
 topic = "CMIP6"
 output_dir = "outputs"
 # Maximum number of errors before stopping; -1 = unlimited.
-# Conservative default: stop on first error.
+# Map/consume stop on first error. Catalog harvest always stops on any error.
 max_errors = 1
 
 [catalog]
 # Harvest maintains one SQLite database per registered project encountered.
+# Missing PATCH bases fetch current remote STAC state without reapplying the patch.
+# Recovered items stay marked for remote refresh on later events and harvest startup.
 # --no-catalog retains the previous raw-dump-only behavior.
 enabled = true
 backend = "sqlite"
@@ -52,7 +54,8 @@ file = "pid.log"
 [consumer.transient]
 # --- Transient External Failures (STAC/network) ---
 # Stop consumption on transient failures after bounded retries.
-# Override at runtime with the CLI flag --force to continue.
+# These transient options apply to legacy consume, not catalog harvest or map.
+# Override in consume with --force to continue; harvest recovery remains fail-fast.
 stop_on_skip = true
 # Retry attempts for transient STAC fetch/patch failures.
 retries = 3
@@ -66,6 +69,8 @@ preflight_stac = false
 # Set site-specific brokers, group, and credentials in an override file.
 "bootstrap.servers" = "localhost:39092"
 "group.id" = "piddiplatsch-001"
+# Harvest uses a separate .harvest group and overrides automatic commits/storage
+# to acknowledge only durable catalog writes. The setting below is for consume.
 # ESGF production authentication. Local test Kafka overrides the protocol to PLAINTEXT.
 "security.protocol" = "SASL_SSL"
 "sasl.mechanisms" = "PLAIN"
@@ -117,7 +122,8 @@ password = "testpass"
 # [plugins.<name>.stac] when their collection is hosted elsewhere.
 base_url = "https://discovery.east.esgf.io"
 timeout = 10  # seconds
-# Legacy remote client collection. Catalog mapping uses stored collections.
+# Default collection for explicit STAC version queries. Project overrides follow.
+# Harvest recovery uses the incoming collection/item identity; map stays local.
 collection = "cmip6"
 
 [schema]
@@ -177,7 +183,8 @@ collection = "CMIP6Plus"
 
 [lookup]
 # Dataset version lookup: local catalog by default; "stac" is an explicit alternative.
-# Map always uses its catalog snapshot; linking is enabled by [catalog].version_history.
+# This switch controls standalone lookup adapter calls only.
+# Map uses its catalog snapshot; linking is enabled by [catalog].version_history.
 backend = "catalog"
 enabled = false
 

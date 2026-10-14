@@ -202,6 +202,14 @@ class TestHarvestCommand:
         assert kwargs["monitor_db"] is False
 
     @patch("piddiplatsch.consumer.start_consumer")
+    def test_harvest_zero_idle_timeout_keeps_consuming(
+        self, mock_start_consumer, runner
+    ):
+        result = runner.invoke(cli, ["harvest", "--idle-timeout", "0"])
+        assert result.exit_code == 0, result.output
+        assert mock_start_consumer.call_args.kwargs["idle_timeout"] is None
+
+    @patch("piddiplatsch.consumer.start_consumer")
     def test_harvest_passes_idle_timeout(self, mock_start_consumer, runner):
         result = runner.invoke(cli, ["harvest", "--idle-timeout", "2.5"])
 

@@ -175,7 +175,7 @@ the generated Handle records with Pydantic. It does not validate the complete
 STAC schema. Schema strictness is configurable; it defaults to true.
 Harvest preserves all raw events before project selection. Map writes one
 Handle batch per project; publish each project's batch separately.
-consume is the convenience path combining harvest and map; --publish enables
+Legacy consume maps queue events directly; --publish enables
 direct publication. Sources: README.md, docs/architecture.md,
 docs/configuration.md.
 :::
@@ -378,11 +378,11 @@ docs/operations.md.
 
 ## Appendix: service mode and Ansible
 
-**Continuous harvest + map:** the systemd service prepares Handle JSONL.
+**Continuous harvest:** the systemd service maintains local STAC catalogs.
 
 ```bash
-# Command run by the service (publication remains a separate step).
-piddi --config /etc/piddi/piddi.toml --silent consume
+# Command run by the service (map and publish remain separate steps).
+piddi --config /etc/piddi/piddi.toml --silent harvest --idle-timeout 0
 ```
 
 On a prepared Linux host, configure `custom.toml`, then deploy:
@@ -419,8 +419,8 @@ then explicitly enable it with piddi_enable_service and make play.
 
 Default production paths are /var/lib/piddi for JSONL and the statistics database,
 and /var/log/piddi/piddi.log for logs, unless custom.toml overrides them.
-The unit runs consume without --publish: it harvests, maps, and writes JSONL;
-Handle publication is still an explicit separate operation. Use make play for
+The unit runs harvest --idle-timeout 0 and maintains local catalogs and raw dumps;
+map and Handle publication are explicit separate operations. Use make play for
 later configuration changes rather than editing the generated site file.
 These are presentation examples, not commands executed during the slide build.
 :::

@@ -16,6 +16,11 @@ def test_esgf_example_inherits_esgf_authentication():
 
     assert configured.get("kafka", "security.protocol") == "SASL_SSL"
     assert configured.get("kafka", "sasl.mechanisms") == "PLAIN"
+    assert configured.get("catalog", "enabled") is True
+    assert configured.get("catalog", "backend") == "sqlite"
+    assert configured.get("catalog", "version_history") is False
+    assert configured.get("lookup", "backend") == "catalog"
+    assert configured.get("lookup", "enabled") is False
     errors, _ = configured.validate()
     assert errors == []
 
@@ -48,6 +53,14 @@ def test_ansible_render_matches_esgf_example_and_production_paths(tmp_path):
     assert configured.get("logging", "file") == "/var/log/piddi/piddi.log"
     assert configured.get("stats", "enable_db") is True
     assert configured.get("stats", "db_path") == "/var/lib/piddi/piddi.db"
+    assert configured.get("catalog", "enabled") is True
+    assert configured.get("catalog", "backend") == "sqlite"
+    assert configured.get("catalog", "version_history") is False
+    assert configured.get("lookup", "backend") == "catalog"
+    assert (
+        configured.get_stac("cmip6")["base_url"]
+        == example.get_stac("cmip6")["base_url"]
+    )
     assert configured.get("kafka") == example.get("kafka")
     assert configured.get("consumer", "topic") == example.get("consumer", "topic")
     assert configured.get("consumer", "projects") == example.get("consumer", "projects")
@@ -65,6 +78,9 @@ def test_deployment_preserves_explicit_application_overrides(tmp_path):
         "consumer": {"output_dir": "/data/piddi", "projects": ["cmip7"]},
         "logging": {"file": "", "level": "INFO"},
         "stats": {"enable_db": False, "db_path": "/data/stats.db"},
+        "catalog": {"directory": "/data/catalog", "version_history": True},
+        "lookup": {"backend": "stac", "enabled": False},
+        "stac": {"base_url": "https://site-stac.example.test", "timeout": 20},
         "kafka": {"sasl.mechanisms": "SCRAM-SHA-512", "ssl.ca.location": "/etc/ca.pem"},
         "plugins": {"cmip7": {"handle_prefix": "21.OTHER"}},
     }
@@ -94,7 +110,7 @@ def test_service_uses_production_config_and_silent_progress():
         PROJECT_ROOT / "deploy" / "ansible" / "templates" / "piddi.service.j2"
     ).read_text()
 
-    assert "--config /etc/piddi/piddi.toml --silent consume" in unit
+    assert "--config /etc/piddi/piddi.toml --silent harvest --idle-timeout 0" in unit
     assert "RequiresMountsFor=/var/lib/piddi" in unit
 
 
@@ -218,7 +234,7 @@ def test_vagrant_deployment_documents_manual_root_checkout_and_conda_env():
     assert "Use `make play` for later Ansible-only configuration changes." in guide
     assert "`conda init` is not needed" in guide
     assert "systemctl status piddi" in guide
-    assert "piddi top" in guide
+    assert "piddi --config /etc/piddi/piddi.toml top" in guide
     assert "tail -f /var/log/piddi/piddi.log" in guide
 
 

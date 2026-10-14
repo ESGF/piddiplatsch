@@ -66,7 +66,7 @@ class HarvestCommand(KafkaCommand):
                     title="harvest",
                     processor=processor,
                     force=True,
-                    idle_timeout=self.idle_timeout,
+                    idle_timeout=None if self.idle_timeout == 0 else self.idle_timeout,
                     limit=self.limit,
                 )
         except (CatalogError, ValueError) as exc:

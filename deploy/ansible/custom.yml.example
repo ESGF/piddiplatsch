@@ -6,7 +6,8 @@
 # Use another application file instead of the checkout's custom.toml:
 # piddi_config_source: /path/to/site.toml
 
-# Uncomment after the foreground test succeeds.
+# Uncomment after the foreground harvest test succeeds.
+# piddi.service maintains catalogs continuously; it does not map or publish Handles.
 # piddi_enable_service: true
 
 # Override only when the Conda environment uses another location.

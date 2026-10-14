@@ -19,7 +19,7 @@ Use `make play` for later Ansible-only configuration changes.
 
 `custom.toml` is the single application configuration for manual runs and
 Ansible deployment. It contains Kafka credentials, projects, Handle profiles,
-and mapping settings. Ansible reads that file and installs a generated copy at
+and catalog/mapping settings. Ansible reads that file and installs a generated copy at
 `/etc/piddi/piddi.toml`; direct edits to the installed copy are overwritten.
 For an existing checkout, keep your `custom.toml` rather than copying the example
 again. Use `make play` after application configuration changes.
@@ -28,6 +28,10 @@ Ansible adds only deployment path defaults when those keys are omitted:
 `consumer.output_dir = "/var/lib/piddi"`,
 `logging.file = "/var/log/piddi/piddi.log"`, and
 `stats.db_path = "/var/lib/piddi/piddi.db"`. Explicit TOML values take precedence.
+The catalog defaults to SQLite under `<consumer.output_dir>/catalog`
+(`/var/lib/piddi/catalog` in deployment), with `catalog` as the version lookup
+backend. Ansible creates the default catalog directory with service-user ownership.
+No separate catalog or lookup settings are duplicated in YAML.
 Relative paths in the service resolve under `/var/lib/piddi`; manual runs use
 their current directory. For custom absolute paths, provision their directories
 and permissions, and adapt log rotation if the log path changes.
@@ -65,20 +69,58 @@ validates it against packaged defaults before installing `/etc/piddi/piddi.toml`
 The currently installed file is not used to fill in missing candidate settings.
 An invalid candidate stops deployment before replacing the existing configuration
 or restarting the service. Candidate validation does not open log files or
-contact Kafka/Handle services. Piddi is not started by default. Test it:
+contact Kafka/STAC/Handle services. Piddi is not started by default. Test it:
 
 ```console
 sudo runuser -u piddi -- /opt/piddiplatsch/.conda/bin/piddi \
-  --config /etc/piddi/piddi.toml --silent consume
+  --config /etc/piddi/piddi.toml --silent harvest
 ```
+
+The foreground command fills/updates per-project catalogs and exits after five
+idle seconds. Test mapping separately, using available catalogs for initial filling:
+
+```console
+sudo runuser -u piddi -- /opt/piddiplatsch/.conda/bin/piddi \
+  --config /etc/piddi/piddi.toml map --all-projects --date all
+```
+
+Inspect the project Handle JSONL before intentionally publishing a chosen day:
+
+```console
+sudo runuser -u piddi -- /opt/piddiplatsch/.conda/bin/piddi \
+  --config /etc/piddi/piddi.toml publish --project cmip6 --date today-1
+```
+
+Both batch commands default to `--date last`, support `today-N`, explicit dates,
+`all`, inclusive `--from DATE --to DATE` ranges, and `--offset`/`--limit`. Use
+matching dates in map and publish; offsets count catalog items in map and Handle
+records in publish. Repeating map appends to daily files. Keep predecessor linking
+disabled for initial filling (`catalog.version_history = false`); enable it or use
+`map --version-history` when ready to remap with predecessor links.
 
 Then set `piddi_enable_service: true` in `deploy/ansible/custom.yml` (create
 it from the optional example if needed) and run `make play` again.
+The installed `piddi.service` now runs `harvest --idle-timeout 0` continuously.
+It maintains catalogs and raw dumps, and does not prepare or publish Handles.
+Map and publish remain explicit batch commands; no batch timer is enabled.
+Legacy `consume` remains available manually. Existing deployments switching from
+consume use the separate harvest Kafka group and may replay retained history.
+Keep the catalog databases and `.harvest-state.json` together for backup/recovery.
+Do not use clean options automatically in the service.
+
+Missing PATCH bases fetch current remote items using the shared/project STAC
+endpoint. The fetched item is cached without applying the queued patch; marked
+items remain in refresh mode on subsequent events and harvest startups. Remote
+lag can temporarily omit updates, so repeat harvest after the service catches up
+before mapping recovered items. Mapping stays local; failed fetches stop harvest
+without acknowledging the event. The unit retains `Restart=on-failure`.
+
 Check that Piddi is working:
 
 ```console
 systemctl status piddi
-piddi top
+# Mapping status; harvest does not populate the monitoring database
+piddi --config /etc/piddi/piddi.toml top
 tail -f /var/log/piddi/piddi.log
 ```
 

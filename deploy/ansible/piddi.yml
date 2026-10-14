@@ -1,5 +1,5 @@
 ---
-- name: Configure one Piddiplatsch service
+- name: Configure the Piddiplatsch catalog harvest service
   hosts: localhost
   connection: local
   become: true
@@ -12,6 +12,7 @@
     piddi_command_link: /usr/local/sbin/piddi
     piddi_os_packages:
       - logrotate
+    # Continuous catalog harvest only; mapping/publication are separate batch commands.
     piddi_enable_service: false
     # Shared application settings used by manual runs and deployment.
     piddi_config_source: "{{ playbook_dir }}/../../custom.toml"
@@ -80,6 +81,10 @@
           group: "{{ piddi_group }}"
           mode: "0750"
         - path: /var/lib/piddi
+          owner: "{{ piddi_user }}"
+          group: "{{ piddi_group }}"
+          mode: "0750"
+        - path: /var/lib/piddi/catalog
           owner: "{{ piddi_user }}"
           group: "{{ piddi_group }}"
           mode: "0750"
@@ -174,7 +179,7 @@
     - name: Apply systemd unit changes before service startup
       ansible.builtin.meta: flush_handlers
 
-    - name: Enable the consumer and rotation timer when requested
+    - name: Enable catalog harvest and rotation timer when requested
       ansible.builtin.systemd_service:
         name: "{{ item }}"
         enabled: true

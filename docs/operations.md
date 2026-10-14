@@ -62,6 +62,9 @@ piddi consume
 piddi consume --publish
 ```
 
+`harvest --idle-timeout 0` keeps consuming continuously for a service. The normal
+idle timeout is five seconds; an idle timeout does not override fail-fast errors.
+
 `harvest --limit N` stops normally after dumping `N` messages, which is useful
 for bounded tests against a live topic. By default it also maintains
 `<consumer.output_dir>/catalog/<plugin>.sqlite` for every registered project it

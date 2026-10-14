@@ -6,6 +6,8 @@ from pathlib import Path
 
 import toml
 
+# Catalog and lookup behavior inherit packaged defaults. Leave catalog.directory
+# unset so it follows the resolved consumer.output_dir, including site overrides.
 PRODUCTION_DEFAULTS = {
     "consumer": {"output_dir": "/var/lib/piddi"},
     "logging": {"file": "/var/log/piddi/piddi.log"},

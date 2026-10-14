@@ -154,10 +154,10 @@ def consume(
 @cli.command("harvest")
 @click.option(
     "--idle-timeout",
-    type=click.FloatRange(min=0.1),
+    type=click.FloatRange(min=0),
     default=5.0,
     show_default=True,
-    help="Stop after this many seconds without a Kafka message.",
+    help="Stop after this many seconds without a Kafka message; 0 keeps harvesting continuously.",
 )
 @click.option(
     "--limit",
