@@ -400,7 +400,9 @@ Final command summaries remain visible.
 Kafka's native messages use Python logging instead of writing directly over the
 progress line. The existing logging level/destination controls their visibility;
 console logging uses tqdm-safe writes. Healthy harvest defers remote HTTP imports
-until a missing/recovered item needs a fetch. Optional HTTP codecs can still issue
+until a missing/recovered item needs a fetch. Local catalog mapping also leaves
+HTTP clients and codecs unloaded; publication imports its selected remote backend.
+Optional HTTP codecs can still issue
 native-extension GIL warnings when actually loaded; Piddi does not suppress them
 or force the GIL off.
 

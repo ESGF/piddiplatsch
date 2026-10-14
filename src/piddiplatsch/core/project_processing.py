@@ -5,7 +5,6 @@ from datetime import date
 from typing import Any, ClassVar
 
 import jsonpatch
-import requests
 from pydantic import ValidationError
 
 from piddiplatsch.catalog.base import BaseCatalogReader
@@ -75,6 +74,8 @@ class StacProjectProcessor(BaseProcessor):
         timeout = float(stac_cfg.get("timeout", 10.0))
         if not preflight or not base_url:
             return
+        import requests
+
         try:
             response = requests.get(
                 base_url.rstrip("/") + "/collections?limit=1",
@@ -177,6 +178,8 @@ class StacProjectProcessor(BaseProcessor):
         return result
 
     def _apply_patch_to_stac_item(self, payload: dict[str, Any]) -> dict[str, Any]:
+        import requests
+
         collection_id = payload["collection_id"]
         item_id = payload["item_id"]
         patch_data = payload["patch"]

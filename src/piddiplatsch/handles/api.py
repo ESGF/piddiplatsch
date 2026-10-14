@@ -7,9 +7,7 @@ from typing import Any, Literal, Protocol
 from piddiplatsch.config import config
 from piddiplatsch.handles.base import HandleBackend
 from piddiplatsch.handles.jsonl_backend import JsonlHandleBackend
-from piddiplatsch.handles.pyhandle_backend import HandleClient
 from piddiplatsch.handles.recording_backend import RecordingHandleBackend
-from piddiplatsch.handles.rest_backend import RestHandleClient
 
 
 class HandleAPIProtocol(Protocol):
@@ -86,6 +84,8 @@ def get_handle_backend(
     )
 
     if backend_type == "rest":
+        from piddiplatsch.handles.rest_backend import RestHandleClient
+
         return RecordingHandleBackend(
             RestHandleClient.from_config(project=project, profile=handle_profile),
             project=project,
@@ -94,6 +94,8 @@ def get_handle_backend(
         )
 
     if backend_type == "pyhandle":
+        from piddiplatsch.handles.pyhandle_backend import HandleClient
+
         return RecordingHandleBackend(
             HandleClient.from_config(project=project, profile=handle_profile),
             project=project,

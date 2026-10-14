@@ -215,7 +215,7 @@ def test_handle_backend_factory_selects_rest(monkeypatch):
     sentinel = object()
     config._set("handle", "backend", "rest")
     monkeypatch.setattr(
-        "piddiplatsch.handles.api.RestHandleClient.from_config",
+        "piddiplatsch.handles.rest_backend.RestHandleClient.from_config",
         lambda **_kwargs: sentinel,
     )
 
@@ -228,7 +228,7 @@ def test_handle_backend_factory_defaults_to_rest(monkeypatch):
     sentinel = object()
     config._set("handle", None, {"prefix": "21.TEST"})
     monkeypatch.setattr(
-        "piddiplatsch.handles.api.RestHandleClient.from_config",
+        "piddiplatsch.handles.rest_backend.RestHandleClient.from_config",
         lambda **_kwargs: sentinel,
     )
 
@@ -241,7 +241,7 @@ def test_handle_backend_factory_keeps_pyhandle(monkeypatch):
     sentinel = object()
     config._set("handle", "backend", "pyhandle")
     monkeypatch.setattr(
-        "piddiplatsch.handles.api.HandleClient.from_config",
+        "piddiplatsch.handles.pyhandle_backend.HandleClient.from_config",
         lambda **_kwargs: sentinel,
     )
 
