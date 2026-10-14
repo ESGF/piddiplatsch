@@ -92,8 +92,10 @@ class KafkaCommand(Command, ABC):
         monitor_db: bool = False,
         handle_profile: str | None = None,
     ) -> None:
-        from piddiplatsch.consumer import start_consumer
+        from piddiplatsch.consumer import prepare_kafka_runtime, start_consumer
 
+        # Native import warnings must appear before the live progress line.
+        prepare_kafka_runtime()
         mode = None
         if title == "harvest":
             mode = (

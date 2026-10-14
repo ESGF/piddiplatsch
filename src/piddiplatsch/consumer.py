@@ -19,6 +19,17 @@ from piddiplatsch.result import ProcessingResult
 logger = logging.getLogger(__name__)
 
 
+def prepare_kafka_runtime():
+    """Load the native extension before rendering Kafka command progress.
+
+    Keep this import lazy so configuration and file-only commands do not load
+    an extension that can enable the GIL on free-threaded Python.
+    """
+    from confluent_kafka import Consumer
+
+    return Consumer
+
+
 class StopCause(StrEnum):
     MANUAL = "manual"
     SIGINT = "sigint"
@@ -42,9 +53,7 @@ class KafkaConsumer:
         commit_interval: float = 1.0,
         on_idle=None,
     ):
-        # Configuration and file-only commands must not load Kafka's native
-        # extension (which can enable the GIL on free-threaded Python).
-        from confluent_kafka import Consumer as ConfluentConsumer
+        consumer_class = prepare_kafka_runtime()
 
         if idle_timeout is not None and idle_timeout <= 0:
             raise ValueError("idle timeout must be positive")
@@ -69,7 +78,7 @@ class KafkaConsumer:
                 "enable.auto.commit": False,
                 "enable.auto.offset.store": False,
             }
-        self.consumer = ConfluentConsumer(kafka_cfg, logger=logger)
+        self.consumer = consumer_class(kafka_cfg, logger=logger)
         if with_source:
             self.consumer.subscribe(
                 [self.topic], on_revoke=self._on_revoke, on_lost=self._on_lost

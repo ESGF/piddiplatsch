@@ -88,6 +88,29 @@ class TestCLIBasics:
 
 
 class TestHarvestCommand:
+    def test_native_runtime_loads_before_progress(self):
+        calls = []
+
+        def prepare_runtime():
+            calls.append("native import warning")
+
+        def create_progress(**kwargs):
+            calls.append("progress")
+            return NoOpProgress()
+
+        with (
+            patch(
+                "piddiplatsch.consumer.prepare_kafka_runtime",
+                side_effect=prepare_runtime,
+            ),
+            patch.object(HarvestCommand, "progress", side_effect=create_progress),
+            patch("piddiplatsch.consumer.start_consumer") as consume,
+        ):
+            HarvestCommand().run_consumer(title="harvest")
+
+        assert calls == ["native import warning", "progress"]
+        consume.assert_called_once()
+
     def test_harvest_help(self, runner):
         result = runner.invoke(cli, ["harvest", "--help"])
         assert result.exit_code == 0
