@@ -40,6 +40,7 @@ class KafkaConsumer:
         with_source: bool = False,
         commit_batch_size: int = 100,
         commit_interval: float = 1.0,
+        on_idle=None,
     ):
         # Configuration and file-only commands must not load Kafka's native
         # extension (which can enable the GIL on free-threaded Python).
@@ -55,6 +56,7 @@ class KafkaConsumer:
         self.idle_timeout = idle_timeout
         self.clock = clock
         self.with_source = with_source
+        self.on_idle = on_idle
         self.commit_batch_size = commit_batch_size
         self.commit_interval = commit_interval
         self._pending_offsets: dict[tuple[str, int], int] = {}
@@ -67,7 +69,7 @@ class KafkaConsumer:
                 "enable.auto.commit": False,
                 "enable.auto.offset.store": False,
             }
-        self.consumer = ConfluentConsumer(kafka_cfg)
+        self.consumer = ConfluentConsumer(kafka_cfg, logger=logger)
         if with_source:
             self.consumer.subscribe(
                 [self.topic], on_revoke=self._on_revoke, on_lost=self._on_lost
@@ -91,6 +93,8 @@ class KafkaConsumer:
 
                 msg = self.consumer.poll(timeout=poll_timeout)
                 if msg is None:
+                    if self.on_idle is not None:
+                        self.on_idle()
                     continue
                 last_message_at = self.clock()
                 if msg.error():
@@ -341,7 +345,13 @@ def start_consumer(
             if with_source
             else {}
         )
-        consumer = KafkaConsumer(topic, kafka_cfg, idle_timeout=idle_timeout, **options)
+        consumer = KafkaConsumer(
+            topic,
+            kafka_cfg,
+            idle_timeout=idle_timeout,
+            on_idle=progress.refresh if progress is not None else None,
+            **options,
+        )
         input_context = closing(consumer.consume())
     else:
         raise ValueError("Either Kafka config or direct_messages must be provided")
@@ -383,6 +393,8 @@ def start_consumer(
             _stop_pipeline(pipeline, cause=StopCause.KEYBOARD_INTERRUPT)
             sys.exit(0)
         except Exception as exc:
+            if stats.errors == 0:
+                stats.error(message=str(exc))
             pipeline.close_progress()
             stats.close(status="failed", error_summary=str(exc))
             raise

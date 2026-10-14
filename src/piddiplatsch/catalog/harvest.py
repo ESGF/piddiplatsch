@@ -213,6 +213,8 @@ class CatalogHarvester:
             transaction.set_checkpoint(
                 KafkaCheckpoint(source.topic, source.partition, source.offset + 1)
             )
+        result.catalog_written = True
+        result.catalog_refreshed = recovery is not None
         return result
 
     def _validated_entry(

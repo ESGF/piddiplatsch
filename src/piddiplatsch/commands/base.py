@@ -12,7 +12,6 @@ import click
 from piddiplatsch.commands.helper import resolve_dated_input, validate_date_selection
 from piddiplatsch.config import config
 from piddiplatsch.monitoring.progress import (
-    STREAM_PROGRESS_LEGEND,
     BaseProgress,
     BoundedProgress,
     get_progress,
@@ -38,6 +37,7 @@ class Command(ABC):
         stream: Literal[False] = False,
         unit: str = "item",
         start: int = 0,
+        mode: str | None = None,
     ) -> BoundedProgress: ...
 
     @overload
@@ -48,6 +48,7 @@ class Command(ABC):
         stream: Literal[True],
         unit: str = "item",
         start: int = 0,
+        mode: str | None = None,
     ) -> BaseProgress: ...
 
     def progress(
@@ -57,16 +58,16 @@ class Command(ABC):
         stream: bool = False,
         unit: str = "item",
         start: int = 0,
+        mode: str | None = None,
     ) -> BaseProgress:
         """Create the requested progress style using this command's verbosity."""
-        if stream and self.verbose:
-            click.echo(STREAM_PROGRESS_LEGEND)
         return get_progress(
             title=title,
             use_tqdm=self.verbose,
             stream=stream,
             unit=unit,
             start=start,
+            mode=mode,
         )
 
     @abstractmethod
@@ -93,7 +94,14 @@ class KafkaCommand(Command, ABC):
     ) -> None:
         from piddiplatsch.consumer import start_consumer
 
-        progress = self.progress(title=title, stream=True)
+        mode = None
+        if title == "harvest":
+            mode = (
+                "harvest"
+                if getattr(processor, "requires_kafka_source", False)
+                else "harvest_raw"
+            )
+        progress = self.progress(title=title, stream=True, mode=mode)
         with progress:
             start_consumer(
                 config.get("consumer", "topic"),

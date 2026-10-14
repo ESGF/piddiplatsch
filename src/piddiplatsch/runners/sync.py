@@ -24,6 +24,7 @@ from piddiplatsch.core.pipeline import (
 )
 from piddiplatsch.core.registry import get_plugins
 from piddiplatsch.exceptions import BatchError, CatalogError
+from piddiplatsch.monitoring.progress import get_progress
 from piddiplatsch.monitoring.stats import stats
 from piddiplatsch.runners.publish import HandlePublisher
 
@@ -240,6 +241,8 @@ class SyncWorker:
             command="sync",
             selected_projects=(project,),
         )
+        if self.progress is not None:
+            self.progress.set_phase(f"sync {project} map", mode="map")
         try:
             self._write_items(project, reader, staging, manifest)
         except BaseException as exc:
@@ -331,13 +334,33 @@ class SyncWorker:
                 manifest.get("publication_attempts", 0) + 1
             )
             _save_manifest(manifest_path, manifest)
-            result = self.publisher.run(
-                (output,),
-                project=project,
-                handle_profile=manifest["handle_profile"],
-                workers=self.publish_workers,
-                retries=self.publish_retries,
-            )
+            if self.progress is not None:
+                self.progress.close()
+            with get_progress(
+                title=f"sync {project} publish",
+                stream=False,
+                unit="handle",
+                use_tqdm=self.progress is not None and self.progress.enabled,
+            ) as progress:
+
+                def show_progress(
+                    index,
+                    total,
+                    handle,
+                    error,
+                    tracker=progress,
+                    size=manifest["handle_count"],
+                ):
+                    tracker.update(total=size, position=index, ok=error is None)
+
+                result = self.publisher.run(
+                    (output,),
+                    project=project,
+                    handle_profile=manifest["handle_profile"],
+                    workers=self.publish_workers,
+                    retries=self.publish_retries,
+                    progress_callback=show_progress,
+                )
             manifest["receipt"] = (
                 str(result.result_file) if result.result_file else None
             )

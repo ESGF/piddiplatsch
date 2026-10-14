@@ -4,7 +4,6 @@ from datetime import UTC, datetime
 
 from piddiplatsch.config import config
 from piddiplatsch.exceptions import CatalogError
-from piddiplatsch.utils.stac import RemoteStacClient
 
 
 def fetch_current_item(
@@ -18,6 +17,9 @@ def fetch_current_item(
             f"Missing PATCH base item: {collection_id}/{item_id}; remote refresh requires a configured STAC base_url"
         )
     try:
+        # Healthy harvests do not need the HTTP stack or optional native codecs.
+        from piddiplatsch.utils.stac import RemoteStacClient
+
         item = RemoteStacClient(
             endpoint, timeout=float(settings.get("timeout", 10.0))
         ).get_item(collection_id, item_id)

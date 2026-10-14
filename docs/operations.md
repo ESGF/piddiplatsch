@@ -381,11 +381,28 @@ piddi --no-progress map --project cmip6
 piddi -v publish --project cmip6 --date yesterday
 ```
 
-The mapping and consumption display reports message and Handle counts/rates,
-errors, filtered records, warnings, retractions, replicas, skips, patches,
-time since the last error, and elapsed time. Publication shows completed
-record counts and the absolute input position; its total is unknown until the
-stream finishes. Final command summaries are still printed with progress off.
+Harvest shows processed events/rate, committed catalog writes, duplicate Kafka
+replays, PATCH events, remote refreshes during event processing, errors, and elapsed
+time. Duplicate, patch, and remote refresh counters appear when nonzero. These
+are run counters, not the total number of distinct items in a catalog.
+Raw-only harvest shows event counts without catalog or Handle fields. Idle polls
+refresh elapsed time even when no messages arrive.
+
+Map shows catalog items/rate and prepared Handle counts/rate. Filtered items,
+warnings, retractions, replicas, and skipped records appear when nonzero. Errors
+and elapsed time are always shown; error age appears after an error. Sync names the
+project and phase, switching from mapping counters to a publication bar with the
+sealed batch's known Handle count, rate, and ETA. Manual publication streams its
+input without a preliminary count, so its total can remain unknown; its bar shows
+completed records and absolute input position. `--silent` hides all phase bars.
+Final command summaries remain visible.
+
+Kafka's native messages use Python logging instead of writing directly over the
+progress line. The existing logging level/destination controls their visibility;
+console logging uses tqdm-safe writes. Healthy harvest defers remote HTTP imports
+until a missing/recovered item needs a fetch. Optional HTTP codecs can still issue
+native-extension GIL warnings when actually loaded; Piddi does not suppress them
+or force the GIL off.
 
 ## Logging and statistics
 

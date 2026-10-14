@@ -138,3 +138,24 @@ def test_invalid_batch_configuration_is_rejected_before_subscription(client, opt
     with pytest.raises(ValueError):
         KafkaConsumer("topic", {}, with_source=True, **options)
     client.subscribe.assert_not_called()
+
+
+def test_kafka_logs_route_through_python_and_idle_progress_refreshes(monkeypatch):
+    import logging
+
+    factory = MagicMock()
+    client = factory.return_value
+    clock = Clock()
+
+    def idle_poll(**kwargs):
+        clock.now += 1
+        return None
+
+    client.poll.side_effect = idle_poll
+    monkeypatch.setattr("confluent_kafka.Consumer", factory)
+    refresh = MagicMock()
+    consumer = KafkaConsumer("topic", {}, idle_timeout=2, clock=clock, on_idle=refresh)
+    assert isinstance(factory.call_args.kwargs["logger"], logging.Logger)
+    assert list(consumer.consume()) == []
+    assert refresh.call_count == 2
+    client.close.assert_called_once()

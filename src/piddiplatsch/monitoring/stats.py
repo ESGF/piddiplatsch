@@ -53,6 +53,8 @@ class CounterKey(StrEnum):
     ERRORS = "errors"
     RETRIES = "retries"
     HANDLES = "handles"
+    CATALOG_WRITES = "catalog_writes"
+    CATALOG_REFRESHES = "catalog_refreshes"
     RETRACTED = "retracted_messages"
     REPLICAS = "replicas"
     WARNINGS = "warnings"
@@ -521,6 +523,12 @@ class Stats:
                 counters["routed"] += 1
                 counters["succeeded"] += 1
                 counters["handles"] += result.num_handles
+                self._counters[CounterKey.CATALOG_WRITES] += int(
+                    getattr(result, "catalog_written", False)
+                )
+                self._counters[CounterKey.CATALOG_REFRESHES] += int(
+                    getattr(result, "catalog_refreshed", False)
+                )
                 self._last_success_time = datetime.datetime.now(datetime.UTC)
                 self.tick()
                 self.handle(
@@ -662,6 +670,14 @@ class Stats:
     @property
     def retries(self) -> int:
         return self._counters[CounterKey.RETRIES]
+
+    @property
+    def catalog_writes(self) -> int:
+        return self._counters[CounterKey.CATALOG_WRITES]
+
+    @property
+    def catalog_refreshes(self) -> int:
+        return self._counters[CounterKey.CATALOG_REFRESHES]
 
     @property
     def handles(self) -> int:

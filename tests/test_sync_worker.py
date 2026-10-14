@@ -450,3 +450,37 @@ def test_crash_after_catalog_ack_keeps_newer_changes_on_recovery(setup, monkeypa
     assert pending(directory).count == 0
     assert len(publisher.calls) == 2
     assert sorted(manifest["item_count"] for _, manifest in manifests(root)) == [1, 2]
+
+
+def test_sync_progress_displays_map_and_known_publication_total(setup, monkeypatch):
+    from unittest.mock import MagicMock
+
+    from piddiplatsch.monitoring.progress import Progress
+    from piddiplatsch.runners.publish import HandlePublisher
+
+    put, _directory, root = setup
+    put(1)
+    put(2)
+    backend = MagicMock(spec=["prefix", "add"], prefix="21.TEST")
+    backend.add.return_value = None
+    bars = MagicMock()
+    monkeypatch.setattr("piddiplatsch.monitoring.progress.tqdm", bars)
+    with Progress(title="sync") as progress:
+        worker = SyncWorker(
+            publisher=HandlePublisher(backend=backend), progress=progress
+        )
+        worker.run()
+    assert not worker.errors
+    _, manifest = manifests(root)[0]
+    publication = [
+        call.kwargs
+        for call in bars.call_args_list
+        if call.kwargs.get("unit") == "handle"
+    ]
+    assert len(publication) == 1
+    assert publication[0]["total"] == manifest["handle_count"]
+    assert "sync cmip7 publish" in publication[0]["desc"]
+    phases = [
+        str(call) for call in bars.return_value.set_description_str.call_args_list
+    ]
+    assert any("sync cmip7 map" in phase and "items:" in phase for phase in phases)
