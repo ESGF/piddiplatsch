@@ -36,6 +36,7 @@ def build_processing_target(
     handle_output_filename: str | None = None,
     catalogs=None,
     version_history: bool = False,
+    require_all_assets: bool = False,
 ):
     """Build a project router or use an explicitly supplied processing object."""
     if processor is not None and projects is not None:
@@ -51,7 +52,10 @@ def build_processing_target(
         selection,
         publish=publish,
         handle_profile=handle_profile,
-        processor_kwargs={"handle_output_filename": handle_output_filename},
+        processor_kwargs={
+            "handle_output_filename": handle_output_filename,
+            **({"require_all_assets": True} if require_all_assets else {}),
+        },
         catalogs=catalogs,
         version_history=version_history,
     )

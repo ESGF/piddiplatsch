@@ -12,13 +12,17 @@
 
 ## Publication spool
 
-- [ ] Define a versioned outbox record with source-event identity and ordering
-  metadata; document migration from the current JSONL format.
+- [x] Add a versioned batch manifest with catalog generation/sequence bounds,
+  immutable Handle JSONL, project/profile/options, counts, and checksums. Retain
+  manual daily JSONL commands independently.
 - [ ] Define durability rules for flushing, partial writes, disk limits, and
   retention.
-- [ ] Add atomic file sealing/claiming, checksums, and crash recovery.
-- [ ] Add `publish` watch mode with checkpoints, graceful restart, rate limiting,
-  and backlog metrics.
+- [x] Add durable sealing before mapping acknowledgement, checksum verification,
+  worker locking, and recovery across interrupted acknowledgement/publication.
+- [x] Add a scheduled batch worker: per-project 1,000 distinct changed items or
+  one-hour wait, configurable limits; publish ready batches independently of map
+  thresholds, retain failures, and block newer project work behind failed publication.
+- [ ] Add backlog metrics, publication rate limiting, and optional watch mode.
 - [ ] Add an outbox validation command that never publishes.
 - [ ] Define multi-target routing and track delivery independently per target.
 

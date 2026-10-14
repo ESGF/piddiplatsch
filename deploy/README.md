@@ -102,7 +102,9 @@ Then set `piddi_enable_service: true` in `deploy/ansible/custom.yml` (create
 it from the optional example if needed) and run `make play` again.
 The installed `piddi.service` now runs `harvest --idle-timeout 0` continuously.
 It maintains catalogs and raw dumps, and does not prepare or publish Handles.
-Map and publish remain explicit batch commands; no batch timer is enabled.
+Map and publish remain available as explicit commands. Scheduled execution uses
+`piddi-batch.service` (oneshot) and `piddi-batch.timer`; the timer is installed but
+disabled until explicitly enabled.
 Legacy `consume` remains available manually. Existing deployments switching from
 consume use the separate harvest Kafka group and may replay retained history.
 Keep the catalog databases and `.harvest-state.json` together for backup/recovery.
@@ -122,6 +124,76 @@ systemctl status piddi
 # Mapping status; harvest does not populate the monitoring database
 piddi --config /etc/piddi/piddi.toml top
 tail -f /var/log/piddi/piddi.log
+```
+
+## Scheduled map and publish
+
+After validating your Handle profile and outputs, enable the batch timer in
+`deploy/ansible/custom.yml` and run `make play`:
+
+```yaml
+piddi_enable_service: true
+piddi_enable_batch_timer: true
+piddi_batch_check_interval: 1min
+```
+
+Enabling the batch timer enables **real Handle publication**. Harvest remains the
+only continuous process. The timer runs a single `piddi batch` tick one minute after
+boot and, by default, one minute after the previous tick completes. A filesystem
+lock also prevents concurrent manual/scheduled workers sharing the batch directory.
+A tick publishes ready batches regardless of mapping thresholds, then maps due
+projects and immediately publishes each newly ready batch. Large eligible backlogs
+are drained in bounded batches, taking turns across projects. Each project captures
+an upper catalog sequence per tick; later changes remain for the next run.
+
+The shared TOML settings are:
+
+```toml
+[batch]
+trigger_items = 1000
+max_wait_seconds = 3600
+max_items = 1000
+publish_workers = 1
+publish_retries = 3
+# directory = "/var/lib/piddi/batches"
+```
+
+Thresholds apply per project: 1,000 distinct pending items **or** one hour since the
+oldest pending change, whichever comes first. The clock starts with the first
+pending change, not the last batch. Repeated updates to one item count once and
+retain its first pending time. Eligibility is checked on each timer tick; backlog
+or failures may delay execution. Empty queues create no batch. Each batch holds at
+most 1,000 catalog items, including all their non-excluded file Handles; Handle
+counts and bytes can be larger. Batch mapping requires every included asset to
+validate, so incomplete mapping output is never marked ready.
+
+Batches use `batches/<project>/ready/<batch-id>/handles.jsonl` and `manifest.json`.
+Payloads are sealed with a checksum and cannot be appended by later map runs.
+Mapping checkpoints advance only after durable sealing; interrupted acknowledgement
+is recovered from the manifest. Publication failures keep the batch ready and block
+newer mapping/publication for that project, while other projects can proceed.
+A later tick republishes the same immutable batch with overwrite semantics. Success
+moves it to `batches/<project>/published/<batch-id>/`; receipts retain the original
+ready input path and the batch ID identifies its archived location. There is no
+automatic retention or deletion of batches, receipts, or failed staging directories.
+
+Catalog schema version 5 upgrades during harvest; existing items become pending
+once, even if previously mapped manually. Manual date-based map/publish commands
+remain independent and do not advance the worker's mapping checkpoint. A catalog
+clean starts a new generation; old ready batches then block that project for
+inspection instead of publishing stale data. Stop the worker before cleaning and
+finish or deliberately archive the old ready queue first. Keep catalogs, harvest
+control state, and the batch spool together when backing up.
+
+Useful commands:
+
+```console
+# Executes one tick, including publication of ready batches
+piddi --config /etc/piddi/piddi.toml batch
+# Ignore map thresholds for pending items; still publishes completed batches
+piddi --config /etc/piddi/piddi.toml batch --force-map
+systemctl status piddi piddi-batch.timer
+journalctl -u piddi-batch.service
 ```
 
 ## Vagrant test VM

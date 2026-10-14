@@ -487,9 +487,32 @@ def test_version_three_migrates_without_rewriting_payload_and_indexes_recovery(
             connection.execute(
                 "SELECT schema_version FROM catalog_metadata"
             ).fetchone()[0]
-            == 4
+            == 5
         )
         plan = connection.execute(
             "EXPLAIN QUERY PLAN SELECT payload FROM items WHERE remote_refresh IS NOT NULL ORDER BY collection_id, item_id"
         ).fetchall()
         assert any("items_remote_refresh" in row[3] for row in plan)
+
+
+def test_pending_state_rolls_back_with_item_and_protects_new_changes(catalog):
+    original = entry()
+    with pytest.raises(RuntimeError), catalog.transaction() as transaction:
+        transaction.put_item(original)
+        raise RuntimeError("failed write")
+    assert catalog.pending_changes().count == 0
+    with catalog.transaction() as transaction:
+        transaction.put_item(original)
+    before = catalog.pending_changes()
+    with catalog.transaction() as transaction:
+        transaction.put_item(entry(custom="newer"))
+    after = catalog.pending_changes()
+    assert after.count == 1
+    assert after.oldest_at == before.oldest_at
+    catalog.acknowledge_mapped(before.generation, before.sequence)
+    assert catalog.pending_changes().count == 1
+    catalog.acknowledge_mapped(after.generation, after.sequence)
+    assert catalog.pending_changes().count == 0
+    catalog.reset()
+    with pytest.raises(CatalogError, match="different catalog generation"):
+        catalog.acknowledge_mapped(after.generation, 0)

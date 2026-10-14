@@ -52,3 +52,17 @@ Publication keeps its inputs and writes per-record receipts. Repeating a complet
 input uses Handle overwrite semantics. `publish --retries` remains available for
 transient HTTP failures within a run; it is independent of diagnostic files.
 See [Operations](operations.md) for selection, ordering, and receipt details.
+
+## Scheduled batch recovery
+
+The worker's source remains the catalog. Failed mapping staging directories under
+`batches/<project>/.building-*` are inspection artifacts; pending catalog changes
+remain eligible for a future tick. Batches only become ready when mapping succeeds.
+
+Ready batches are immutable. Publication failures retain their ready state and
+receipts; repeating `piddi batch` republishes the same batch before newer work for
+that project. A checksum mismatch or catalog generation mismatch blocks publication
+for inspection. Successful batches are archived under `published/`. A crash after
+remote writes but before recording success may repeat those writes with overwrite
+semantics. Back up both the catalog and batch spool: mapping progress can reference
+sealed batches whose publication has not completed.

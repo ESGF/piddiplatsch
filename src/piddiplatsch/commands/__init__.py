@@ -4,6 +4,7 @@ from importlib import import_module
 
 _EXPORTS = {  # noqa: RUF067 - lazy public re-exports avoid loading network clients
     "Command": "base",
+    "BatchCommand": "batch",
     "DatedBatchCommand": "base",
     "FileBatchCommand": "base",
     "KafkaCommand": "base",

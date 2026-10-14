@@ -5,14 +5,20 @@ import sqlite3
 import zlib
 from collections.abc import Iterator
 from contextlib import contextmanager
-from datetime import date
+from datetime import UTC, date, datetime
 from pathlib import Path
+from uuid import uuid4
 
 from piddiplatsch.catalog.base import BaseCatalog, BaseCatalogTransaction
-from piddiplatsch.catalog.models import CatalogEntry, KafkaCheckpoint
+from piddiplatsch.catalog.models import (
+    CatalogEntry,
+    KafkaCheckpoint,
+    PendingCatalogChanges,
+    PendingCatalogItem,
+)
 from piddiplatsch.exceptions import CatalogError
 
-_SCHEMA_VERSION = 4
+_SCHEMA_VERSION = 5
 
 
 def _decode_entry(row: tuple) -> CatalogEntry:
@@ -33,6 +39,7 @@ class SQLiteCatalog(BaseCatalog):
     Payloads use compact UTF-8 JSON compressed independently with zlib level 3,
     available in the standard library. Identity/version indexes remain outside
     the payload. Version 2 adds publication time; version 3 indexes UTC event days.
+    Version 5 tracks distinct pending mapping changes with monotonic sequences.
     Version 4 adds persistent remote-refresh provenance and a partial index.
     Writer opens migrate older schemas and backfill dates once with bounded memory.
     Read-only opens support all versions without migrating or creating files;
@@ -96,7 +103,7 @@ class SQLiteCatalog(BaseCatalog):
         if (
             metadata is None
             or metadata[0] != self.project
-            or metadata[1] not in (1, 2, 3, _SCHEMA_VERSION)
+            or metadata[1] not in (1, 2, 3, 4, _SCHEMA_VERSION)
         ):
             raise CatalogError(
                 "Catalog project or schema version does not match: "
@@ -155,10 +162,104 @@ class SQLiteCatalog(BaseCatalog):
                 "next_offset INTEGER NOT NULL, "
                 "PRIMARY KEY (topic, partition)) WITHOUT ROWID"
             )
+            self._initialize_pending(connection)
+            connection.execute(
+                "UPDATE catalog_metadata SET schema_version = ? WHERE singleton = 1",
+                (_SCHEMA_VERSION,),
+            )
             connection.execute("COMMIT")
         except BaseException:
             connection.execute("ROLLBACK")
             raise
+
+    @staticmethod
+    def _initialize_pending(connection):
+        connection.execute(
+            "CREATE TABLE IF NOT EXISTS mapping_state (singleton INTEGER PRIMARY KEY "
+            "CHECK (singleton = 1), generation TEXT NOT NULL, sequence INTEGER NOT NULL)"
+        )
+        connection.execute(
+            "CREATE TABLE IF NOT EXISTS pending_items (collection_id TEXT NOT NULL, "
+            "item_id TEXT NOT NULL, sequence INTEGER NOT NULL, pending_since TEXT NOT NULL, "
+            "PRIMARY KEY (collection_id, item_id)) WITHOUT ROWID"
+        )
+        connection.execute(
+            "CREATE UNIQUE INDEX IF NOT EXISTS pending_sequence ON pending_items (sequence)"
+        )
+        if connection.execute("SELECT 1 FROM mapping_state").fetchone() is None:
+            connection.execute(
+                "INSERT INTO mapping_state VALUES (1, ?, 0)", (uuid4().hex,)
+            )
+            # Existing items become pending once; migrate using metadata only.
+            connection.execute(
+                "INSERT INTO pending_items SELECT collection_id, item_id, ROW_NUMBER() OVER (ORDER BY collection_id, item_id), ? FROM items",
+                (datetime.now(UTC).isoformat(),),
+            )
+            connection.execute(
+                "UPDATE mapping_state SET sequence = (SELECT COALESCE(MAX(sequence), 0) FROM pending_items)"
+            )
+
+    def _require_pending_index(self):
+        self._require_connection()
+        if self._schema_version < 5:
+            raise CatalogError(
+                "Catalog mapping index is missing; run harvest once to upgrade"
+            )
+
+    def pending_changes(self, max_sequence: int | None = None) -> PendingCatalogChanges:
+        self._require_pending_index()
+        generation, sequence = self._execute(
+            "SELECT generation, sequence FROM mapping_state WHERE singleton = 1"
+        ).fetchone()
+        sql = "SELECT COUNT(*), MIN(pending_since) FROM pending_items"
+        parameters = ()
+        if max_sequence is not None:
+            sql += " WHERE sequence <= ?"
+            parameters = (max_sequence,)
+        count, oldest = self._execute(sql, parameters).fetchone()
+        return PendingCatalogChanges(
+            generation,
+            count,
+            datetime.fromisoformat(oldest) if oldest else None,
+            sequence,
+        )
+
+    def iter_pending(self, limit: int, max_sequence: int | None = None):
+        self._require_pending_index()
+        if type(limit) is not int or limit < 1:
+            raise ValueError("limit must be a positive integer")
+        cursor = self._execute(
+            "SELECT collection_id, item_id, sequence FROM pending_items WHERE sequence <= ? ORDER BY sequence LIMIT ?",
+            (
+                (
+                    max_sequence
+                    if max_sequence is not None
+                    else self.pending_changes().sequence
+                ),
+                limit,
+            ),
+        )
+        try:
+            for collection, item_id, sequence in cursor:
+                yield PendingCatalogItem(self.get_item(collection, item_id), sequence)
+        except sqlite3.Error as exc:
+            raise CatalogError(
+                f"Could not stream pending catalog items: {exc}"
+            ) from exc
+        finally:
+            if self._connection is not None:
+                cursor.close()
+
+    def acknowledge_mapped(self, generation: str, sequence: int) -> None:
+        if type(sequence) is not int or sequence < 0:
+            raise ValueError("sequence must be a nonnegative integer")
+        with self.transaction():
+            current = self.pending_changes()
+            if current.generation != generation or sequence > current.sequence:
+                raise CatalogError(
+                    "Batch belongs to a different catalog generation or future sequence"
+                )
+            self._execute("DELETE FROM pending_items WHERE sequence <= ?", (sequence,))
 
     @staticmethod
     def _backfill_event_dates(connection: sqlite3.Connection) -> None:
@@ -350,6 +451,11 @@ class SQLiteCatalog(BaseCatalog):
         with self.transaction():
             self._execute("DELETE FROM items")
             self._execute("DELETE FROM checkpoints")
+            self._execute("DELETE FROM pending_items")
+            self._execute(
+                "UPDATE mapping_state SET generation = ?, sequence = 0 WHERE singleton = 1",
+                (uuid4().hex,),
+            )
 
     def close(self) -> None:
         try:
@@ -420,6 +526,14 @@ class SQLiteCatalogTransaction(BaseCatalogTransaction):
         self._require_active()
         return self._catalog.latest_event_date()
 
+    def pending_changes(self, max_sequence: int | None = None):
+        self._require_active()
+        return self._catalog.pending_changes(max_sequence)
+
+    def iter_pending(self, limit, max_sequence: int | None = None):
+        self._require_active()
+        return self._catalog.iter_pending(limit, max_sequence)
+
     def put_item(self, entry: CatalogEntry) -> None:
         self._require_active()
         try:
@@ -434,6 +548,11 @@ class SQLiteCatalogTransaction(BaseCatalogTransaction):
                 ).encode("utf-8"),
                 level=3,
             )
+            previous = self._catalog._execute(
+                "SELECT payload, publication_time FROM items WHERE collection_id = ? AND item_id = ?",
+                (entry.collection_id, entry.item_id),
+            ).fetchone()
+            changed = previous is None or previous != (payload, entry.publication_time)
             day = entry.event_date
             self._catalog._execute(
                 "INSERT INTO items VALUES (?, ?, ?, ?, ?, ?, ?, ?) "
@@ -458,6 +577,22 @@ class SQLiteCatalogTransaction(BaseCatalogTransaction):
                     ),
                 ),
             )
+            if changed:
+                self._catalog._execute(
+                    "UPDATE mapping_state SET sequence = sequence + 1 WHERE singleton = 1"
+                )
+                sequence = self._catalog._execute(
+                    "SELECT sequence FROM mapping_state WHERE singleton = 1"
+                ).fetchone()[0]
+                self._catalog._execute(
+                    "INSERT INTO pending_items VALUES (?, ?, ?, ?) ON CONFLICT(collection_id, item_id) DO UPDATE SET sequence = excluded.sequence",
+                    (
+                        entry.collection_id,
+                        entry.item_id,
+                        sequence,
+                        datetime.now(UTC).isoformat(),
+                    ),
+                )
         except (
             ValueError,
             TypeError,

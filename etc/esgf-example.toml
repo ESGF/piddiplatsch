@@ -26,6 +26,16 @@ version_history = false
 # Optional storage location; deployment otherwise uses /var/lib/piddi/catalog:
 # directory = "/data/piddi/catalog"
 
+[batch]
+# Enable the Ansible batch timer when automatic Handle publication is intended.
+# Map per project at 1,000 distinct pending items or a one-hour maximum wait.
+trigger_items = 1000
+max_wait_seconds = 3600
+max_items = 1000
+publish_workers = 1
+publish_retries = 3
+# directory = "/data/piddi/batches"
+
 [lookup]
 # Version lookup adapters: local catalog by default; explicit alternative "stac".
 # Map linking is controlled by catalog.version_history, not this enabled switch.
@@ -90,6 +100,8 @@ force_dataset_pid = false
 # piddi map --all-projects --date all   # full initial filling, using available catalogs
 # piddi map --project cmip6 --date today-1
 # piddi publish --project cmip6 --date today-1
+# piddi batch                          # one scheduled tick: map due, publish ready
+# piddi batch --force-map              # map nonempty pending sets immediately
 # Both map/publish support inclusive --from/--to and --offset/--limit.
 # Map counts catalog items; publish counts Handle records. Failure files are for
 # inspection only; fix the cause and repeat the normal command. No retry command.

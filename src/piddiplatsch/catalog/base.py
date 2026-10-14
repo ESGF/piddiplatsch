@@ -7,7 +7,12 @@ from datetime import date
 from types import TracebackType
 from typing import Self
 
-from piddiplatsch.catalog.models import CatalogEntry, KafkaCheckpoint
+from piddiplatsch.catalog.models import (
+    CatalogEntry,
+    KafkaCheckpoint,
+    PendingCatalogChanges,
+    PendingCatalogItem,
+)
 
 
 class BaseCatalogReader(ABC):
@@ -41,6 +46,16 @@ class BaseCatalogReader(ABC):
     @abstractmethod
     def latest_event_date(self) -> date | None:
         """Return the latest dated item's UTC event day without reading payloads."""
+
+    @abstractmethod
+    def pending_changes(self, max_sequence: int | None = None) -> PendingCatalogChanges:
+        """Count distinct unmapped items without reading payloads."""
+
+    @abstractmethod
+    def iter_pending(
+        self, limit: int, max_sequence: int | None = None
+    ) -> Iterator[PendingCatalogItem]:
+        """Read oldest pending item sequences from this snapshot, bounded by limit."""
 
     @abstractmethod
     def get_checkpoint(self, topic: str, partition: int) -> KafkaCheckpoint | None:
@@ -122,6 +137,14 @@ class BaseCatalog(BaseCatalogReader):
 
         Reject reset during an active transaction. This does not unlink files or
         promise physical compaction; file removal belongs to catalog management.
+        """
+
+    @abstractmethod
+    def acknowledge_mapped(self, generation: str, sequence: int) -> None:
+        """Clear dirty entries through a sealed batch's sequence in its generation.
+
+        Concurrently changed items have newer sequences and remain pending. This
+        is mapping progress, independent of Kafka checkpoints and publication.
         """
 
     @abstractmethod

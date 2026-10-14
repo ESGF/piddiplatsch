@@ -256,6 +256,28 @@ whether it adds predecessor links. This preserves offline mapping. STAC remains
 an explicit adapter for separate version queries; it is independent of harvest's
 complete-item remote recovery.
 
+## Scheduled batches
+
+```toml
+[batch]
+trigger_items = 1000
+max_wait_seconds = 3600
+max_items = 1000
+publish_workers = 1
+publish_retries = 3
+# directory = "/var/lib/piddi/batches"
+```
+
+`piddi batch` maps when either the per-project distinct pending-item threshold or
+maximum wait is reached. The age is measured from the first pending change.
+`max_items` caps catalog items per output batch; an item's dataset/file Handles are
+never split. Ready batches publish immediately during the tick, independently of
+those mapping thresholds. `publish_retries` controls transient HTTP retries per
+Handle; failed batches remain ready for later ticks. Positive counts/wait and
+nonnegative retry counts are validated. The batch directory defaults to
+`<consumer.output_dir>/batches` and must be shared by every worker invocation.
+The deployment timer cadence is configured separately in Ansible.
+
 ## Local catalog
 
 ```toml

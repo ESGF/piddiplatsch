@@ -38,6 +38,7 @@ class StacProjectProcessor(BaseProcessor):
         *,
         catalog_reader: BaseCatalogReader | None = None,
         version_history: bool = False,
+        require_all_assets: bool = False,
         **kwargs,
     ):
         kwargs["project"] = self.plugin_name
@@ -49,6 +50,7 @@ class StacProjectProcessor(BaseProcessor):
         )
         self.catalog_reader = catalog_reader
         self.version_history = version_history
+        self.require_all_assets = require_all_assets
         self.version_lookup = (
             CatalogLookup(self.plugin_name, reader=catalog_reader)
             if catalog_reader is not None
@@ -261,6 +263,8 @@ class StacProjectProcessor(BaseProcessor):
                 try:
                     asset_record.validate()
                 except ValueError as exc:
+                    if self.require_all_assets:
+                        raise ValueError(f"Invalid asset {asset_key!r}: {exc}") from exc
                     self.logger.warning("Skipping asset '%s': %s", asset_key, exc)
                     continue
                 self._safe_add_record(asset_record)

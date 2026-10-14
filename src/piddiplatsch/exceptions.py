@@ -13,6 +13,10 @@ class CatalogError(PiddiplatschError):
     """A local catalog operation failed; distinct from an absent entry."""
 
 
+class BatchError(PiddiplatschError):
+    """A mapping batch could not be sealed or published completely."""
+
+
 class ValidationError(PiddiplatschError):
     """Raised when input data or a record fails validation."""
 

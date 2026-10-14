@@ -14,6 +14,9 @@
       - logrotate
     # Continuous catalog harvest only; mapping/publication are separate batch commands.
     piddi_enable_service: false
+    # This timer publishes Handles; enable explicitly after checking the site profile.
+    piddi_enable_batch_timer: false
+    piddi_batch_check_interval: 1min
     # Shared application settings used by manual runs and deployment.
     piddi_config_source: "{{ playbook_dir }}/../../custom.toml"
 
@@ -88,6 +91,10 @@
           owner: "{{ piddi_user }}"
           group: "{{ piddi_group }}"
           mode: "0750"
+        - path: /var/lib/piddi/batches
+          owner: "{{ piddi_user }}"
+          group: "{{ piddi_group }}"
+          mode: "0750"
         - path: /var/log/piddi
           owner: "{{ piddi_user }}"
           group: "{{ piddi_group }}"
@@ -156,6 +163,19 @@
         - Reload systemd
       register: piddi_service_unit
 
+    - name: Install scheduled batch units
+      ansible.builtin.template:
+        src: "templates/{{ item }}.j2"
+        dest: "/etc/systemd/system/{{ item }}"
+        owner: root
+        group: root
+        mode: "0644"
+      loop:
+        - piddi-batch.service
+        - piddi-batch.timer
+      notify: Reload systemd
+      register: piddi_batch_units
+
     - name: Install logrotate policy
       ansible.builtin.copy:
         src: ../../etc/logrotate/piddi
@@ -193,6 +213,13 @@
         - piddi.service
         - piddi-logrotate.timer
       when: piddi_enable_service | bool
+
+    - name: Configure the scheduled batch timer
+      ansible.builtin.systemd_service:
+        name: piddi-batch.timer
+        enabled: "{{ piddi_enable_batch_timer | bool }}"
+        state: "{{ 'restarted' if piddi_enable_batch_timer | bool and piddi_batch_units.changed else ('started' if piddi_enable_batch_timer | bool else 'stopped') }}"
+        daemon_reload: true
 
   handlers:
     - name: Reload systemd

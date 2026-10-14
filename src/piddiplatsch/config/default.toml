@@ -11,6 +11,7 @@
 # - plugins.*: project-specific mapping options
 # - lookup: dataset version lookup adapters (map uses its catalog snapshot)
 # - catalog: local project catalogs maintained by harvest
+# - batch: scheduled mapping thresholds and ready-batch publication
 # - stats: logging/SQLite reporter settings
 #
 # Full reference defaults; for site setup, start with etc/esgf-example.toml.
@@ -44,6 +45,19 @@ kafka_commit_interval_seconds = 1.0
 version_history = false
 # Default directory: <consumer.output_dir>/catalog. Override if needed:
 # directory = "/var/lib/piddi/catalog"
+
+[batch]
+# Per project: map when this many distinct items are pending OR the oldest has
+# waited max_wait_seconds. Harvest changes arriving during mapping stay pending.
+trigger_items = 1000
+max_wait_seconds = 3600
+# Maximum catalog items per immutable output batch; never split an item's Handles.
+max_items = 1000
+# Ready batches publish immediately during the batch worker tick, in project order.
+publish_workers = 1
+publish_retries = 3
+# Default: <consumer.output_dir>/batches. Must be shared by all worker invocations.
+# directory = "/var/lib/piddi/batches"
 
 [logging]
 # WARNING keeps normal runs compact. Use -v for INFO or -vv/--debug for DEBUG.
@@ -195,7 +209,7 @@ interval_seconds = 10
 # Message count threshold before logging a stats snapshot.
 summary_interval = 1000
 
-# Enable SQLite monitoring for `piddi consume` and `piddi map` runs.
+# Enable SQLite monitoring for consume/map and the mapping phase of batch runs.
 enable_db = true
 
 # Path to SQLite database file (used only if enable_db = true).

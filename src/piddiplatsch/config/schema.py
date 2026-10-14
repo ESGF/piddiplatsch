@@ -224,6 +224,17 @@ class CatalogConfig(BaseModel):
     version_history: bool = Field(default=False, strict=True)
 
 
+class BatchConfig(BaseModel):
+    model_config = ConfigDict(extra="forbid", allow_inf_nan=False)
+
+    directory: str | None = Field(default=None, min_length=1)
+    trigger_items: int = Field(default=1000, ge=1, strict=True)
+    max_wait_seconds: float = Field(default=3600, gt=0)
+    max_items: int = Field(default=1000, ge=1, strict=True)
+    publish_workers: int = Field(default=1, ge=1, strict=True)
+    publish_retries: int = Field(default=3, ge=0, strict=True)
+
+
 class SchemaConfig(BaseModel):
     model_config = ConfigDict(extra="allow")
     strict_mode: bool = True
@@ -271,6 +282,7 @@ class AppConfig(BaseModel):
     stac: StacConfig | None = None
     lookup: LookupConfig | None = None
     catalog: CatalogConfig | None = None
+    batch: BatchConfig | None = None
     schema_config: SchemaConfig | None = Field(None, alias="schema")
     logging_config: LoggingConfig | None = Field(None, alias="logging")
     plugins: PluginsConfig | None = None

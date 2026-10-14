@@ -80,6 +80,12 @@ piddi publish --project cmip6 --date yesterday
 piddi publish --project cmip6 --from 2026-10-08 --to today-1
 ```
 
+For scheduled production batches, `piddi batch` maps each project at 1,000 distinct
+pending items or a one-hour wait, then publishes each sealed batch immediately.
+Both thresholds and batch sizes are configurable. Ansible provides an optional
+batch timer alongside continuous harvest; enabling it performs real publication.
+See [deployment](deploy/README.md#scheduled-map-and-publish).
+
 Use `piddi COMMAND --help` for options. The
 [Operations guide](https://esgf.github.io/piddiplatsch/operations/) explains date
 selection, publication, retries, logging, and monitoring.

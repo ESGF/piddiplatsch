@@ -205,8 +205,8 @@ window. Mapping uses the `CatalogLookup` adapter with its item snapshot.
 queries and does not enable network calls in map. Direct `consume`
 retains its separate remote PATCH handling for now.
 
-SQLite schema version 4 retains the event-day index and adds remote-refresh
-provenance with a partial index. Run `harvest` once to upgrade
+SQLite schema version 5 retains the event-day index and adds remote-refresh
+provenance with a partial index, and adds pending batch metadata. Run `harvest` once to upgrade
 existing catalogs, even if no new Kafka events arrive. Migration derives dates
 from retained timestamps without changing compressed payloads. Dates discarded by
 older schemas cannot be recovered. Read-only legacy catalogs support unfiltered
@@ -221,6 +221,47 @@ Migration: `map PATH` and `map --force` remain removed. Run harvest with catalog
 mode enabled, then `map --project NAME --date all` for full initial filling.
 `map --date` now selects catalog event days, rather than raw dump files.
 `--catalog-dir` selects an alternate catalog directory.
+
+## Scheduled immutable batches
+
+`piddi batch` runs one worker tick: publish already ready batches, then map projects
+that have reached `[batch].trigger_items` distinct pending catalog items or
+`[batch].max_wait_seconds` since their first pending change. Defaults are 1,000 items
+and one hour. `--force-map` ignores thresholds for nonempty pending selections.
+Ready publication is independent of mapping thresholds and performs real Handle
+writes. A shared filesystem lock prevents overlapping ticks.
+
+Catalog changes use durable monotonic sequences and generation IDs, independent of
+source event dates. Repeated changes coalesce by item and preserve its oldest
+pending time. Each tick captures a sequence frontier per project and drains eligible
+items in `[batch].max_items` chunks (default 1,000), taking turns across projects.
+Changes arriving during the run remain pending for the next tick. Mapping and
+predecessor lookup reuse a read-only snapshot. Every included asset must validate;
+failed mapping output remains in a diagnostic staging directory and its catalog
+items remain pending. Configured project selections apply; missing catalogs are
+skipped until harvest creates them.
+
+A successful run durably seals `handles.jsonl` and a versioned manifest in
+`<output_dir>/batches/<project>/ready/<batch-id>/`. The manifest records catalog
+generation, sequence bounds, project, profile, history option, counts, and checksum.
+The mapping checkpoint advances only after sealing. A crash between sealing and
+acknowledgement is recovered from the ready manifest without remapping. Payloads
+are never appended after sealing and are verified before publication.
+
+Publish runs immediately when a batch becomes ready. Failed publication leaves it
+ready, preserving receipts and blocking newer work for that project. Later ticks
+repeat that same batch with overwrite semantics; they never read diagnostic STAC
+failure files. Other projects can continue. Successful batches move to `published/`
+within the project's batch directory. A crash after remote writes but before the
+published marker can cause repeated writes. This is at-least-once publication.
+
+Schema version 5 adds bounded pending metadata; harvest upgrades existing catalogs
+and queues their current items once. Manual `map --date ...` still appends daily
+files and does not acknowledge the scheduled worker queue. Changing mapping
+configuration alone does not dirty catalog items; use manual full mapping/publication
+when intentionally rebuilding Handle content after a configuration change.
+No retention policy is applied to batch artifacts. For timer deployment and enablement,
+see [Deployment](https://github.com/ESGF/piddiplatsch/blob/main/deploy/README.md#scheduled-map-and-publish).
 
 ## Deferred publication
 
@@ -373,7 +414,7 @@ creates a replacement, Piddiplatsch switches to the new file on its next log
 write. Full recovery and skipped details remain available in JSONL independently
 of the selected logging level.
 The optional SQLite reporter is controlled by `[stats]` and is opened by
-`piddi consume` and `piddi map`. `harvest` and the read-only `top` command never
+`piddi consume`, `piddi map`, and the mapping phase of `piddi batch`. `harvest` and the read-only `top` command never
 update the database.
 
 The database contains a versioned current-run status model. A heartbeat is

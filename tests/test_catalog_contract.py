@@ -102,6 +102,15 @@ class LifecycleCatalog(BaseCatalog):
     def find_versions(self, collection_id, dataset_id, limit=100):
         raise NotImplementedError
 
+    def pending_changes(self):
+        raise NotImplementedError
+
+    def iter_pending(self, limit):
+        raise NotImplementedError
+
+    def acknowledge_mapped(self, generation, sequence):
+        raise NotImplementedError
+
     def get_checkpoint(self, topic, partition):
         raise NotImplementedError
 

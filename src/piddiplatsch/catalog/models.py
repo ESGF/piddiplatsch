@@ -98,3 +98,19 @@ class KafkaCheckpoint:
             value = getattr(self, name)
             if type(value) is not int or value < 0:
                 raise ValueError(f"{name} must be a non-negative integer")
+
+
+@dataclass(frozen=True)
+class PendingCatalogChanges:
+    """Distinct dirty items and their oldest pending time in a catalog snapshot."""
+
+    generation: str
+    count: int
+    oldest_at: datetime | None
+    sequence: int
+
+
+@dataclass(frozen=True)
+class PendingCatalogItem:
+    entry: CatalogEntry
+    sequence: int

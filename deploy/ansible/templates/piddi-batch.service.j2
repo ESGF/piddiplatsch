@@ -1,0 +1,20 @@
+[Unit]
+Description=Piddiplatsch scheduled mapping and ready-batch publication
+Documentation=https://github.com/ESGF/piddiplatsch
+Wants=network-online.target
+After=network-online.target
+RequiresMountsFor=/var/lib/piddi
+
+[Service]
+Type=oneshot
+User={{ piddi_user }}
+Group={{ piddi_group }}
+WorkingDirectory=/var/lib/piddi
+ExecStart={{ piddi_executable }} --config /etc/piddi/piddi.toml --silent batch
+TimeoutStartSec=infinity
+UMask=0027
+StateDirectory=piddi
+StateDirectoryMode=0750
+LogsDirectory=piddi
+LogsDirectoryMode=0750
+Environment=PYTHONUNBUFFERED=1
