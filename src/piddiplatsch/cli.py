@@ -99,16 +99,16 @@ def cli(
         raise click.ClickException(str(exc)) from exc
 
 
-@cli.command("batch")
+@cli.command("sync")
 @click.option(
     "--force-map",
     is_flag=True,
     help="Map pending items without waiting for the count/time threshold; publishes ready batches.",
 )
 @click.pass_context
-def batch(ctx: click.Context, force_map: bool) -> None:
-    """Run one batch worker tick: map due projects and publish completed batches."""
-    commands.BatchCommand(verbose=ctx.obj["verbose"], force_map=force_map).execute()
+def sync(ctx: click.Context, force_map: bool) -> None:
+    """Map due catalog changes and publish ready Handle batches."""
+    commands.SyncCommand(verbose=ctx.obj["verbose"], force_map=force_map).execute()
 
 
 # command harvest

@@ -80,14 +80,14 @@ not open the file during inspection.
 ## Routine operation
 
 Production runs `piddi harvest --idle-timeout 0` continuously and schedules
-`piddi batch` to map pending catalog items and publish sealed batches. Manual
+`piddi sync` to map pending catalog items and publish sealed batches. Manual
 `map` and `publish` remain available for selected dates/windows.
 
 `consume` has been removed. Use `harvest` for ingestion and `map`/`publish` for
-manual operation, or `batch` for the scheduled workflow.
+manual operation, or `sync` for the scheduled workflow.
 
 Select projects with `[consumer].projects`, repeated `--project` flags, or
-`--all-projects`. Map command-line selection takes precedence; the batch worker uses the configured
+`--all-projects`. Map command-line selection takes precedence; the sync worker uses the configured
 selection. Harvest caches all registered projects and uses a separate Kafka group.
 
 Use `-v` for INFO logging, `-vv` for DEBUG, and `--log PATH` to select a log file.
@@ -271,7 +271,7 @@ publish_retries = 3
 # directory = "/var/lib/piddi/batches"
 ```
 
-`piddi batch` maps when either the per-project distinct pending-item threshold or
+`piddi sync` maps when either the per-project distinct pending-item threshold or
 maximum wait is reached. The age is measured from the first pending change.
 `max_items` caps catalog items per output batch; an item's dataset/file Handles are
 never split. Ready batches publish immediately during the tick, independently of

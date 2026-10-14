@@ -16,5 +16,5 @@ How to use (via Makefile):
 Notes:
 - These scripts are wired through `docker-compose.yml` and the `Makefile` targets above.
 - For non-Docker ESGF Kafka setups, use `etc/esgf-example.toml`. `harvest`
-  maintains local catalogs; `map` prepares Handles without publication. `batch`
+  maintains local catalogs; `map` prepares Handles without publication. `sync`
   maps pending items and publishes ready batches when Handle writes are intended.

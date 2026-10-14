@@ -1,4 +1,4 @@
-"""One scheduled tick: seal due project batches and publish ready batches in order."""
+"""One synchronization pass: seal due project batches and publish ready batches in order."""
 
 import hashlib
 import json
@@ -102,7 +102,7 @@ def _envelope(entry):
     )
 
 
-class BatchWorker:
+class SyncWorker:
     """Single-process coordinator; immutable payloads and crash-recoverable progress.
 
     Mapping acknowledgement happens only after durable sealing. A crash between
@@ -237,7 +237,7 @@ class BatchWorker:
         stats.configure_for_run(
             enable_db=settings.get("enable_db", False),
             db_path=settings.get("db_path"),
-            command="batch",
+            command="sync",
             selected_projects=(project,),
         )
         try:

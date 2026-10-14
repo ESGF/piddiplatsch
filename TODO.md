@@ -19,7 +19,7 @@
   retention.
 - [x] Add durable sealing before mapping acknowledgement, checksum verification,
   worker locking, and recovery across interrupted acknowledgement/publication.
-- [x] Add a scheduled batch worker: per-project 1,000 distinct changed items or
+- [x] Add a scheduled sync worker: per-project 1,000 distinct changed items or
   one-hour wait, configurable limits; publish ready batches independently of map
   thresholds, retain failures, and block newer project work behind failed publication.
 - [ ] Add backlog metrics, publication rate limiting, and optional watch mode.
@@ -114,7 +114,7 @@ local predecessor lookup, but overwrite successive updates to the same item.
 - [x] Add `CatalogLookup` as the default version lookup adapter, retaining explicit
   STAC version queries. Reuse map snapshots and indexed metadata without payload
   scans; keep remote item recovery separate from version lookup.
-- [x] Remove the consume CLI; production uses harvest and the batch worker.
+- [x] Remove the consume CLI; production uses harvest and the sync worker.
 - [ ] Remove remaining legacy direct-processing library paths and obsolete
   transient configuration after compatibility review.
 - [ ] Keep full STAC JSON losslessly, with compact serialization and benchmarked

@@ -103,7 +103,7 @@ it from the optional example if needed) and run `make play` again.
 The installed `piddi.service` now runs `harvest --idle-timeout 0` continuously.
 It maintains catalogs and raw dumps, and does not prepare or publish Handles.
 Map and publish remain available as explicit commands. Scheduled execution uses
-`piddi-batch.service` (oneshot) and `piddi-batch.timer`; the timer is installed but
+`piddi-sync.service` (oneshot) and `piddi-sync.timer`; the timer is installed but
 disabled until explicitly enabled.
 The old `consume` command is removed. Existing deployments switching to harvest
 use its separate Kafka group and may replay retained history.
@@ -128,17 +128,25 @@ tail -f /var/log/piddi/piddi.log
 
 ## Scheduled map and publish
 
-After validating your Handle profile and outputs, enable the batch timer in
+After validating your Handle profile and outputs, enable the sync timer in
 `deploy/ansible/custom.yml` and run `make play`:
 
 ```yaml
 piddi_enable_service: true
-piddi_enable_batch_timer: true
-piddi_batch_check_interval: 1min
+piddi_enable_sync_timer: true
+piddi_sync_check_interval: 1min
 ```
 
-Enabling the batch timer enables **real Handle publication**. Harvest remains the
-only continuous process. The timer runs a single `piddi batch` tick one minute after
+The command and units were renamed from `batch` to `sync`. On deployment,
+Ansible stops/disables existing `piddi-batch.timer` and `piddi-batch.service`,
+removes their unit files, and installs `piddi-sync` units. Existing YAML controls
+`piddi_enable_batch_timer` and `piddi_batch_check_interval` remain accepted as
+fallbacks; prefer the new `sync` names above. Explicit new controls take precedence.
+The TOML `[batch]` settings, spool paths, and existing ready/published artifacts
+are unchanged and remain usable.
+
+Enabling the sync timer enables **real Handle publication**. Harvest remains the
+only continuous process. The timer runs a single `piddi sync` tick one minute after
 boot and, by default, one minute after the previous tick completes. A filesystem
 lock also prevents concurrent manual/scheduled workers sharing the batch directory.
 A tick publishes ready batches regardless of mapping thresholds, then maps due
@@ -189,11 +197,11 @@ Useful commands:
 
 ```console
 # Executes one tick, including publication of ready batches
-piddi --config /etc/piddi/piddi.toml batch
+piddi --config /etc/piddi/piddi.toml sync
 # Ignore map thresholds for pending items; still publishes completed batches
-piddi --config /etc/piddi/piddi.toml batch --force-map
-systemctl status piddi piddi-batch.timer
-journalctl -u piddi-batch.service
+piddi --config /etc/piddi/piddi.toml sync --force-map
+systemctl status piddi piddi-sync.timer
+journalctl -u piddi-sync.service
 ```
 
 ## Vagrant test VM

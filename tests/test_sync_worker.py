@@ -14,7 +14,7 @@ from piddiplatsch.cli import cli
 from piddiplatsch.config import config
 from piddiplatsch.core.messages import KafkaSource
 from piddiplatsch.result import PublishResult
-from piddiplatsch.runners.batch import BatchWorker, _worker_lock
+from piddiplatsch.runners.sync import SyncWorker, _worker_lock
 
 
 class Publisher:
@@ -82,10 +82,10 @@ def test_count_trigger_seals_and_publishes_then_empty_tick_does_nothing(setup):
     put, directory, root = setup
     put(1)
     publisher = Publisher()
-    assert BatchWorker(publisher=publisher).run() == []
+    assert SyncWorker(publisher=publisher).run() == []
     assert not publisher.calls
     put(2)
-    worker = BatchWorker(publisher=publisher)
+    worker = SyncWorker(publisher=publisher)
     paths = worker.run()
     assert not worker.errors
     assert len(paths) == len(publisher.calls) == 1
@@ -96,7 +96,7 @@ def test_count_trigger_seals_and_publishes_then_empty_tick_does_nothing(setup):
     assert pending(directory).count == 0
     assert not list(root.glob("cmip7/handles/handles_*.jsonl"))
     original = (batch / "handles.jsonl").read_bytes()
-    assert BatchWorker(publisher=publisher).run() == []
+    assert SyncWorker(publisher=publisher).run() == []
     assert len(publisher.calls) == 1
     assert (batch / "handles.jsonl").read_bytes() == original
 
@@ -112,12 +112,12 @@ def test_hour_trigger_uses_first_pending_change_and_coalesces_patches(setup):
     assert updated.sequence > first.sequence
     publisher = Publisher()
     assert (
-        BatchWorker(
+        SyncWorker(
             now=lambda: first.oldest_at + timedelta(seconds=3599), publisher=publisher
         ).run()
         == []
     )
-    worker = BatchWorker(
+    worker = SyncWorker(
         now=lambda: first.oldest_at + timedelta(hours=1), publisher=publisher
     )
     assert len(worker.run()) == 1
@@ -130,10 +130,10 @@ def test_batch_boundaries_keep_all_handles_for_each_item(setup):
     for version in range(1, 6):
         put(version)
     publisher = Publisher()
-    assert len(BatchWorker(publisher=publisher).run()) == 2
+    assert len(SyncWorker(publisher=publisher).run()) == 2
     assert pending(directory).count == 1
-    assert BatchWorker(publisher=publisher).run() == []
-    assert len(BatchWorker(publisher=publisher).run(force_map=True)) == 1
+    assert SyncWorker(publisher=publisher).run() == []
+    assert len(SyncWorker(publisher=publisher).run(force_map=True)) == 1
     assert sorted(manifest["item_count"] for _, manifest in manifests(root)) == [
         1,
         2,
@@ -146,7 +146,7 @@ def test_changes_during_mapping_remain_pending(setup, monkeypatch):
     put, directory, root = setup
     put(1)
     put(2)
-    worker = BatchWorker(publisher=Publisher())
+    worker = SyncWorker(publisher=Publisher())
     original = worker._map_items
 
     def change_after_snapshot(*args):
@@ -173,7 +173,7 @@ def test_failed_publication_retries_immutable_batch_before_new_mapping(setup):
     put(2)
     publisher = Publisher()
     publisher.fail = True
-    worker = BatchWorker(publisher=publisher)
+    worker = SyncWorker(publisher=publisher)
     worker.run()
     assert worker.errors
     batch, manifest = manifests(root)[0]
@@ -182,14 +182,14 @@ def test_failed_publication_retries_immutable_batch_before_new_mapping(setup):
     original = (batch / "handles.jsonl").read_bytes()
     put(3)
     put(4)
-    failed_again = BatchWorker(publisher=publisher)
+    failed_again = SyncWorker(publisher=publisher)
     assert failed_again.run() == []
     assert failed_again.errors
     assert len(manifests(root)) == 1
     assert pending(directory).count == 2
     assert (batch / "handles.jsonl").read_bytes() == original
     publisher.fail = False
-    recovered = BatchWorker(publisher=publisher)
+    recovered = SyncWorker(publisher=publisher)
     recovered.run()
     assert not recovered.errors
     assert publisher.calls[:3] == [batch / "handles.jsonl"] * 3
@@ -202,7 +202,7 @@ def test_crash_after_sealing_recovers_acknowledgement_without_remapping(
     put, directory, root = setup
     put(1)
     put(2)
-    worker = BatchWorker(publisher=Publisher())
+    worker = SyncWorker(publisher=Publisher())
     monkeypatch.setattr(
         worker,
         "_acknowledge",
@@ -215,7 +215,7 @@ def test_crash_after_sealing_recovers_acknowledgement_without_remapping(
     assert manifest["status"] == "ready"
     assert not manifest["mapping_acknowledged"]
     publisher = Publisher()
-    recovered = BatchWorker(publisher=publisher)
+    recovered = SyncWorker(publisher=publisher)
     assert recovered.run() == []
     assert not recovered.errors
     assert publisher.calls == [batch / "handles.jsonl"]
@@ -227,7 +227,7 @@ def test_failed_mapping_never_seals_or_advances_pending_progress(setup, monkeypa
     put, directory, root = setup
     put(1)
     put(2)
-    worker = BatchWorker(publisher=Publisher())
+    worker = SyncWorker(publisher=Publisher())
     monkeypatch.setattr(
         worker,
         "_write_items",
@@ -239,7 +239,7 @@ def test_failed_mapping_never_seals_or_advances_pending_progress(setup, monkeypa
     assert manifests(root) == []
     failed = next(root.glob("batches/cmip7/.building-*/manifest.json"))
     assert json.loads(failed.read_text())["status"] == "failed"
-    recovered = BatchWorker(publisher=Publisher())
+    recovered = SyncWorker(publisher=Publisher())
     assert len(recovered.run()) == 1
     assert not recovered.errors
 
@@ -248,7 +248,7 @@ def test_worker_lock_prevents_overlapping_ticks(setup):
     put, directory, _root = setup
     put(1)
     put(2)
-    worker = BatchWorker(publisher=Publisher())
+    worker = SyncWorker(publisher=Publisher())
     with _worker_lock(worker.root) as acquired:
         assert acquired
         assert worker.run() == []
@@ -262,11 +262,11 @@ def test_clean_generation_rejects_stale_ready_batch(setup):
     put(2)
     publisher = Publisher()
     publisher.fail = True
-    BatchWorker(publisher=publisher).run()
+    SyncWorker(publisher=publisher).run()
     with SQLiteCatalog("cmip7", directory / "cmip7.sqlite") as writer:
         writer.reset()
     publisher.fail = False
-    worker = BatchWorker(publisher=publisher)
+    worker = SyncWorker(publisher=publisher)
     worker.run()
     assert worker.errors
     assert "previous catalog generation" in worker.errors[0]
@@ -281,8 +281,8 @@ def test_defaults_and_cli_worker_tick(setup, monkeypatch):
     put, _directory, _root = setup
     put(1)
     publisher = Publisher()
-    monkeypatch.setattr("piddiplatsch.runners.batch.HandlePublisher", lambda: publisher)
-    result = CliRunner().invoke(cli, ["--silent", "batch", "--force-map"])
+    monkeypatch.setattr("piddiplatsch.runners.sync.HandlePublisher", lambda: publisher)
+    result = CliRunner().invoke(cli, ["--silent", "sync", "--force-map"])
     assert result.exit_code == 0, result.output
     assert len(publisher.calls) == 1
 
@@ -291,7 +291,7 @@ def test_corrupt_ready_payload_blocks_publication_before_ack(setup, monkeypatch)
     put, directory, root = setup
     put(1)
     put(2)
-    worker = BatchWorker(publisher=Publisher())
+    worker = SyncWorker(publisher=Publisher())
     monkeypatch.setattr(
         worker,
         "_acknowledge",
@@ -303,7 +303,7 @@ def test_corrupt_ready_payload_blocks_publication_before_ack(setup, monkeypatch)
     output.chmod(0o640)
     output.write_text("corrupt\n")
     publisher = Publisher()
-    recovered = BatchWorker(publisher=publisher)
+    recovered = SyncWorker(publisher=publisher)
     recovered.run()
     assert recovered.errors
     assert "checksum/count mismatch" in recovered.errors[0]
@@ -317,7 +317,7 @@ def test_identical_harvest_does_not_schedule_another_batch(setup):
     first = pending(directory)
     put(1)
     assert pending(directory) == first
-    BatchWorker(publisher=Publisher()).run(force_map=True)
+    SyncWorker(publisher=Publisher()).run(force_map=True)
     assert pending(directory).count == 0
     put(1)
     assert pending(directory).count == 0
@@ -341,7 +341,7 @@ def test_mapping_failure_writes_diagnostic_item_and_preserves_queue(setup):
                 CatalogEntry(item["collection"], item, dataset_id, version)
             )
     publisher = Publisher()
-    worker = BatchWorker(publisher=publisher)
+    worker = SyncWorker(publisher=publisher)
     worker.run()
     assert worker.errors
     assert not publisher.calls
@@ -386,7 +386,7 @@ def test_real_publisher_receipts_and_archiving_without_remote_service(setup):
             self.records.append((pid, record))
 
     backend = Backend()
-    worker = BatchWorker(publisher=HandlePublisher(backend=backend))
+    worker = SyncWorker(publisher=HandlePublisher(backend=backend))
     paths = worker.run()
     assert not worker.errors
     assert len(paths) == 1
@@ -408,7 +408,7 @@ def test_crash_after_success_marker_archives_without_republishing(setup, monkeyp
     put(1)
     put(2)
     publisher = Publisher()
-    worker = BatchWorker(publisher=publisher)
+    worker = SyncWorker(publisher=publisher)
     monkeypatch.setattr(
         worker,
         "_archive",
@@ -419,7 +419,7 @@ def test_crash_after_success_marker_archives_without_republishing(setup, monkeyp
     batch, manifest = manifests(root)[0]
     assert batch.parent.name == "ready"
     assert manifest["status"] == "published"
-    recovered = BatchWorker(publisher=publisher)
+    recovered = SyncWorker(publisher=publisher)
     recovered.run()
     assert not recovered.errors
     assert len(publisher.calls) == 1
@@ -430,7 +430,7 @@ def test_crash_after_catalog_ack_keeps_newer_changes_on_recovery(setup, monkeypa
     put, directory, root = setup
     put(1)
     put(2)
-    worker = BatchWorker(publisher=Publisher())
+    worker = SyncWorker(publisher=Publisher())
 
     def acknowledge_then_crash(batch, manifest):
         with SQLiteCatalog("cmip7", directory / "cmip7.sqlite") as writer:
@@ -444,7 +444,7 @@ def test_crash_after_catalog_ack_keeps_newer_changes_on_recovery(setup, monkeypa
     assert manifests(root)[0][1]["mapping_acknowledged"] is False
     put(3)
     publisher = Publisher()
-    recovered = BatchWorker(publisher=publisher)
+    recovered = SyncWorker(publisher=publisher)
     recovered.run(force_map=True)
     assert not recovered.errors
     assert pending(directory).count == 0

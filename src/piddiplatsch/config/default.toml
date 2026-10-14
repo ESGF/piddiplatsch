@@ -25,7 +25,7 @@ projects = ["cmip6"]
 topic = "CMIP6"
 output_dir = "outputs"
 # Maximum number of errors before stopping; -1 = unlimited.
-# Map/batch stop on first error. Catalog harvest always stops on any error.
+# Map/sync stop on first error. Catalog harvest always stops on any error.
 max_errors = 1
 
 [catalog]
@@ -53,7 +53,7 @@ trigger_items = 1000
 max_wait_seconds = 3600
 # Maximum catalog items per immutable output batch; never split an item's Handles.
 max_items = 1000
-# Ready batches publish immediately during the batch worker tick, in project order.
+# Ready batches publish immediately during the sync tick, in project order.
 publish_workers = 1
 publish_retries = 3
 # Default: <consumer.output_dir>/batches. Must be shared by all worker invocations.
@@ -111,7 +111,7 @@ default = "mock"
 
 [handles.defaults]
 # Handle publication backend: use "rest" or "pyhandle" for the legacy client.
-# Map prepares JSONL without publication. Publish/batch send prepared Handles
+# Map prepares JSONL without publication. Publish/sync send prepared Handles
 # through REST; pyhandle remains available for library compatibility.
 backend = "rest"
 # Keep certificate verification enabled in production. Disable only for a
@@ -209,7 +209,7 @@ interval_seconds = 10
 # Message count threshold before logging a stats snapshot.
 summary_interval = 1000
 
-# Enable SQLite monitoring for map and the mapping phase of batch runs.
+# Enable SQLite monitoring for map and the mapping phase of sync runs.
 enable_db = true
 
 # Path to SQLite database file (used only if enable_db = true).

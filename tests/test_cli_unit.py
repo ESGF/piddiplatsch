@@ -8,13 +8,13 @@ from click.testing import CliRunner
 
 from piddiplatsch.cli import cli
 from piddiplatsch.commands import (
-    BatchCommand,
     Command,
     ConfigShowCommand,
     ConfigValidateCommand,
     HarvestCommand,
     MapCommand,
     PublishCommand,
+    SyncCommand,
 )
 from piddiplatsch.config import config
 from piddiplatsch.consumer import HarvestProcessor
@@ -37,7 +37,7 @@ class TestCLIBasics:
 
     def test_commands_implement_common_api(self):
         command_types = (
-            BatchCommand,
+            SyncCommand,
             HarvestCommand,
             MapCommand,
             PublishCommand,
@@ -53,6 +53,8 @@ class TestCLIBasics:
         assert result.exit_code == 0
         assert "CLI to interact with Kafka and Handle Service" in result.output
         assert "consume" not in result.output
+        assert "sync" in result.output
+        assert "  batch " not in result.output
         assert "harvest" in result.output
         assert "map" in result.output
         assert "publish" in result.output

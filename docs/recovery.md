@@ -60,7 +60,7 @@ The worker's source remains the catalog. Failed mapping staging directories unde
 remain eligible for a future tick. Batches only become ready when mapping succeeds.
 
 Ready batches are immutable. Publication failures retain their ready state and
-receipts; repeating `piddi batch` republishes the same batch before newer work for
+receipts; repeating `piddi sync` republishes the same batch before newer work for
 that project. A checksum mismatch or catalog generation mismatch blocks publication
 for inspection. Successful batches are archived under `published/`. A crash after
 remote writes but before recording success may repeat those writes with overwrite

@@ -175,7 +175,7 @@ the generated Handle records with Pydantic. It does not validate the complete
 STAC schema. Schema strictness is configurable; it defaults to true.
 Harvest preserves all raw events before project selection. Map writes one
 Handle batch per project; publish each project's batch separately.
-The batch worker maps due catalog changes and publishes sealed batches. Sources: README.md, docs/architecture.md,
+The sync worker maps due catalog changes and publishes sealed batches. Sources: README.md, docs/architecture.md,
 docs/configuration.md.
 :::
 

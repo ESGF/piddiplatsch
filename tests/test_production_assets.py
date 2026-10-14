@@ -274,19 +274,45 @@ def test_batch_deployment_installs_oneshot_and_configurable_timer():
     playbook = yaml.safe_load((PROJECT_ROOT / "deploy/ansible/piddi.yml").read_text())[
         0
     ]
-    assert playbook["vars"]["piddi_enable_batch_timer"] is False
-    assert playbook["vars"]["piddi_batch_check_interval"] == "1min"
+    assert (
+        playbook["vars"]["piddi_enable_sync_timer"]
+        == "{{ piddi_enable_batch_timer | default(false) }}"
+    )
+    assert (
+        playbook["vars"]["piddi_sync_check_interval"]
+        == "{{ piddi_batch_check_interval | default('1min') }}"
+    )
     tasks = {task["name"]: task for task in playbook["tasks"]}
-    assert tasks["Install scheduled batch units"]["loop"] == [
-        "piddi-batch.service",
-        "piddi-batch.timer",
+    assert tasks["Install scheduled sync units"]["loop"] == [
+        "piddi-sync.service",
+        "piddi-sync.timer",
     ]
-    timer = (PROJECT_ROOT / "deploy/ansible/templates/piddi-batch.timer.j2").read_text()
-    assert "OnUnitInactiveSec={{ piddi_batch_check_interval }}" in timer
-    assert "Unit=piddi-batch.service" in timer
-    unit = (
-        PROJECT_ROOT / "deploy/ansible/templates/piddi-batch.service.j2"
-    ).read_text()
+    timer = (PROJECT_ROOT / "deploy/ansible/templates/piddi-sync.timer.j2").read_text()
+    assert "OnUnitInactiveSec={{ piddi_sync_check_interval }}" in timer
+    assert "Unit=piddi-sync.service" in timer
+    unit = (PROJECT_ROOT / "deploy/ansible/templates/piddi-sync.service.j2").read_text()
     assert "Type=oneshot" in unit
-    assert "--silent batch" in unit
+    assert "--silent sync" in unit
     assert "Restart=" not in unit
+
+
+def test_sync_deployment_removes_old_units_before_starting_new_timer():
+    playbook = yaml.safe_load((PROJECT_ROOT / "deploy/ansible/piddi.yml").read_text())[
+        0
+    ]
+    names = [task["name"] for task in playbook["tasks"]]
+    tasks = {task["name"]: task for task in playbook["tasks"]}
+    assert names.index("Stop and disable legacy batch units") < names.index(
+        "Remove legacy batch unit files"
+    )
+    assert names.index("Remove legacy batch unit files") < names.index(
+        "Configure the scheduled sync timer"
+    )
+    assert tasks["Inspect legacy batch units"]["loop"] == [
+        "piddi-batch.timer",
+        "piddi-batch.service",
+    ]
+    stop = tasks["Stop and disable legacy batch units"]
+    assert stop["ansible.builtin.systemd_service"]["enabled"] is False
+    assert stop["ansible.builtin.systemd_service"]["state"] == "stopped"
+    assert stop["when"] == "item.stat.exists | default(false)"

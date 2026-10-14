@@ -9,7 +9,7 @@ project catalogs -> daily or sealed batch Handle JSONL (map/batch)
 prepared Handle JSONL -> Handle Service + receipts (publish/batch)
 ```
 
-Harvest is the only continuous service. The scheduled batch worker maps due
+Harvest is the only continuous service. The scheduled sync worker maps due
 projects, seals immutable batches, and publishes ready batches sequentially.
 Manual map/publish commands remain available; the old consume command is removed.
 
@@ -101,7 +101,7 @@ independently generated identifiers.
 
 `consumer.projects` selects a list of plugin names or `all`. Repeated
 `--project NAME` options and `--all-projects` on `map` override
-config for a run. The batch worker uses the configured selection. `harvest` intentionally has no project selection: it retains
+config for a run. The sync worker uses the configured selection. `harvest` intentionally has no project selection: it retains
 every raw queue message and caches each registered project encountered, so a
 different mapping selection can be applied later. Unknown or malformed events
 stop catalog harvesting and remain unacknowledged; `--no-catalog` keeps the previous

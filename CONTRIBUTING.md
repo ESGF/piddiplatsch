@@ -42,7 +42,7 @@ explicit publication (or use the local Docker stack for smoke tests).
 - Map explicit saved JSONL: `piddi map <path...>`
 - Harvest catalogs: `piddi harvest`
 - Map catalogs: `piddi map --project cmip6 --date all`
-- Map pending items and publish ready batches: `piddi batch --force-map`
+- Map pending items and publish ready batches: `piddi sync --force-map`
 - Common flags:
   - `--config <path>`: point to your TOML config
   - `--silent`: hide the default progress display
@@ -52,7 +52,7 @@ explicit publication (or use the local Docker stack for smoke tests).
 
 `harvest` always writes raw queue messages to `outputs/dump/` before catalog
 routing. `map` prepares daily Handle JSONL without contacting a Handle Service;
-`batch` seals and publishes completed batches. The consume command is removed.
+`sync` seals and publishes completed batches. The consume command is removed.
 
 ### Config Validation
 

@@ -151,7 +151,7 @@ test-smoke: config-validate start-docker ## run smoke tests only (requires Docke
 	# Ensure Kafka topic exists before starting consumer
 	@echo "Ensuring Kafka topic exists (from config) ..."
 	@python scripts/ensure_kafka_topic.py || true
-	# Smoke tests explicitly run harvest then a forced batch tick.
+	# Smoke tests explicitly run harvest then a forced sync tick.
 	@bash -c 'python -m pytest -v -s -m "smoke" tests/' || ($(MAKE) stop-docker; exit 1)
 	@$(MAKE) stop-docker
 

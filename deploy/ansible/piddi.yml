@@ -15,8 +15,9 @@
     # Continuous catalog harvest only; mapping/publication are separate batch commands.
     piddi_enable_service: false
     # This timer publishes Handles; enable explicitly after checking the site profile.
-    piddi_enable_batch_timer: false
-    piddi_batch_check_interval: 1min
+    # Old control names remain accepted while existing sites migrate.
+    piddi_enable_sync_timer: "{{ piddi_enable_batch_timer | default(false) }}"
+    piddi_sync_check_interval: "{{ piddi_batch_check_interval | default('1min') }}"
     # Shared application settings used by manual runs and deployment.
     piddi_config_source: "{{ playbook_dir }}/../../custom.toml"
 
@@ -163,7 +164,31 @@
         - Reload systemd
       register: piddi_service_unit
 
-    - name: Install scheduled batch units
+    - name: Inspect legacy batch units
+      ansible.builtin.stat:
+        path: "/etc/systemd/system/{{ item }}"
+      loop:
+        - piddi-batch.timer
+        - piddi-batch.service
+      register: piddi_legacy_batch_units
+
+    - name: Stop and disable legacy batch units
+      ansible.builtin.systemd_service:
+        name: "{{ item.item }}"
+        enabled: false
+        state: stopped
+      loop: "{{ piddi_legacy_batch_units.results }}"
+      when: item.stat.exists | default(false)
+
+    - name: Remove legacy batch unit files
+      ansible.builtin.file:
+        path: "/etc/systemd/system/{{ item.item }}"
+        state: absent
+      loop: "{{ piddi_legacy_batch_units.results }}"
+      when: item.stat.exists | default(false)
+      notify: Reload systemd
+
+    - name: Install scheduled sync units
       ansible.builtin.template:
         src: "templates/{{ item }}.j2"
         dest: "/etc/systemd/system/{{ item }}"
@@ -171,10 +196,10 @@
         group: root
         mode: "0644"
       loop:
-        - piddi-batch.service
-        - piddi-batch.timer
+        - piddi-sync.service
+        - piddi-sync.timer
       notify: Reload systemd
-      register: piddi_batch_units
+      register: piddi_sync_units
 
     - name: Install logrotate policy
       ansible.builtin.copy:
@@ -214,11 +239,11 @@
         - piddi-logrotate.timer
       when: piddi_enable_service | bool
 
-    - name: Configure the scheduled batch timer
+    - name: Configure the scheduled sync timer
       ansible.builtin.systemd_service:
-        name: piddi-batch.timer
-        enabled: "{{ piddi_enable_batch_timer | bool }}"
-        state: "{{ 'restarted' if piddi_enable_batch_timer | bool and piddi_batch_units.changed else ('started' if piddi_enable_batch_timer | bool else 'stopped') }}"
+        name: piddi-sync.timer
+        enabled: "{{ piddi_enable_sync_timer | bool }}"
+        state: "{{ 'restarted' if piddi_enable_sync_timer | bool and piddi_sync_units.changed else ('started' if piddi_enable_sync_timer | bool else 'stopped') }}"
         daemon_reload: true
 
   handlers:

@@ -56,7 +56,7 @@ piddi map --project cmip6 --version-history
 piddi publish --project cmip6 --date 2026-08-27
 
 # Scheduled workflow: map due projects and publish ready batches
-piddi batch
+piddi sync
 ```
 
 `harvest --idle-timeout 0` keeps consuming continuously for a service. The normal
@@ -220,7 +220,7 @@ mode enabled, then `map --project NAME --date all` for full initial filling.
 
 ## Scheduled immutable batches
 
-`piddi batch` runs one worker tick: publish already ready batches, then map projects
+`piddi sync` runs one worker tick: publish already ready batches, then map projects
 that have reached `[batch].trigger_items` distinct pending catalog items or
 `[batch].max_wait_seconds` since their first pending change. Defaults are 1,000 items
 and one hour. `--force-map` ignores thresholds for nonempty pending selections.
@@ -373,7 +373,7 @@ Inspect output and use an explicit date or completed file when repeating a batch
 
 ## Terminal progress
 
-Progress is displayed by default for `harvest`, `map`, `batch`, and `publish`.
+Progress is displayed by default for `harvest`, `map`, `sync`, and `publish`.
 Use the global `--silent` (or `-s`) or `--no-progress` option to hide it:
 
 ```bash
@@ -410,7 +410,7 @@ creates a replacement, Piddiplatsch switches to the new file on its next log
 write. Full recovery and skipped details remain available in JSONL independently
 of the selected logging level.
 The optional SQLite reporter is controlled by `[stats]` and is opened by
-`piddi map` and the mapping phase of `piddi batch`. `harvest` and the read-only `top` command never
+`piddi map` and the mapping phase of `piddi sync`. `harvest` and the read-only `top` command never
 update the database.
 
 The database contains a versioned current-run status model. A heartbeat is

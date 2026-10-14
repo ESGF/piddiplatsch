@@ -3,8 +3,8 @@ Description=Check Piddiplatsch pending changes and ready batches
 
 [Timer]
 OnBootSec=1min
-OnUnitInactiveSec={{ piddi_batch_check_interval }}
-Unit=piddi-batch.service
+OnUnitInactiveSec={{ piddi_sync_check_interval }}
+Unit=piddi-sync.service
 
 [Install]
 WantedBy=timers.target

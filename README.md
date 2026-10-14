@@ -42,7 +42,7 @@ piddi harvest
 ```
 
 `harvest` saves raw messages and maintains project catalogs. Run `map` to prepare
-Handle JSONL, or schedule `batch` for mapping and publication. Kafka access is
+Handle JSONL, or schedule `sync` for mapping and publication. Kafka access is
 required; see [Configuration](https://esgf.github.io/piddiplatsch/configuration/).
 
 ## Run in stages
@@ -80,10 +80,10 @@ piddi publish --project cmip6 --date yesterday
 piddi publish --project cmip6 --from 2026-10-08 --to today-1
 ```
 
-For scheduled production batches, `piddi batch` maps each project at 1,000 distinct
+For scheduled production batches, `piddi sync` maps each project at 1,000 distinct
 pending items or a one-hour wait, then publishes each sealed batch immediately.
 Both thresholds and batch sizes are configurable. Ansible provides an optional
-batch timer alongside continuous harvest; enabling it performs real publication.
+sync timer alongside continuous harvest; enabling it performs real publication.
 See [deployment](deploy/README.md#scheduled-map-and-publish).
 
 Use `piddi COMMAND --help` for options. The
