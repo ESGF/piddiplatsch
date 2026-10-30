@@ -9,7 +9,6 @@ from piddiplatsch.config import config
 from piddiplatsch.core.project_records import ProjectDatasetRecord
 from piddiplatsch.handles.api import get_handle_backend
 from piddiplatsch.handles.jsonl_backend import JsonlHandleBackend
-from piddiplatsch.handles.pyhandle_backend import HandleClient
 from piddiplatsch.handles.recording_backend import RecordingHandleBackend
 from piddiplatsch.handles.rest_backend import RestHandleClient
 
@@ -237,18 +236,10 @@ def test_handle_backend_factory_defaults_to_rest(monkeypatch):
     assert backend.backend is sentinel
 
 
-def test_handle_backend_factory_keeps_pyhandle(monkeypatch):
-    sentinel = object()
+def test_handle_backend_factory_rejects_removed_pyhandle():
     config._set("handle", "backend", "pyhandle")
-    monkeypatch.setattr(
-        "piddiplatsch.handles.pyhandle_backend.HandleClient.from_config",
-        lambda **_kwargs: sentinel,
-    )
-
-    backend = get_handle_backend(publish=True)
-    assert isinstance(backend, RecordingHandleBackend)
-    assert backend.backend is sentinel
-    assert HandleClient is not RestHandleClient
+    with pytest.raises(ValueError, match="backend"):
+        get_handle_backend(publish=True)
 
 
 def test_rest_client_uses_project_handle_profile():

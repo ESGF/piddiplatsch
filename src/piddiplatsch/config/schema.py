@@ -128,7 +128,7 @@ class KafkaConfig(BaseModel):
 class HandleProfileConfig(BaseModel):
     model_config = ConfigDict(extra="allow")
 
-    backend: Literal["rest", "pyhandle"] | None = None
+    backend: Literal["rest"] | None = None
     server_url: str | None = None
     prefix: str | None = None
     username: str | None = None
@@ -138,7 +138,7 @@ class HandleProfileConfig(BaseModel):
 
 
 class HandleConfig(HandleProfileConfig):
-    backend: Literal["rest", "pyhandle"] = "rest"
+    backend: Literal["rest"] = "rest"
     verify_https: bool = True
     timeout: float = Field(default=10.0, gt=0)
 

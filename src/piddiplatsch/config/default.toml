@@ -110,9 +110,9 @@ preflight_stac = false
 default = "mock"
 
 [handles.defaults]
-# Handle publication backend: use "rest" or "pyhandle" for the legacy client.
+# Handle publication backend.
 # Map prepares JSONL without publication. Publish/sync send prepared Handles
-# through REST; pyhandle remains available for library compatibility.
+# through REST.
 backend = "rest"
 # Keep certificate verification enabled in production. Disable only for a
 # deliberately trusted service using a self-signed certificate. When disabled,

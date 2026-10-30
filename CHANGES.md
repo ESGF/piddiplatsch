@@ -9,8 +9,17 @@ All notable changes to this project are documented here.
   configured projects, plus `--workers` and `--retries` publication overrides.
 
 ### Fixed
+- Raised security minimums for Certifi, Brotli, Requests, urllib3, and pip;
+  updated Black to 26.10.1 across pip, Conda, and pre-commit;
+  refreshed Conda CA requirements and pip bootstrap steps, and added a CI
+  dependency audit plus `make audit`.
 - Suppress the expected Brotli GIL compatibility warning during CLI commands on
   free-threaded Python, preserving automatic GIL fallback and other warnings.
+
+### Removed
+- Removed the legacy pyhandle backend and dependency, which pinned vulnerable
+  PyMySQL. Set Handle profiles to `backend = "rest"`; existing environments
+  must remove unused pyhandle/PyMySQL packages separately.
 
 ## [2.3.0] - 2026-10-12
 

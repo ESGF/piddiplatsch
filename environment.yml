@@ -2,14 +2,18 @@ name: piddi
 channels:
   - conda-forge
 dependencies:
-  - pip
+  - pip>=26.2.2
+  - ca-certificates>=2026.10.19
+  - certifi>=2026.10.23
+  - brotli-python>=1.2.1
   - python>=3.11
   - flask
   - python-confluent-kafka>=2.9
   - pydantic>=2.11
   - multiformats
   - rich
-  - requests
+  - requests>=2.34.2
+  - urllib3>=2.8.0,<3
   - jsonpatch
   - toml
   - tqdm
@@ -23,7 +27,7 @@ dependencies:
   - ruff=0.14.13
   - twine>=4
   - wheel>=0.40
-  - black=26.1.0
+  - black=26.10.1
   - isort=7.0.0
   - pre-commit>=4.5.1,<5
   - bump-my-version>=1.2

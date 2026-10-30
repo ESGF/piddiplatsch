@@ -97,7 +97,7 @@ all registered projects and uses a separate Kafka group.
 Use `-v` for INFO logging, `-vv` for DEBUG, and `--log PATH` to select a log file.
 For permanent changes, set `[logging].level` and `[logging].file`.
 
-Direct `rest` and `pyhandle` publication always appends the prepared record to
+Direct REST publication always appends the prepared record to
 the project-scoped Handle JSONL file before contacting the service. This audit
 output is not optional; `[consumer].output_dir` controls its root directory.
 
@@ -319,7 +319,7 @@ All existing settings remain supported. Only override values your site needs.
 | `consumer` | `max_errors` | Stop after this many processing errors; `-1` disables the limit. |
 | `handles` | `default` | Handle profile used when a project does not select one explicitly. |
 | `handles.defaults` | `backend`, `verify_https`, `timeout` | Common values inherited by every named Handle profile. |
-| `handles.profiles.<name>` | `backend` | `rest` for publication or legacy `pyhandle`; both always write JSONL first. |
+| `handles.profiles.<name>` | `backend` | `rest` for publication; always writes JSONL first. |
 | `handles.profiles.<name>` | `server_url`, `prefix`, `username`, `password` | Connection and credentials for one Handle service. |
 | `handles.profiles.<name>` | `verify_https`, `timeout` | TLS verification and per-request timeout for one Handle service. |
 | `stac` | `base_url`, `timeout`, `collection` | Global STAC defaults; the shared endpoint is `https://discovery.east.esgf.io`. |

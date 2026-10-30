@@ -17,6 +17,40 @@ make deploy
 `make deploy` creates or updates `.conda`, installs Piddi, and runs Ansible.
 Use `make play` for later Ansible-only configuration changes.
 
+### Dependency security updates
+
+The legacy `pyhandle` backend has been removed because its dependency metadata
+pins a vulnerable PyMySQL release. Change any `backend = "pyhandle"` setting to
+`backend = "rest"` before deploying. Existing REST service credentials and
+project prefixes remain usable. Pip does not remove dependencies that are no
+longer needed: when reusing an old environment, uninstall `pyhandle` and
+`pymysql` if no other application needs them, then audit the environment.
+
+After pulling dependency changes, run `make deploy` to update the application
+environment; `make play` alone does not install packages. The environment requires
+the October 2026 CA trust updates, pip 26.2.2, Brotli 1.2.1, Requests 2.34.2, and
+urllib3 2.8.0 or newer. Restart the running harvest service after updating so it
+loads the new libraries:
+
+```console
+make deploy
+sudo systemctl restart piddi
+```
+
+Update the host's OS CA store and its base Conda/Miniforge installation separately
+using their security updates, before resolving the application environment.
+Updating Certifi alone does not update pip's vendored CA bundle or Conda's native
+trust store. See the [Conda security guidance](https://conda.org/blog/2026-10-21-emudhra-security-updates/).
+
+Use `make audit` in a development environment with `.[dev]` installed to audit
+installed Python packages; CI runs it too. For existing shared environments,
+also upgrade any installed `brotlicffi` to at least 1.2.1.0, or remove it if
+unused. HTTP clients may select it ahead of `brotli`. A Python dependency audit
+does not cover OS packages or native Conda libraries. Rebuild mock Handle Docker
+images with `docker compose build --pull` to refresh their base image and packages.
+
+### Application configuration
+
 `custom.toml` is the single application configuration for manual runs and
 Ansible deployment. It contains Kafka credentials, projects, Handle profiles,
 and catalog/mapping settings. Ansible reads that file and installs a generated copy at

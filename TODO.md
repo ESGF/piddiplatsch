@@ -5,8 +5,7 @@
 - [ ] Test REST publication against a disposable real Handle prefix.
 - [ ] Confirm authentication, HTTPS/CA requirements, error handling, and safe
   retry behavior without exposing secrets.
-- [ ] Compare REST and `pyhandle` output, then document safe concurrency and
-  rate limits.
+- [ ] Document safe REST publication concurrency and rate limits.
 - [ ] Investigate server-side batching only if the deployed service documents a
   multi-Handle endpoint with per-item results.
 

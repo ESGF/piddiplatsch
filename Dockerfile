@@ -8,7 +8,8 @@ COPY pyproject.toml README.md LICENSE ./
 COPY src/ ./src/
 
 # Install the package
-RUN pip install --no-cache-dir . flask
+RUN python -m pip install --no-cache-dir --upgrade "pip>=26.2.2" \
+    && python -m pip install --no-cache-dir . flask
 
 EXPOSE 8000
 

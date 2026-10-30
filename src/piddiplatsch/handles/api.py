@@ -60,9 +60,9 @@ def get_handle_backend(
     Return a HandleBackend based on configuration.
 
     Config keys expected in the project's ``[handles.profiles.*]`` section:
-      backend = "rest" | "pyhandle"
+      backend = "rest"
 
-    Both publication backends are wrapped by the immutable JSONL audit
+    The publication backend is wrapped by the immutable JSONL audit
     recorder. When publication is disabled, only that JSONL output is written.
     """
     if not publish:
@@ -74,7 +74,7 @@ def get_handle_backend(
         )
 
     handle_config = config.get_handle(project=project, profile=handle_profile)
-    backend_type: Literal["rest", "pyhandle"] = handle_config.get("backend", "rest")
+    backend_type: Literal["rest"] = handle_config.get("backend", "rest")
     profile = handle_profile or config.get_handle_profile(project)
     logging.warning(
         "Using Handle backend: %s (project=%s profile=%s)",
@@ -88,16 +88,6 @@ def get_handle_backend(
 
         return RecordingHandleBackend(
             RestHandleClient.from_config(project=project, profile=handle_profile),
-            project=project,
-            handle_profile=handle_profile,
-            output_filename=output_filename,
-        )
-
-    if backend_type == "pyhandle":
-        from piddiplatsch.handles.pyhandle_backend import HandleClient
-
-        return RecordingHandleBackend(
-            HandleClient.from_config(project=project, profile=handle_profile),
             project=project,
             handle_profile=handle_profile,
             output_filename=output_filename,

@@ -8,7 +8,7 @@ Piddiplatsch writes daily JSONL files beneath `consumer.output_dir`:
 | --- | --- |
 | `dump/` | Original Kafka messages written by every `harvest` run. |
 | `catalog/` | One SQLite STAC catalog per registered project encountered by `harvest`, unless disabled. |
-| `<plugin>/handles/` | Handle records produced by that plugin. Direct REST/pyhandle publication writes the JSONL record before contacting the server; each line also includes `project`. |
+| `<plugin>/handles/` | Handle records produced by that plugin. Direct REST publication writes the JSONL record before contacting the server; each line also includes `project`. |
 | `published/` | One run-scoped JSONL receipt per `publish` run, containing every successful or failed Handle outcome. |
 | `<plugin>/skipped/` | Records deferred after transient external failures. |
 | `<plugin>/failures/r<N>/` | Failed records with diagnostic metadata; the historical `r0` layout is retained. |
