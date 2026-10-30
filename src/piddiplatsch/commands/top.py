@@ -92,9 +92,9 @@ class TopCommand(Command):
         table = Table(box=None, padding=(0, 1))
         for heading in (
             "Project",
-            "Pending items",
-            "Prepared",
-            "Published",
+            "Pending datasets",
+            "Generated handles",
+            "Published handles",
             "Activity",
             "Handles/s",
             "Batch ETA ~",
@@ -106,7 +106,12 @@ class TopCommand(Command):
                 justify=(
                     "right"
                     if heading
-                    in {"Pending items", "Prepared", "Published", "Handles/s"}
+                    in {
+                        "Pending datasets",
+                        "Generated handles",
+                        "Published handles",
+                        "Handles/s",
+                    }
                     else "left"
                 ),
             )
@@ -190,10 +195,6 @@ class TopCommand(Command):
             *lines,
             table,
             *alerts,
-            Text(
-                "Pending = catalog items; Prepared / Published = recorded Handle totals.",
-                style="dim",
-            ),
         )
 
 

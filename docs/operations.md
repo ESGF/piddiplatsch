@@ -333,7 +333,7 @@ piddi top --json --history 360
 if the database is missing or invalid. A heartbeat updates every five seconds,
 even when Kafka is idle. An unfinished run is marked stale after 15 seconds
 without a heartbeat. The default view shows disk space, harvest status and one
-row per project: pending catalog items, recorded prepared/published Handle totals,
+row per project: pending datasets awaiting mapping, generated/published Handle totals,
 activity, publication speed and estimated batch completion. Unknown estimates
 appear as a dash. Errors and stale heartbeats appear below the table. Stale run
 records superseded by newer runs are hidden from the display; JSON retains them.
@@ -400,7 +400,7 @@ the catalog and does not need the raw dump files.
 `piddi top --json` also includes ready and failed batch
 counts, and the latest successful sync publication.
 Failed publication batches remain ready and also count as failed.
-The project table keeps prepared and published Handle totals visible while
+The project table keeps generated and published Handle totals visible while
 harvest is active and after mapping or publication finishes. These totals sum
 recorded outcomes in the monitoring database, including alias Handles. Repeated
 mapping or publication runs count again; these are not counts of unique PIDs.

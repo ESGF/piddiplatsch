@@ -104,7 +104,7 @@ def test_top_shows_prepared_and_published_totals_alongside_active_harvest(tmp_pa
         cli, ["--log", str(tmp_path / "top.log"), "top", "--db", str(db), "--once"]
     )
     assert result.exit_code == 0, result.output
-    assert "Prepared" in result.output
+    assert "Generated" in result.output
     assert "Published" in result.output
     assert "42" in result.output
     assert "7" in result.output
@@ -217,7 +217,7 @@ def test_top_default_is_one_table_without_history(tmp_path):
     result = CliRunner().invoke(cli, ["top", "--db", str(db_path), "--once"])
     assert result.exit_code == 0, result.output
     assert "Harvest: inactive" in result.output
-    assert "Prepared" in result.output
+    assert "Generated" in result.output
     assert result.output.count("cmip6") == 1
     assert "Active runs" not in result.output
     assert "Publication estimates" not in result.output
