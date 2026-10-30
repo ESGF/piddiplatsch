@@ -200,6 +200,8 @@ Useful commands:
 piddi --config /etc/piddi/piddi.toml sync
 # Ignore map thresholds for pending items; still publishes completed batches
 piddi --config /etc/piddi/piddi.toml sync --force-map
+# Restrict a manual run to a configured project and override publication concurrency
+piddi --config /etc/piddi/piddi.toml sync --project cmip6 --workers 4 --retries 3
 systemctl status piddi piddi-sync.timer
 journalctl -u piddi-sync.service
 ```

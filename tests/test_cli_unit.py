@@ -1,5 +1,6 @@
 """Unit tests for CLI module."""
 
+import warnings
 from datetime import date, timedelta
 from unittest.mock import patch
 
@@ -33,6 +34,37 @@ def runner():
 
 
 class TestCLIBasics:
+
+    def test_brotli_gil_fallback_warning_is_filtered_only_during_cli(
+        self, runner, monkeypatch
+    ):
+        def execute(_command):
+            warnings.warn(
+                "The global interpreter lock (GIL) has been enabled to load module "
+                "'_brotli', which has not declared that it can run safely without the GIL. "
+                "To override this behavior, run with PYTHON_GIL=0.",
+                RuntimeWarning,
+                stacklevel=1,
+            )
+            warnings.warn("Unrelated runtime warning", RuntimeWarning, stacklevel=1)
+            warnings.warn(
+                "The global interpreter lock (GIL) has been enabled to load module "
+                "'another_extension', which has not declared that it can run safely without the GIL.",
+                RuntimeWarning,
+                stacklevel=1,
+            )
+
+        monkeypatch.setattr(SyncCommand, "execute", execute)
+        with warnings.catch_warnings(record=True) as emitted:
+            warnings.simplefilter("always")
+            original_filters = list(warnings.filters)
+            result = runner.invoke(cli, ["--silent", "sync", "--workers", "4"])
+            assert warnings.filters == original_filters
+        assert result.exit_code == 0, result.output
+        assert len(emitted) == 2
+        assert str(emitted[0].message) == "Unrelated runtime warning"
+        assert "another_extension" in str(emitted[1].message)
+
     """Test basic CLI functionality."""
 
     def test_commands_implement_common_api(self):

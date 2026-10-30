@@ -1,5 +1,6 @@
 """Complete Click interface for piddiplatsch."""
 
+import warnings
 from datetime import datetime
 from pathlib import Path
 
@@ -78,6 +79,18 @@ def cli(
     log: str | None,
 ) -> None:
     """CLI to interact with Kafka and Handle Service."""
+    # HTTP clients can load Brotli on free-threaded Python. Let the interpreter
+    # enable its compatibility GIL, but omit this expected diagnostic from CLI
+    # output. Scope the filter to this invocation and leave other warnings alone.
+    ctx.with_resource(warnings.catch_warnings())
+    warnings.filterwarnings(
+        "ignore",
+        message=(
+            r"The global interpreter lock \(GIL\) has been enabled to load module "
+            r"'_brotli', which has not declared that it can run safely without the GIL\."
+        ),
+        category=RuntimeWarning,
+    )
     ctx.ensure_object(dict)
     ctx.obj["verbose"] = progress and not silent
     if (
@@ -101,14 +114,44 @@ def cli(
 
 @cli.command("sync")
 @click.option(
+    "--project",
+    "projects",
+    multiple=True,
+    help="Restrict mapping and publication to this configured project; repeat to select several.",
+)
+@click.option(
+    "--workers",
+    type=click.IntRange(min=1),
+    default=None,
+    help="Concurrent Handle publication workers (default: [batch].publish_workers).",
+)
+@click.option(
+    "--retries",
+    type=click.IntRange(min=0),
+    default=None,
+    help="Retries per transient Handle request (default: [batch].publish_retries).",
+)
+@click.option(
     "--force-map",
     is_flag=True,
     help="Map pending items without waiting for the count/time threshold; publishes ready batches.",
 )
 @click.pass_context
-def sync(ctx: click.Context, force_map: bool) -> None:
+def sync(
+    ctx: click.Context,
+    projects: tuple[str, ...],
+    workers: int | None,
+    retries: int | None,
+    force_map: bool,
+) -> None:
     """Map due catalog changes and publish ready Handle batches."""
-    commands.SyncCommand(verbose=ctx.obj["verbose"], force_map=force_map).execute()
+    commands.SyncCommand(
+        verbose=ctx.obj["verbose"],
+        projects=projects,
+        workers=workers,
+        retries=retries,
+        force_map=force_map,
+    ).execute()
 
 
 # command harvest

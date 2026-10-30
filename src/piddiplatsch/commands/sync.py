@@ -11,12 +11,20 @@ from piddiplatsch.runners.sync import SyncWorker
 
 @dataclass(kw_only=True)
 class SyncCommand(Command):
+    projects: tuple[str, ...] = ()
+    workers: int | None = None
+    retries: int | None = None
     force_map: bool = False
 
     def execute(self) -> None:
         progress = self.progress(title="sync", stream=True)
         try:
-            worker = SyncWorker(progress=progress)
+            worker = SyncWorker(
+                progress=progress,
+                projects=self.projects,
+                workers=self.workers,
+                retries=self.retries,
+            )
             with progress:
                 batches = worker.run(force_map=self.force_map)
         except (BatchError, CatalogError, OSError, ValueError, RuntimeError) as exc:

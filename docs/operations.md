@@ -227,6 +227,15 @@ and one hour. `--force-map` ignores thresholds for nonempty pending selections.
 Ready publication is independent of mapping thresholds and performs real Handle
 writes. A shared filesystem lock prevents overlapping ticks.
 
+By default, sync processes `[consumer].projects`. Repeat `--project NAME` to
+restrict both ready-batch publication and new mapping to selected configured
+projects. Unknown or unconfigured projects fail before publication begins.
+`--workers N` and `--retries N` override `[batch].publish_workers` and
+`[batch].publish_retries` for this run, including existing ready batches; retries
+may be zero. For example: `piddi sync --project cmip6 --workers 4 --retries 0`.
+Without overrides, scheduled runs keep using the TOML settings. Projects and
+batches run sequentially; workers publish Handles concurrently within each batch.
+
 Catalog changes use durable monotonic sequences and generation IDs, independent of
 source event dates. Repeated changes coalesce by item and preserve its oldest
 pending time. Each tick captures a sequence frontier per project and drains eligible

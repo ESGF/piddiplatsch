@@ -20,6 +20,7 @@ from piddiplatsch.runners.sync import SyncWorker, _worker_lock
 class Publisher:
     def __init__(self):
         self.calls = []
+        self.options = []
         self.fail = False
 
     def run(self, paths, **kwargs):
@@ -31,6 +32,7 @@ class Publisher:
         assert len(records) == manifest["handle_count"]
         assert all(record["project"] == kwargs["project"] for record in records)
         self.calls.append(path)
+        self.options.append(kwargs)
         return PublishResult(
             total=len(records),
             succeeded=0 if self.fail else len(records),
@@ -285,6 +287,87 @@ def test_defaults_and_cli_worker_tick(setup, monkeypatch):
     result = CliRunner().invoke(cli, ["--silent", "sync", "--force-map"])
     assert result.exit_code == 0, result.output
     assert len(publisher.calls) == 1
+    assert publisher.options[0]["workers"] == 1
+    assert publisher.options[0]["retries"] == 3
+
+
+def test_cli_publication_overrides_preserve_config(setup, monkeypatch):
+    put, _directory, _root = setup
+    put(1)
+    config._set("batch", "publish_workers", 2)
+    config._set("batch", "publish_retries", 5)
+    publisher = Publisher()
+    monkeypatch.setattr("piddiplatsch.runners.sync.HandlePublisher", lambda: publisher)
+    result = CliRunner().invoke(
+        cli,
+        ["--silent", "sync", "--force-map", "--workers", "4", "--retries", "0"],
+    )
+    assert result.exit_code == 0, result.output
+    assert publisher.options[0]["workers"] == 4
+    assert publisher.options[0]["retries"] == 0
+    assert config.get("batch", "publish_workers") == 2
+    assert config.get("batch", "publish_retries") == 5
+    put(2)
+    worker = SyncWorker(publisher=publisher)
+    worker.run(force_map=True)
+    assert not worker.errors
+    assert publisher.options[-1]["workers"] == 2
+    assert publisher.options[-1]["retries"] == 5
+
+
+def test_cli_project_selection_preserves_other_ready_and_pending_work(
+    setup, monkeypatch
+):
+    put, directory, root = setup
+    put(1)
+    publisher = Publisher()
+    publisher.fail = True
+    SyncWorker(publisher=publisher).run(force_map=True)
+    ready, _manifest = manifests(root)[0]
+    assert ready.parent.name == "ready"
+    put(2)
+    config._set("consumer", "projects", ["cmip6", "cmip7"])
+    publisher.fail = False
+    publisher.calls.clear()
+    monkeypatch.setattr("piddiplatsch.runners.sync.HandlePublisher", lambda: publisher)
+    result = CliRunner().invoke(
+        cli, ["--silent", "sync", "--project", "cmip6", "--force-map"]
+    )
+    assert result.exit_code == 0, result.output
+    assert not publisher.calls
+    assert ready.exists()
+    assert pending(directory).count == 1
+    result = CliRunner().invoke(
+        cli,
+        ["--silent", "sync", "--project", "cmip6", "--project", "cmip7", "--force-map"],
+    )
+    assert result.exit_code == 0, result.output
+    assert len(publisher.calls) == 2
+    assert not ready.exists()
+    assert pending(directory).count == 0
+
+
+@pytest.mark.parametrize(
+    ("options", "error"),
+    [
+        (["--project", "unknown"], "not found"),
+        (["--project", "cmip7", "--project", "unknown"], "not found"),
+        (["--project", "cmip6"], "not enabled"),
+        (["--workers", "0"], "Invalid value"),
+        (["--retries", "-1"], "Invalid value"),
+    ],
+)
+def test_invalid_cli_overrides_do_not_publish(setup, monkeypatch, options, error):
+    put, directory, root = setup
+    put(1)
+    publisher = Publisher()
+    monkeypatch.setattr("piddiplatsch.runners.sync.HandlePublisher", lambda: publisher)
+    result = CliRunner().invoke(cli, ["--silent", "sync", "--force-map", *options])
+    assert result.exit_code != 0
+    assert error in result.output
+    assert not publisher.calls
+    assert pending(directory).count == 1
+    assert not (root / "batches").exists()
 
 
 def test_corrupt_ready_payload_blocks_publication_before_ack(setup, monkeypatch):

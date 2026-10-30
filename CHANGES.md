@@ -4,6 +4,14 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+### Added
+- Added repeatable `sync --project` to restrict mapping and publication to selected
+  configured projects, plus `--workers` and `--retries` publication overrides.
+
+### Fixed
+- Suppress the expected Brotli GIL compatibility warning during CLI commands on
+  free-threaded Python, preserving automatic GIL fallback and other warnings.
+
 ## [2.3.0] - 2026-10-12
 
 ### Added

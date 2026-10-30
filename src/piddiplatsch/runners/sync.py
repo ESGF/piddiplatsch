@@ -111,8 +111,30 @@ class SyncWorker:
     ready and blocks newer work for its project, preventing stale overwrite replay.
     """
 
-    def __init__(self, *, now=None, publisher=None, progress=None):
-        settings = BatchConfig.model_validate(config.get("batch", {})).model_dump()
+    def __init__(
+        self,
+        *,
+        now=None,
+        publisher=None,
+        progress=None,
+        projects=(),
+        workers=None,
+        retries=None,
+    ):
+        settings = dict(config.get("batch", {}))
+        if workers is not None:
+            settings["publish_workers"] = workers
+        if retries is not None:
+            settings["publish_retries"] = retries
+        settings = BatchConfig.model_validate(settings).model_dump()
+        configured = get_plugins(configured_projects())
+        self.plugins = get_plugins(projects) if projects else configured
+        configured_names = {plugin.name for plugin in configured}
+        for plugin in self.plugins:
+            if plugin.name not in configured_names:
+                raise ValueError(
+                    f"Project {plugin.name!r} is not enabled in [consumer].projects"
+                )
         self.root = Path(
             settings.get("directory")
             or Path(config.get("consumer", "output_dir", "outputs")) / "batches"
@@ -140,7 +162,7 @@ class SyncWorker:
                 raise CatalogError(
                     "Catalog clean is incomplete; run harvest before batch processing"
                 )
-            plugins = get_plugins(configured_projects())
+            plugins = self.plugins
             blocked = set()
             while True:
                 made_batch = False
