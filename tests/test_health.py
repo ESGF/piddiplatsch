@@ -11,6 +11,8 @@ def test_health_reads_backlog_failed_work_and_last_success_without_migration(tmp
     catalog = tmp_path / "catalog/cmip7.sqlite"
     catalog.parent.mkdir()
     with sqlite3.connect(catalog) as connection:
+        connection.execute("CREATE TABLE items (id INTEGER PRIMARY KEY)")
+        connection.executemany("INSERT INTO items VALUES (?)", [(1,), (2,), (3,)])
         connection.execute("CREATE TABLE pending_items (id INTEGER PRIMARY KEY)")
         connection.executemany("INSERT INTO pending_items VALUES (?)", [(1,), (2,)])
     original = catalog.read_bytes()
@@ -28,6 +30,7 @@ def test_health_reads_backlog_failed_work_and_last_success_without_migration(tmp
     assert health["projects"] == [
         {
             "project": "cmip7",
+            "total_items": 3,
             "pending_items": 2,
             "ready_batches": 1,
             "failed_batches": 1,
@@ -53,6 +56,7 @@ def test_health_reports_old_or_unreadable_catalog_without_creating_missing_paths
     rows = read_health()["projects"]
 
     assert rows[0]["pending_items"] is None
+    assert rows[0]["total_items"] is None
     assert "Catalog status unavailable" in rows[0]["errors"][0]
     assert rows[1]["project"] == "cmip7"
     assert not (tmp_path / "batches").exists()

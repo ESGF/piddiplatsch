@@ -26,6 +26,7 @@ def read_health(project: str | None = None) -> dict:
             continue
         row = {
             "project": name,
+            "total_items": None,
             "pending_items": None,
             "ready_batches": 0,
             "failed_batches": 0,
@@ -42,9 +43,9 @@ def read_health(project: str | None = None) -> dict:
                         catalog.resolve().as_uri() + "?mode=ro", uri=True, timeout=0.2
                     )
                 ) as connection:
-                    row["pending_items"] = connection.execute(
-                        "SELECT COUNT(*) FROM pending_items"
-                    ).fetchone()[0]
+                    row["total_items"], row["pending_items"] = connection.execute(
+                        "SELECT (SELECT COUNT(*) FROM items), (SELECT COUNT(*) FROM pending_items)"
+                    ).fetchone()
             except sqlite3.Error as exc:
                 row["errors"].append(f"Catalog status unavailable: {exc}")
         _batch_health(batches / name, row)

@@ -71,7 +71,7 @@ class TopCommand(Command):
     def _overview(status: dict) -> Group:
         """Keep the daily operator view to one table and actionable status lines."""
         active = _active_runs(status)
-        lines = []
+        lines = [_totals_line(status)]
         starts = [run["started_at"] for run in status["runs"] if run.get("started_at")]
         if starts:
             start = min(datetime.fromisoformat(value) for value in starts).astimezone(
@@ -124,6 +124,7 @@ class TopCommand(Command):
         table = Table(box=None, padding=(0, 1))
         for heading in (
             "Project",
+            "DB datasets",
             "Pending datasets",
             "Generated handles",
             "Published handles",
@@ -144,6 +145,7 @@ class TopCommand(Command):
                     "right"
                     if heading
                     in {
+                        "DB datasets",
                         "Pending datasets",
                         "Generated handles",
                         "Published handles",
@@ -215,6 +217,7 @@ class TopCommand(Command):
             rate = estimate.get("handles_per_second")
             table.add_row(
                 name,
+                _count(row.get("total_items")),
                 _count(row.get("pending_items")),
                 _count(counts.get("prepared")),
                 _count(counts.get("published")),
@@ -237,6 +240,22 @@ class TopCommand(Command):
             table,
             *alerts,
         )
+
+
+def _totals_line(status: dict) -> Text:
+    projects = status["health"]["projects"]
+    counts = [row.get("total_items") for row in projects]
+    datasets = (
+        sum(counts) if counts and all(value is not None for value in counts) else None
+    )
+    generated = [
+        row["prepared"]
+        for row in status.get("handle_totals", [])
+        if row.get("prepared") is not None
+    ]
+    return Text(
+        f"Catalog: {_count(datasets)} datasets · Generated: {_count(sum(generated) if generated else None)} handles (recorded)"
+    )
 
 
 def _harvest_trend(runs: list[dict], project: str) -> str:

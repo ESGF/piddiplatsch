@@ -121,7 +121,7 @@ def test_top_renders_speed_batch_completion_and_known_backlog():
     status["health"]["storage"] = []
     status["backlog_estimate"] = backlog_estimate(status)
     stream = StringIO()
-    console = Console(file=stream, width=160)
+    console = Console(file=stream, width=200)
     console.print(TopCommand._overview(status))
     text = stream.getvalue()
     assert "Known backlog: ~6m 16s" in text

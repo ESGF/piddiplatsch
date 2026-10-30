@@ -353,6 +353,26 @@ def test_harvest_sparkline_covers_whole_history():
     assert _sparkline([0] * 120 + [100] * 120) == "▁" * 6 + "█" * 6
 
 
+def test_catalog_and_generated_totals_include_all_projects():
+    from piddiplatsch.commands.top import _totals_line
+
+    status = {
+        "health": {
+            "projects": [
+                {"total_items": 800000, "pending_items": 100},
+                {"total_items": 200000, "pending_items": 0},
+            ]
+        },
+        "handle_totals": [{"prepared": 500000}, {"prepared": 250000}],
+    }
+    assert (
+        _totals_line(status).plain
+        == "Catalog: 1,000,000 datasets · Generated: 750,000 handles (recorded)"
+    )
+    status["health"]["projects"][1]["total_items"] = None
+    assert "Catalog: — datasets" in _totals_line(status).plain
+
+
 @patch("piddiplatsch.commands.map.map_catalog")
 def test_map_command_owns_monitoring_database(mock_map_catalog, tmp_path):
     source = tmp_path / "dump.jsonl"

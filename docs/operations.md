@@ -352,6 +352,11 @@ history window. Bar heights are relative to that project's peak. With
 `Batch progress` shows successful Handle writes in the active publication run
 against its total, for example `12,345 / 50,000`. An unknown total appears as `?`;
 projects without a single active publisher show a dash.
+`DB datasets` counts all dataset records currently stored in each catalog,
+including mapped records; `Pending datasets` is the subset awaiting mapping.
+The catalog and generated Handle totals are also summed in the header (restricted
+to the selected project with `--project`). Generated Handles are recorded mapping
+outputs, including repeat runs, rather than unique PIDs.
 
 History samples are saved every 15 seconds and at startup and shutdown. The
 history window covers one hour; `--json --history 360` includes six hours. Samples are kept
