@@ -282,7 +282,7 @@ def start_consumer(
     monitor_db: bool = False,
     handle_profile: str | None = None,
 ):
-    max_errors = config.get("consumer", {}).get("max_errors", -1)
+    max_errors = config.get("consumer", {}).get("max_errors", 1)
     # Build processor instance to run preflight and pass into pipeline
     proc_instance = build_processing_target(
         processor=processor,

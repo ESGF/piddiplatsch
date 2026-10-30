@@ -246,6 +246,35 @@ def test_failed_mapping_never_seals_or_advances_pending_progress(setup, monkeypa
     assert not recovered.errors
 
 
+def test_bad_checksum_stops_first_item_and_keeps_batch_unpublished(setup, caplog):
+    put, directory, root = setup
+    message = put(1)
+    asset_key = next(iter(message["data"]["payload"]["item"]["assets"]))
+    message["data"]["payload"]["item"]["assets"][asset_key][
+        "file:checksum"
+    ] = "1220122093a5616803c97b154d6eeba73fffc0b871912a2dea5d7f45c77564023970c477"
+    with closing(CatalogHarvester(directory)) as harvester:
+        harvester.process_with_source("bad", message, KafkaSource("corrections", 0, 0))
+    put(2)
+    consumer_cfg = dict(config.get("consumer", {}))
+    consumer_cfg.pop("max_errors", None)
+    config._set("consumer", None, consumer_cfg)
+    publisher = Publisher()
+    worker = SyncWorker(publisher=publisher)
+
+    assert worker.run() == []
+    assert worker.errors
+    assert not publisher.calls
+    assert pending(directory).count == 2
+    failed = next(root.glob("batches/cmip7/.building-*/manifest.json"))
+    assert json.loads(failed.read_text())["item_count"] == 1
+    assert asset_key in caplog.text
+    assert "32-byte digest but contains 34 bytes" in caplog.text
+    assert "prefix appears to have been added twice" in caplog.text
+    assert "reharvest before retrying" in caplog.text
+    assert "CHECKSUM_METHOD is not allowed: unknown" not in caplog.text
+
+
 def test_worker_lock_prevents_overlapping_ticks(setup):
     put, directory, _root = setup
     put(1)

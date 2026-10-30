@@ -72,7 +72,7 @@ class ProcessingPipeline:
         dump_messages=False,
         verbose=False,
         progress: BaseProgress | None = None,
-        max_errors=-1,
+        max_errors: int | None = None,
         publish: bool = False,
         force: bool = False,
         failure_dir: Path | None = None,
@@ -84,7 +84,11 @@ class ProcessingPipeline:
             publish=publish,
         )
         self.dump_messages = dump_messages
-        self.max_errors = int(max_errors)
+        self.max_errors = int(
+            config.get("consumer", "max_errors", 1)
+            if max_errors is None
+            else max_errors
+        )
         if limit is not None and limit <= 0:
             raise ValueError("limit must be positive")
         self.limit = limit
@@ -233,7 +237,7 @@ def process_messages(
     progress: BaseProgress | None = None,
     handle_profile: str | None = None,
     handle_output_filename: str | None = None,
-    max_errors: int = -1,
+    max_errors: int | None = None,
 ) -> FeedResult:
     target = build_processing_target(
         processor=processor,

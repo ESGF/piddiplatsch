@@ -107,11 +107,29 @@ def parse_multihash_checksum(checksum: str) -> tuple[str, str]:
         - checksum_method: human-readable hash name, e.g., 'sha2-256'
         - checksum_hex: raw digest as hex string
     """
-    # Convert hex string to bytes
-    mh_bytes = bytes.fromhex(checksum)
+    if not isinstance(checksum, str) or not checksum:
+        raise ValueError("Missing file:checksum; expected a hexadecimal multihash.")
+    try:
+        mh_bytes = bytes.fromhex(checksum)
+    except ValueError as exc:
+        raise ValueError(
+            "Invalid file:checksum; expected a hexadecimal multihash."
+        ) from exc
+
+    if mh_bytes.startswith(b"\x12\x20") and len(mh_bytes) != 34:
+        message = (
+            "Invalid SHA-256 multihash: declares a 32-byte digest "
+            f"but contains {len(mh_bytes) - 2} bytes."
+        )
+        if len(mh_bytes) == 36 and mh_bytes.startswith(b"\x12\x20\x12\x20"):
+            message += " The '1220' prefix appears to have been added twice."
+        raise ValueError(message)
 
     # Decode the multihash
-    code, digest_bytes = multihash.unwrap_raw(mh_bytes)
+    try:
+        code, digest_bytes = multihash.unwrap_raw(mh_bytes)
+    except ValueError as exc:
+        raise ValueError(f"Invalid multihash checksum: {exc}") from exc
 
     # Get human-readable hash name
     checksum_type = multihash.get(code).name

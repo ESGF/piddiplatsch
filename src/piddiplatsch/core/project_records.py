@@ -8,7 +8,7 @@ from typing import Any, ClassVar
 
 from piddiplatsch.config import config
 from piddiplatsch.core.handle_models import DatasetHandleModel, FileHandleModel
-from piddiplatsch.core.models import HostingNode
+from piddiplatsch.core.models import HostingNode, strict_mode
 from piddiplatsch.core.records import AliasHandleRecord, BaseRecord
 from piddiplatsch.helpers import utc_now
 from piddiplatsch.monitoring import stats
@@ -371,8 +371,16 @@ class ProjectFileRecord(BaseProjectRecord):
         try:
             method, checksum = parse_multihash_checksum(value)
             return f"{method}:{checksum}"
-        except Exception:
-            logging.warning("Could not parse checksum: %s", value)
+        except Exception as exc:
+            message = (
+                f"Invalid file:checksum for dataset {self.item_id!r}, "
+                f"asset {self.asset_key!r}: {exc} "
+                "Verify the checksum against the source file, correct the STAC "
+                "metadata, and reharvest before retrying."
+            )
+            if strict_mode():
+                raise ValueError(message) from exc
+            logging.warning("%s", message)
             return f"unknown:{value}"
 
     @cached_property

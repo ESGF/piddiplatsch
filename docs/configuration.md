@@ -262,6 +262,13 @@ existing Handle files before publishing with the new policy.
 
 The packaged `src/piddiplatsch/config/default.toml` lists all defaults.
 
+Production defaults use `schema.strict_mode = true` and `consumer.max_errors = 1`.
+Map and sync treat invalid assets as errors and stop the affected mapping run
+at the first error. Sync leaves the failed batch unpublished and its catalog
+changes pending. Malformed checksum errors identify the dataset and asset;
+verify the checksum against the source file, correct its STAC metadata, and
+reharvest before retrying. Other projects can continue in sync.
+
 ## Dataset version lookup
 
 The library's `[lookup]` section selects `catalog` or `stac` for separate version

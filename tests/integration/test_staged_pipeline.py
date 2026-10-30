@@ -10,6 +10,7 @@ from piddiplatsch.consumer import HarvestProcessor
 from piddiplatsch.core.messages import KafkaSource
 from piddiplatsch.core.pipeline import ProcessingPipeline
 from piddiplatsch.core.routing import ProjectRouter
+from piddiplatsch.exceptions import MaxErrorsExceededError
 from piddiplatsch.runners.mapping import map_catalog
 
 pytestmark = pytest.mark.integration
@@ -132,3 +133,21 @@ def test_map_force_dataset_pid_corrects_dataset_and_file_parent(
     assert file["handle"] == file_handle
     assert file["data"]["IS_PART_OF"] == f"hdl:{generated}"
     assert source.read_text() == original
+
+
+def test_map_rejects_invalid_asset_instead_of_skipping_it(
+    tmp_path, testdata_path, caplog
+):
+    config._set("consumer", "max_errors", 1)
+    config._set("consumer", "output_dir", str(tmp_path / "outputs"))
+    message = _sample(testdata_path, "cmip7")
+    item = message["data"]["payload"]["item"]
+    asset = next(iter(item["assets"].values()))
+    asset["file:checksum"] = "not-hex"
+    with closing(CatalogHarvester(tmp_path / "outputs/catalog")) as harvester:
+        harvester.process_with_source("bad", message, KafkaSource("topic", 0, 0))
+
+    with pytest.raises(MaxErrorsExceededError, match="1/1"):
+        map_catalog(projects=["cmip7"])
+    assert "expected a hexadecimal multihash" in caplog.text
+    assert "Skipping asset" not in caplog.text

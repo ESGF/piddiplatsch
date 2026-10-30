@@ -48,7 +48,7 @@ class ConsumerConfig(BaseModel):
     projects: list[str] | Literal["all"]
     topic: str
     output_dir: str | None = None
-    max_errors: int | None = None
+    max_errors: int = Field(default=1, ge=-1)
     transient: TransientConfig | None = None
 
     @model_validator(mode="before")

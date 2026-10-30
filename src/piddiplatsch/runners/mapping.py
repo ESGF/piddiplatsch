@@ -139,6 +139,7 @@ def map_catalog(
             handle_profile=handle_profile,
             catalogs=catalogs,
             version_history=history,
+            require_all_assets=True,
         )
         return process_messages(
             chain((first,), selected),
@@ -146,7 +147,7 @@ def map_catalog(
             verbose=verbose,
             progress=progress,
             handle_profile=handle_profile,
-            max_errors=config.get("consumer", "max_errors", -1),
+            max_errors=config.get("consumer", "max_errors", 1),
         )
 
 

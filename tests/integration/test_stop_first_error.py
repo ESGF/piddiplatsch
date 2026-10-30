@@ -2,7 +2,9 @@ import pytest
 
 from piddiplatsch.config import config
 from piddiplatsch.consumer import start_consumer
+from piddiplatsch.core.pipeline import ProcessingPipeline
 from piddiplatsch.core.processing import BaseProcessor
+from piddiplatsch.exceptions import MaxErrorsExceededError
 from piddiplatsch.result import ProcessingResult
 
 pytestmark = pytest.mark.integration
@@ -53,3 +55,20 @@ def test_proceed_after_fix(tmp_path):
         publish=False,
         verbose=False,
     )
+
+
+def test_pipeline_stops_on_first_error_when_setting_is_missing():
+    consumer_cfg = dict(config.get("consumer", {}))
+    consumer_cfg.pop("max_errors", None)
+    config._set("consumer", None, consumer_cfg)
+    visited = []
+
+    def messages():
+        for key in ["bad1", "good1"]:
+            visited.append(key)
+            yield key, {}
+
+    pipeline = ProcessingPipeline(messages(), BoomProcessor(publish=False))
+    with pytest.raises(MaxErrorsExceededError, match="1/1"):
+        pipeline.run()
+    assert visited == ["bad1"]

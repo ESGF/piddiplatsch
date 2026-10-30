@@ -158,6 +158,23 @@ def test_parse_multihash_checksum_sha256():
     )
 
 
+def test_double_sha256_prefix_has_actionable_error():
+    checksum = (
+        "1220122093a5616803c97b154d6eeba73fffc0b871912a2dea5d7f45c77564023970c477"
+    )
+    with pytest.raises(
+        ValueError, match="32-byte digest but contains 34 bytes"
+    ) as error:
+        utils.parse_multihash_checksum(checksum)
+    assert "'1220' prefix appears to have been added twice" in str(error.value)
+
+
+@pytest.mark.parametrize("checksum", [None, "", "not-hex"])
+def test_malformed_checksum_has_readable_error(checksum):
+    with pytest.raises(ValueError, match="expected a hexadecimal multihash"):
+        utils.parse_multihash_checksum(checksum)
+
+
 @pytest.mark.parametrize(
     "digest_bytes,code_name",
     [
