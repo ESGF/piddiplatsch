@@ -334,8 +334,8 @@ def test_defaults_and_cli_worker_tick(setup, monkeypatch):
     from piddiplatsch.config.schema import BatchConfig
 
     assert BatchConfig().publish_workers == 4
-    assert BatchConfig().trigger_items == 10000
-    assert BatchConfig().max_items == 10000
+    assert BatchConfig().trigger_items == 1000
+    assert BatchConfig().max_items == 2000
     assert BatchConfig().max_wait_seconds == 3600
     put, _directory, _root = setup
     put(1)
@@ -351,14 +351,15 @@ def test_defaults_and_cli_worker_tick(setup, monkeypatch):
     assert publisher.options[0]["batch_id"]
 
 
-def test_worker_uses_larger_defaults_when_batch_settings_are_omitted(setup):
+def test_worker_uses_default_batch_limits_when_settings_are_omitted(setup):
     from piddiplatsch.config.config import Config
 
     config._set("batch", None, {})
     worker = SyncWorker(publisher=Publisher())
-    assert worker.trigger_items == worker.max_items == 10000
-    assert Config().get("batch", "trigger_items") == 10000
-    assert Config().get("batch", "max_items") == 10000
+    assert worker.trigger_items == 1000
+    assert worker.max_items == 2000
+    assert Config().get("batch", "trigger_items") == 1000
+    assert Config().get("batch", "max_items") == 2000
 
 
 def test_archive_partition_is_stable_across_publication_midnight(setup):

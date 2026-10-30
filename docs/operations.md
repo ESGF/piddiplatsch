@@ -170,7 +170,7 @@ then use `map --project NAME --date all` for a full mapping run.
 
 `piddi sync` runs once and exits. A timer can run it regularly. Each run publishes
 ready batches, then maps projects that have enough pending changes or have
-waited long enough. Defaults are 10,000 distinct changed items or one hour.
+waited long enough. Defaults are 1,000 distinct changed items or one hour.
 
 ```bash
 piddi sync
@@ -183,7 +183,7 @@ selected configured projects. Unknown or unconfigured names fail before publicat
 `--force-map` skips mapping thresholds for pending items. Ready batches publish
 regardless of those thresholds. A shared lock prevents overlapping sync runs.
 
-Each batch holds up to `batch.max_items` catalog items (default: 10,000). An item's
+Each batch holds up to `batch.max_items` catalog items (default: 2,000). An item's
 Handles stay together. Changes to one item count once and keep the oldest pending
 time. Changes arriving during a sync run remain for the next run. Eligible
 projects take turns; missing catalogs are skipped until harvest creates them.

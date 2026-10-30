@@ -180,15 +180,15 @@ acknowledgement for each message and can reduce throughput.
 
 ```toml
 [batch]
-trigger_items = 10000
+trigger_items = 1000
 max_wait_seconds = 3600
-max_items = 10000
+max_items = 2000
 publish_workers = 4
 publish_retries = 3
 # directory = "/var/lib/piddi/batches"
 ```
 
-Sync maps a project when either 10,000 distinct items have changed or the oldest
+Sync maps a project when either 1,000 distinct items have changed or the oldest
 pending change has waited one hour. Repeated changes to one item count once.
 `sync --force-map` skips the wait for pending items.
 
@@ -197,11 +197,12 @@ stay together. Ready batches publish during the same sync run, even when no new
 mapping is due. Failed publication stays ready for the next run.
 
 These limits count catalog items, not Handles or bytes. With ten Handles per
-item, a full default batch contains about 100,000 Handles and takes roughly
-seven minutes to publish at 250 Handles per second. Larger batches reduce
+item, a full default batch contains about 20,000 Handles and takes roughly
+80 seconds to publish at 250 Handles per second, plus mapping time. Larger batches reduce
 directory counts but increase the work repeated after a publication failure.
 Existing site configurations retain their explicit limits; update both
-`trigger_items` and `max_items` to use the larger defaults.
+`trigger_items = 1000` and `max_items = 2000` to use these defaults. Existing ready
+batches retain their original size.
 
 `publish_workers` sets concurrent Handle requests. `publish_retries` sets retries
 for each temporary HTTP failure. Sync's `--workers` and `--retries` options

@@ -55,10 +55,10 @@ version_history = false
 [batch]
 # Per project: map when this many distinct items are pending OR the oldest has
 # waited max_wait_seconds. Harvest changes arriving during mapping stay pending.
-trigger_items = 10000
+trigger_items = 1000
 max_wait_seconds = 3600
 # Maximum catalog items per immutable output batch; never split an item's Handles.
-max_items = 10000
+max_items = 2000
 # Ready batches publish immediately during the sync tick, in project order.
 publish_workers = 4
 publish_retries = 3

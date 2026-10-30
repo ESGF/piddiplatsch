@@ -17,7 +17,7 @@
 ### Changed
 
 - Published sync batches use UTC date directories; default sync batches now
-  trigger at and contain up to 10,000 catalog items.
+  trigger at 1,000 and contain up to 2,000 catalog items.
 - Publication receipts also use UTC date directories under `published/`.
 - Simpler INFO progress logs; per-record details moved to DEBUG.
 - Statistics summaries every 30 seconds or 10,000 messages by default.

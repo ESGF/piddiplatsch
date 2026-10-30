@@ -83,7 +83,8 @@ make play
 ```
 
 **Sync now publishes real Handles.** The timer checks for work every minute.
-By default, it maps a project after 10,000 changed items or one hour of waiting.
+By default, it maps a project after 1,000 changed items or one hour of waiting,
+with up to 2,000 items per batch.
 See [Scheduled batches](configuration.md#scheduled-batches) to change these limits.
 
 ## Run updates
