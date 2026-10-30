@@ -277,8 +277,10 @@ def test_compact_overview_keeps_eta_and_actionable_warnings():
                 "command": "publish",
                 "status": "running",
                 "state": "healthy",
+                "expected_handles": 50000,
                 "projects": [{"project": "cordex-cmip6"}],
                 "publication": {
+                    "published_handles": 12345,
                     "handles_per_second": 227.5,
                     "eta_seconds": 186,
                     "estimated_end": "2026-10-30T21:28:00+00:00",
@@ -304,6 +306,8 @@ def test_compact_overview_keeps_eta_and_actionable_warnings():
     assert "Harvest/s" in rendered
     assert rendered.count("123.4") == 2
     assert "227.5" in rendered
+    assert "Batch progress" in rendered
+    assert "12,345 / 50,000" in rendered
     assert "3m 6s (21:28 UTC)" in rendered
     assert "errors recorded" in rendered
     assert "cmip7: map heartbeat is stale (100s)" in rendered

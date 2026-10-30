@@ -341,6 +341,9 @@ Use `--json` for batch health, last publication times, individual runs and histo
 The header shows when cumulative Handle totals began and the rate windows.
 `Harvest/s` shows events per second per project, averaged over available samples
 within `--history` (one hour by default); publication speed uses up to 60 seconds.
+`Batch progress` shows successful Handle writes in the active publication run
+against its total, for example `12,345 / 50,000`. An unknown total appears as `?`;
+projects without a single active publisher show a dash.
 
 History samples are saved every 15 seconds and at startup and shutdown. The
 history window covers one hour; `--json --history 360` includes six hours. Samples are kept

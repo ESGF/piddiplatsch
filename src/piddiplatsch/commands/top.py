@@ -109,6 +109,7 @@ class TopCommand(Command):
             "Activity",
             "Harvest/s",
             "Handles/s",
+            "Batch progress",
             "Batch ETA ~",
         ):
             table.add_column(
@@ -198,6 +199,7 @@ class TopCommand(Command):
                 activity,
                 f"{harvest_rates[name]:,.1f}" if name in harvest_rates else "—",
                 f"{rate:,.1f}" if rate is not None else "—",
+                _batch_progress(publishers),
                 eta,
             )
         backlog = status.get("backlog_estimate", {})
@@ -212,6 +214,18 @@ class TopCommand(Command):
             table,
             *alerts,
         )
+
+
+def _batch_progress(publishers: list[dict]) -> str:
+    """Successful Handle writes in this publication run, against its batch size."""
+    if len(publishers) != 1:
+        return "—"
+    run = publishers[0]
+    published = run.get("publication", {}).get("published_handles")
+    if published is None:
+        published = sum(row.get("handles", 0) for row in run["projects"])
+    total = run.get("expected_handles")
+    return f"{published:,} / {total:,}" if total is not None else f"{published:,} / ?"
 
 
 def _harvest_rates(runs: list[dict]) -> dict[str, float]:
