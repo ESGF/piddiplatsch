@@ -236,8 +236,8 @@ def test_handle_backend_factory_defaults_to_rest(monkeypatch):
     assert backend.backend is sentinel
 
 
-def test_handle_backend_factory_rejects_removed_pyhandle():
-    config._set("handle", "backend", "pyhandle")
+def test_handle_backend_factory_rejects_unknown_backend():
+    config._set("handle", "backend", "unknown")
     with pytest.raises(ValueError, match="backend"):
         get_handle_backend(publish=True)
 

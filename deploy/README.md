@@ -19,13 +19,6 @@ Use `make play` for later Ansible-only configuration changes.
 
 ### Dependency security updates
 
-The legacy `pyhandle` backend has been removed because its dependency metadata
-pins a vulnerable PyMySQL release. Change any `backend = "pyhandle"` setting to
-`backend = "rest"` before deploying. Existing REST service credentials and
-project prefixes remain usable. Pip does not remove dependencies that are no
-longer needed: when reusing an old environment, uninstall `pyhandle` and
-`pymysql` if no other application needs them, then audit the environment.
-
 After pulling dependency changes, run `make deploy` to update the application
 environment; `make play` alone does not install packages. The environment requires
 the October 2026 CA trust updates, pip 26.2.2, Brotli 1.2.1, Requests 2.34.2, and
