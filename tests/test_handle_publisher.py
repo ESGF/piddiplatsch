@@ -312,12 +312,40 @@ def test_default_result_jsonl_has_readable_unique_name(tmp_path, monkeypatch):
 
     assert first.result_file is not None
     assert second.result_file is not None
-    assert first.result_file.parent == tmp_path / "outputs" / "published"
+    assert first.result_file.parent == tmp_path / "outputs/published/2026/08/27"
     assert first.result_file.name == "published_cmip6_handles_2026-08-27_15-33-53.jsonl"
     assert (
         second.result_file.name == "published_cmip6_handles_2026-08-27_15-33-53_2.jsonl"
     )
     assert first.result_file.read_text().count("\n") == 1
+
+
+def test_default_receipts_rotate_dates_without_changing_legacy_files(
+    tmp_path, monkeypatch
+):
+    output = tmp_path / "outputs"
+    config._set("consumer", "output_dir", str(output))
+    legacy = output / "published/published_cmip6_handles_2026-12-31_23-59-59.jsonl"
+    legacy.parent.mkdir(parents=True)
+    legacy.write_text('{"legacy": true}\n')
+    dates = iter(
+        [
+            datetime(2026, 12, 31, 23, 59, 59, tzinfo=UTC),
+            datetime(2027, 1, 1, tzinfo=UTC),
+        ]
+    )
+    monkeypatch.setattr("piddiplatsch.runners.publish.utc_now", lambda: next(dates))
+
+    first = HandlePublisher._new_result_file("cmip6")
+    second = HandlePublisher._new_result_file("cmip6")
+
+    assert first == output / "published/2026/12/31" / legacy.name
+    assert (
+        second
+        == output
+        / "published/2027/01/01/published_cmip6_handles_2027-01-01_00-00-00.jsonl"
+    )
+    assert legacy.read_text() == '{"legacy": true}\n'
 
 
 def test_project_selection_validates_each_record_before_publication(tmp_path):

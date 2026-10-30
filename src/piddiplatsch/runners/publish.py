@@ -421,9 +421,10 @@ class HandlePublisher:
     @staticmethod
     def _new_result_file(project: str | None = None) -> Path:
         output_dir = Path(config.get("consumer", {}).get("output_dir", "outputs"))
-        result_dir = output_dir / "published"
+        now = utc_now()
+        result_dir = output_dir / "published" / now.strftime("%Y/%m/%d")
         result_dir.mkdir(parents=True, exist_ok=True)
-        timestamp = utc_now().strftime("%Y-%m-%d_%H-%M-%S")
+        timestamp = now.strftime("%Y-%m-%d_%H-%M-%S")
         project_slug = re.sub(r"[^a-z0-9-]+", "-", project or "").strip("-")
         stem = (
             f"published_{project_slug}_handles_{timestamp}"

@@ -170,7 +170,7 @@ then use `map --project NAME --date all` for a full mapping run.
 
 `piddi sync` runs once and exits. A timer can run it regularly. Each run publishes
 ready batches, then maps projects that have enough pending changes or have
-waited long enough. Defaults are 1,000 distinct changed items or one hour.
+waited long enough. Defaults are 10,000 distinct changed items or one hour.
 
 ```bash
 piddi sync
@@ -183,7 +183,7 @@ selected configured projects. Unknown or unconfigured names fail before publicat
 `--force-map` skips mapping thresholds for pending items. Ready batches publish
 regardless of those thresholds. A shared lock prevents overlapping sync runs.
 
-Each batch holds up to `batch.max_items` catalog items (default: 1,000). An item's
+Each batch holds up to `batch.max_items` catalog items (default: 10,000). An item's
 Handles stay together. Changes to one item count once and keep the oldest pending
 time. Changes arriving during a sync run remain for the next run. Eligible
 projects take turns; missing catalogs are skipped until harvest creates them.
@@ -200,7 +200,11 @@ checks the saved batch and does not append to it.
 
 Failed publication leaves the batch ready and blocks newer work for that project.
 Other projects can continue. A later run repeats the failed batch. Successful
-batches move to `batches/<project>/published/`. A crash can repeat successful
+batches move to `batches/<project>/published/YYYY/MM/DD/<batch-id>/`, partitioned
+by the UTC creation date in the batch ID. The path stays stable across retries
+and midnight recovery. Existing flat published archives remain in place and
+are not republished. Only ready work is scanned by sync, so growing archive
+history does not add to that scan. A crash can repeat successful
 Handle writes because the server write and local completion marker are separate.
 
 Publication uses four workers by default. Projects and batches run in sequence;
@@ -250,7 +254,9 @@ project's records separately. See [Handle profiles](configuration.md#multiple-ha
 
 ### Publication receipts
 
-Each attempt writes a JSONL receipt under `published/` and prints its path.
+Each attempt writes a JSONL receipt under `published/YYYY/MM/DD/` and prints its
+path. The date is the UTC start date of the receipt. Existing flat receipt files
+remain in place; explicit output paths are used exactly as supplied.
 Receipt names use UTC timestamps and get a suffix if the name already exists.
 Each line records the outcome, PID, action, URL, project, source position, retry
 count, and error. Dataset and asset metadata come from the current input record;
@@ -271,7 +277,7 @@ JSONL files store one JSON object per line. Paths below are relative to `consume
 | `catalog/` | One SQLite catalog per registered project encountered. |
 | `<project>/handles/` | Daily prepared Handle JSONL, including the project name. |
 | `batches/<project>/` | Sync batches, manifests, and failed mapping files. |
-| `published/` | Per-record publication receipts. |
+| `published/YYYY/MM/DD/` | Per-record publication receipts, grouped by UTC date. |
 | `<project>/failures/r0/` | Failed STAC records and error details. |
 | `<project>/skipped/` | Skipped diagnostic records from legacy processing. |
 | `failures/`, `skipped/` | Diagnostics without a resolved project. |

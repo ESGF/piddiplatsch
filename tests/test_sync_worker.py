@@ -3,7 +3,7 @@
 import json
 from contextlib import closing
 from copy import deepcopy
-from datetime import timedelta
+from datetime import UTC, datetime, timedelta
 
 import pytest
 from click.testing import CliRunner
@@ -75,8 +75,8 @@ def pending(directory):
 def manifests(root):
     return [
         (path.parent, json.loads(path.read_text()))
-        for path in sorted(root.glob("batches/cmip7/*/*/manifest.json"))
-        if not path.parent.name.startswith(".")
+        for path in sorted(root.glob("batches/cmip7/**/manifest.json"))
+        if not any(part.startswith(".") for part in path.relative_to(root).parts)
     ]
 
 
@@ -334,7 +334,8 @@ def test_defaults_and_cli_worker_tick(setup, monkeypatch):
     from piddiplatsch.config.schema import BatchConfig
 
     assert BatchConfig().publish_workers == 4
-    assert BatchConfig().trigger_items == 1000
+    assert BatchConfig().trigger_items == 10000
+    assert BatchConfig().max_items == 10000
     assert BatchConfig().max_wait_seconds == 3600
     put, _directory, _root = setup
     put(1)
@@ -346,6 +347,61 @@ def test_defaults_and_cli_worker_tick(setup, monkeypatch):
     assert publisher.options[0]["workers"] == 4
     assert publisher.options[0]["log_operation"] == "sync/publish"
     assert publisher.options[0]["retries"] == 3
+
+
+def test_worker_uses_larger_defaults_when_batch_settings_are_omitted(setup):
+    from piddiplatsch.config.config import Config
+
+    config._set("batch", None, {})
+    worker = SyncWorker(publisher=Publisher())
+    assert worker.trigger_items == worker.max_items == 10000
+    assert Config().get("batch", "trigger_items") == 10000
+    assert Config().get("batch", "max_items") == 10000
+
+
+def test_archive_partition_is_stable_across_publication_midnight(setup):
+    put, _directory, root = setup
+    put(1)
+    put(2)
+    clock = [datetime(2026, 12, 31, 23, 59, tzinfo=UTC)]
+
+    class MidnightPublisher(Publisher):
+        def run(self, *args, **kwargs):
+            result = super().run(*args, **kwargs)
+            clock[0] = datetime(2027, 1, 1, tzinfo=UTC)
+            return result
+
+    worker = SyncWorker(publisher=MidnightPublisher(), now=lambda: clock[0])
+    paths = worker.run()
+    assert not worker.errors
+    batch, manifest = manifests(root)[0]
+    assert batch == paths[0]
+    assert batch.parent == root / "batches/cmip7/published/2026/12/31"
+    assert manifest["published_at"].startswith("2027-01-01")
+
+
+def test_existing_flat_archives_are_preserved_without_republication(setup):
+    put, _directory, root = setup
+    put(1)
+    put(2)
+    publisher = Publisher()
+    worker = SyncWorker(publisher=publisher)
+    first = worker.run()[0]
+    legacy = root / "batches/cmip7/published" / first.name
+    first.rename(legacy)
+    original = (legacy / "handles.jsonl").read_bytes()
+
+    put(3)
+    put(4)
+    recovered = SyncWorker(publisher=publisher)
+    paths = recovered.run()
+
+    assert not recovered.errors
+    assert len(paths) == 1
+    assert paths[0].parent != legacy.parent
+    assert (legacy / "handles.jsonl").read_bytes() == original
+    assert len(publisher.calls) == 2
+    assert len(manifests(root)) == 2
 
 
 def test_cli_publication_overrides_preserve_config(setup, monkeypatch):
@@ -531,7 +587,8 @@ def test_real_publisher_receipts_and_archiving_without_remote_service(setup):
     assert not worker.errors
     assert len(paths) == 1
     batch, manifest = manifests(root)[0]
-    assert batch.parent.name == "published"
+    assert batch.relative_to(root).parts[:3] == ("batches", "cmip7", "published")
+    assert batch.parts[-4:-1] == (batch.name[:4], batch.name[4:6], batch.name[6:8])
     assert paths[0] == batch
     assert len(backend.records) == manifest["handle_count"]
     from pathlib import Path
@@ -539,6 +596,9 @@ def test_real_publisher_receipts_and_archiving_without_remote_service(setup):
     receipts = [
         json.loads(line) for line in Path(manifest["receipt"]).read_text().splitlines()
     ]
+    receipt = Path(manifest["receipt"])
+    assert receipt.relative_to(root).parts[0] == "published"
+    assert len(receipt.relative_to(root / "published").parts) == 4
     assert len(receipts) == manifest["handle_count"]
     assert all(receipt["status"] == "succeeded" for receipt in receipts)
 
@@ -563,7 +623,8 @@ def test_crash_after_success_marker_archives_without_republishing(setup, monkeyp
     recovered.run()
     assert not recovered.errors
     assert len(publisher.calls) == 1
-    assert manifests(root)[0][0].parent.name == "published"
+    archived = manifests(root)[0][0]
+    assert archived.relative_to(root).parts[:3] == ("batches", "cmip7", "published")
 
 
 def test_crash_after_catalog_ack_keeps_newer_changes_on_recovery(setup, monkeypatch):

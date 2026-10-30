@@ -84,7 +84,8 @@ Harvest should stay active, and the sync timer should show its next run. The
 sync service exits between runs, so an inactive `piddi-sync.service` can be normal.
 
 Use `piddi top --once` for one snapshot or `piddi top --json` for JSON output.
-Publication receipts are saved under `/var/lib/piddi/published/`.
+Publication receipts are saved under `/var/lib/piddi/published/YYYY/MM/DD/`,
+grouped by UTC date. Existing flat receipt files remain in place.
 
 Failed batches stay in `batches/<project>/ready/` and block newer work for that
 project. Other projects can continue. See [Scheduled batch recovery](recovery.md#scheduled-batch-recovery).

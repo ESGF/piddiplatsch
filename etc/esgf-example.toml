@@ -28,10 +28,10 @@ version_history = false
 
 [batch]
 # Enable the Ansible sync timer when automatic Handle publication is intended.
-# Map per project at 1,000 distinct pending items or a one-hour maximum wait.
-trigger_items = 1000
+# Map per project at 10,000 distinct pending items or a one-hour maximum wait.
+trigger_items = 10000
 max_wait_seconds = 3600
-max_items = 1000
+max_items = 10000
 publish_workers = 4
 publish_retries = 3
 # directory = "/data/piddi/batches"
