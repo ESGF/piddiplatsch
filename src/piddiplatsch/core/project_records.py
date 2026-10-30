@@ -9,7 +9,7 @@ from typing import Any, ClassVar
 from piddiplatsch.config import config
 from piddiplatsch.core.handle_models import DatasetHandleModel, FileHandleModel
 from piddiplatsch.core.models import HostingNode
-from piddiplatsch.core.records import BaseRecord
+from piddiplatsch.core.records import AliasHandleRecord, BaseRecord
 from piddiplatsch.helpers import utc_now
 from piddiplatsch.monitoring import stats
 from piddiplatsch.utils.models import (
@@ -117,6 +117,17 @@ class ProjectDatasetRecord(BaseProjectRecord):
     dataset_pid_fields: ClassVar[tuple[str, ...]]
     dataset_model: ClassVar[type[DatasetHandleModel]] = DatasetHandleModel
     file_record: ClassVar[type[ProjectFileRecord]]
+
+    @cached_property
+    def alias_record(self) -> AliasHandleRecord | None:
+        """Preserve a replaced dataset PID as a minimal redirect Handle."""
+        if not config.get_plugin(self.plugin_name, "force_dataset_pid", False):
+            return None
+        source_pid = _source_pid(self.properties, self.dataset_pid_fields)
+        if not source_pid or source_pid == self.pid:
+            return None
+        target = build_handle(self.pid, prefix=self.prefix)
+        return AliasHandleRecord(source_pid, f"https://hdl.handle.net/{target}")
 
     def __init__(
         self,

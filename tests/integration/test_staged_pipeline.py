@@ -115,13 +115,16 @@ def test_map_force_dataset_pid_corrects_dataset_and_file_parent(
     output_files = list((tmp_path / "outputs/cmip7/handles").glob("*.jsonl"))
     assert len(output_files) == 1
     records = [json.loads(line) for line in output_files[0].read_text().splitlines()]
-    dataset, file = records
+    dataset, alias, file = records
     generated = f"21.TEST/{item_pid(item['id'])}"
     asset = next(iter(item["assets"].values()))
     file_handle = f"21.TEST/{parse_pid(asset['cmip7:tracking_id'])}"
     assert dataset["handle"] == generated
     assert dataset["URL"].endswith(f"/{generated}")
     assert json.loads(dataset["data"]["HAS_PARTS"]) == [f"hdl:{file_handle}"]
+    assert alias["handle"] == f"21.TEST/{parse_pid(item['properties']['cmip7:pid'])}"
+    assert alias["URL"] == f"https://hdl.handle.net/{generated}"
+    assert alias["data"] == {}
     assert file["handle"] == file_handle
     assert file["data"]["IS_PART_OF"] == f"hdl:{generated}"
     assert source.read_text() == original

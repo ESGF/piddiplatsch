@@ -249,8 +249,14 @@ class StacProjectProcessor(BaseProcessor):
         self, record: ProjectDatasetRecord, item: dict[str, Any]
     ) -> tuple[int, float]:
         def add_records():
+            alias = record.alias_record
+            if alias is not None:
+                alias.validate()
             self._safe_add_record(record)
             count = 1
+            if alias is not None:
+                self._safe_add_record(alias)
+                count += 1
             excluded = set(self.excluded_asset_keys)
             assets = item.get("assets") or {}
             if not isinstance(assets, dict):

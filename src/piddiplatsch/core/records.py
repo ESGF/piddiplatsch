@@ -3,6 +3,7 @@ from functools import cached_property
 
 from pydantic import BaseModel, ValidationError
 
+from piddiplatsch.core.handle_models import AliasHandleModel
 from piddiplatsch.utils.models import drop_empty
 
 
@@ -37,3 +38,17 @@ class BaseRecord(ABC):
 
     def __str__(self):
         return self.__repr__()
+
+
+class AliasHandleRecord(BaseRecord):
+    """A minimal Handle redirect from an existing PID to its replacement."""
+
+    def __init__(self, pid: str, url: str):
+        super().__init__({})
+        self.pid = pid
+        self.url = url
+
+    def as_handle_model(self) -> AliasHandleModel:
+        model = AliasHandleModel(URL=self.url)
+        model.set_pid(self.pid)
+        return model

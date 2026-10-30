@@ -4,6 +4,8 @@
 
 ### Added
 
+- Shared alias Handle schema and dataset redirects for all projects when
+  `force_dataset_pid` is enabled, including CMIP7.
 - Service controls: `make start`, `make stop`, and `make restart`.
 - Sync options: `--project`, `--workers`, and `--retries`.
 - Dependency checks in CI and `make audit`.

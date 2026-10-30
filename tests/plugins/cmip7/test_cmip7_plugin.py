@@ -1,12 +1,17 @@
+import json
 from datetime import UTC, datetime
+from unittest.mock import Mock
 
 import pytest
 
 from piddiplatsch.config import config
 from piddiplatsch.core.handle_models import DatasetHandleModel, FileHandleModel
+from piddiplatsch.handles.rest_backend import RestHandleClient
 from piddiplatsch.plugins.cmip7.model import CMIP7DatasetModel, CMIP7FileModel
 from piddiplatsch.plugins.cmip7.processor import CMIP7Processor
 from piddiplatsch.plugins.cmip7.record import CMIP7DatasetRecord, CMIP7FileRecord
+from piddiplatsch.runners.publish import HandlePublisher
+from piddiplatsch.utils.models import item_pid
 
 pytestmark = [pytest.mark.plugin, pytest.mark.cmip7]
 
@@ -125,3 +130,88 @@ def test_cmip7_accepts_real_publisher_patch_shape(cmip7_item):
     assert patched["properties"]["retracted"] is True
     assert patched["assets"] == {}
     assert CMIP7DatasetRecord(patched).as_handle_model().HAS_PARTS == []
+
+
+@pytest.mark.parametrize("source_form", ["{pid}", "hdl:21.TEST/{pid}"])
+def test_forced_pid_alias_survives_mapping_and_rest_publication(
+    cmip7_item, tmp_path, source_form
+):
+    config._set("cmip7", "force_dataset_pid", True)
+    cmip7_item["properties"]["cmip7:pid"] = source_form.format(pid=DATASET_PID)
+    original = json.dumps(cmip7_item, sort_keys=True)
+    corrected_pid = item_pid(ITEM_ID)
+    target_url = f"https://hdl.handle.net/21.TEST/{corrected_pid}"
+    processor = CMIP7Processor(publish=False)
+
+    result = processor.process(
+        "corrected-event", {"data": {"payload": {"item": cmip7_item}}}
+    )
+
+    assert result.success
+    assert result.num_handles == 3
+    source = next((tmp_path / "outputs" / "cmip7" / "handles").glob("*.jsonl"))
+    records = [json.loads(line) for line in source.read_text().splitlines()]
+    assert records[0]["handle"] == f"21.TEST/{corrected_pid}"
+    assert records[1]["handle"] == f"21.TEST/{DATASET_PID}"
+    assert records[1]["URL"] == target_url
+    assert records[1]["data"] == {}
+    assert records[2]["handle"] == f"21.TEST/{FILE_PID}"
+    assert records[2]["data"]["IS_PART_OF"] == f"hdl:21.TEST/{corrected_pid}"
+    assert json.dumps(cmip7_item, sort_keys=True) == original
+
+    session = Mock()
+    session.put.return_value.status_code = 201
+    session.put.return_value.json.return_value = {"responseCode": 1}
+    backend = RestHandleClient(
+        "https://handles.example.test", "21.TEST", "test-user", "", session=session
+    )
+    published = HandlePublisher(backend).run([source], workers=1)
+
+    assert published.total == 3
+    assert published.failed == 0
+    alias_call = session.put.call_args_list[1]
+    assert alias_call.args[0].endswith(f"/21.TEST/{DATASET_PID}")
+    values = alias_call.kwargs["json"]["values"]
+    assert {value["type"] for value in values} == {"HS_ADMIN", "URL"}
+    assert (
+        next(value["data"] for value in values if value["type"] == "URL") == target_url
+    )
+
+
+@pytest.mark.parametrize(
+    ("force", "source_pid"),
+    [(False, DATASET_PID), (True, None), (True, item_pid(ITEM_ID))],
+)
+def test_no_alias_without_a_replaced_source_pid(cmip7_item, force, source_pid):
+    config._set("cmip7", "force_dataset_pid", force)
+    cmip7_item["properties"]["cmip7:pid"] = source_pid
+    record = CMIP7DatasetRecord(cmip7_item)
+    assert record.alias_record is None
+
+    result = CMIP7Processor(publish=False).process(
+        "unchanged-event", {"data": {"payload": {"item": cmip7_item}}}
+    )
+    assert result.success
+    assert result.num_handles == 2
+
+
+def test_alias_uses_selected_handle_profile(cmip7_item):
+    config._set("handle", None, {})
+    config._set("handles", "profiles", {"selected": {"prefix": "21.SELECTED"}})
+    config._set("cmip7", "force_dataset_pid", True)
+    record = CMIP7DatasetRecord(cmip7_item, handle_profile="selected")
+
+    assert record.alias_record.as_record() == {
+        "URL": f"https://hdl.handle.net/21.SELECTED/{item_pid(ITEM_ID)}"
+    }
+
+
+def test_invalid_alias_pid_fails_before_writing_handles(cmip7_item):
+    config._set("cmip7", "force_dataset_pid", True)
+    cmip7_item["properties"]["cmip7:pid"] = "invalid-pid"
+    backend = Mock()
+    processor = CMIP7Processor(handle_backend=backend)
+
+    with pytest.raises(ValueError, match="not a valid UUID"):
+        processor.process("bad-alias", {"data": {"payload": {"item": cmip7_item}}})
+    backend.add.assert_not_called()

@@ -1,10 +1,14 @@
 """Dataset PID correction must preserve relationships and file identities."""
 
+import json
 from copy import deepcopy
+from unittest.mock import Mock
 
 import pytest
 
 from piddiplatsch.config import config
+from piddiplatsch.core.handle_models import AliasHandleModel
+from piddiplatsch.core.registry import get_plugin
 from piddiplatsch.plugins.cmip6.record import CMIP6DatasetRecord
 from piddiplatsch.plugins.cmip6plus.record import CMIP6PlusDatasetRecord
 from piddiplatsch.plugins.cmip7.record import CMIP7DatasetRecord
@@ -57,6 +61,15 @@ def test_dataset_pid_policy_and_relationships(record_type, force):
     assert file.parent == f"hdl:21.TEST/{expected}"
     assert file.pid == FILE_PID
     assert dataset.has_parts == [f"hdl:21.TEST/{FILE_PID}"]
+    if force:
+        alias = dataset.alias_record
+        assert alias.pid == item_pid(ITEM_ID.rsplit(".", 1)[0])
+        assert isinstance(alias.model, AliasHandleModel)
+        assert alias.as_record() == {
+            "URL": f"https://hdl.handle.net/21.TEST/{expected}"
+        }
+    else:
+        assert dataset.alias_record is None
     assert item == original
 
 
@@ -75,6 +88,7 @@ def test_missing_source_pids_still_generate(record_type, force):
     assert file.parent == f"hdl:21.TEST/{dataset.pid}"
     assert file.pid == asset_pid(ITEM_ID, "data")
     assert dataset.has_parts == [f"hdl:21.TEST/{file.pid}"]
+    assert dataset.alias_record is None
 
 
 @pytest.mark.parametrize("record_type", RECORDS)
@@ -109,3 +123,50 @@ def test_force_is_scoped_to_project():
     config._set("plugins", "cmip7", {"force_dataset_pid": True})
     cmip6_item = make_item(CMIP6DatasetRecord)
     assert CMIP6DatasetRecord(cmip6_item).pid == item_pid(ITEM_ID.rsplit(".", 1)[0])
+
+
+@pytest.mark.parametrize("record_type", RECORDS)
+def test_unchanged_dataset_pid_does_not_create_alias(record_type):
+    config._set("plugins", record_type.plugin_name, {"force_dataset_pid": True})
+    item = make_item(record_type)
+    item["properties"][record_type.dataset_pid_fields[0]] = item_pid(ITEM_ID)
+    assert record_type(item).alias_record is None
+
+
+def test_conflicting_source_pids_cannot_create_an_ambiguous_alias():
+    config._set("plugins", "cmip6", {"force_dataset_pid": True})
+    item = make_item(CMIP6DatasetRecord)
+    item["properties"]["pid"] = FILE_PID
+    with pytest.raises(ValueError, match="Conflicting source PID"):
+        _ = CMIP6DatasetRecord(item).alias_record
+
+
+@pytest.mark.parametrize("record_type", RECORDS)
+def test_project_processors_publish_dataset_aliases_only(record_type, testdata_path):
+    project = record_type.plugin_name
+    config._set(
+        "plugins", project, {**config.get_plugin(project), "force_dataset_pid": True}
+    )
+    message = json.loads(
+        (testdata_path / "publication_samples" / f"{project}.json").read_text()
+    )
+    item = message["data"]["payload"]["item"]
+    source_pid = item_pid(item["id"].rsplit(".", 1)[0])
+    for field in record_type.dataset_pid_fields:
+        if field in item["properties"]:
+            item["properties"][field] = f"hdl:21.TEST/{source_pid}"
+    generated_pid = item_pid(item["id"])
+    backend = Mock()
+    processor = get_plugin(project).make_processor(handle_backend=backend)
+
+    result = processor.process("dataset-alias", message)
+
+    assert result.success
+    assert result.num_handles == 3
+    assert backend.add.call_count == 3
+    backend.add.assert_any_call(
+        source_pid, {"URL": f"https://hdl.handle.net/21.TEST/{generated_pid}"}
+    )
+    file_call = backend.add.call_args_list[-1]
+    assert file_call.args[1]["AGGREGATION_LEVEL"] == "FILE"
+    assert file_call.args[1]["IS_PART_OF"] == f"hdl:21.TEST/{generated_pid}"
