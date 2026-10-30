@@ -444,7 +444,7 @@ class TestPublishCommand:
         assert publisher_cls.return_value.run.call_args.kwargs["offset"] == 0
         assert publisher_cls.return_value.run.call_args.kwargs["retries"] == 0
         assert publisher_cls.return_value.run.call_args.kwargs["retry_delay"] == 1.0
-        assert publisher_cls.return_value.run.call_args.kwargs["workers"] == 1
+        assert publisher_cls.return_value.run.call_args.kwargs["workers"] == 4
 
     @patch("piddiplatsch.commands.publish.HandlePublisher")
     def test_publish_resolves_project_date_from_output_dir(

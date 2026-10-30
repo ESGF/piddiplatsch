@@ -31,8 +31,8 @@ class TransientConfig(BaseModel):
 
 class StatsConfig(BaseModel):
     model_config = ConfigDict(extra="allow", allow_inf_nan=False)
-    interval_seconds: float = Field(default=10, gt=0)
-    summary_interval: int = Field(default=1000, gt=0)
+    interval_seconds: float = Field(default=30, gt=0)
+    summary_interval: int = Field(default=10000, gt=0)
     enable_db: bool = True
     db_path: str = "piddi.db"
     heartbeat_interval_seconds: float = Field(default=5, gt=0)
@@ -231,7 +231,7 @@ class BatchConfig(BaseModel):
     trigger_items: int = Field(default=1000, ge=1, strict=True)
     max_wait_seconds: float = Field(default=3600, gt=0)
     max_items: int = Field(default=1000, ge=1, strict=True)
-    publish_workers: int = Field(default=1, ge=1, strict=True)
+    publish_workers: int = Field(default=4, ge=1, strict=True)
     publish_retries: int = Field(default=3, ge=0, strict=True)
 
 
@@ -243,7 +243,7 @@ class SchemaConfig(BaseModel):
 class LoggingConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    level: Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"] = "WARNING"
+    level: Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"] = "INFO"
     file: str | None = "pid.log"
 
     @field_validator("level", mode="before")

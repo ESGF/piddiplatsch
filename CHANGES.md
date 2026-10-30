@@ -5,8 +5,28 @@ All notable changes to this project are documented here.
 ## [Unreleased]
 
 ### Added
+- Added `make start`, `make stop`, and `make restart` for deployed harvest, sync,
+  and log rotation services/timers, with an immediate asynchronous sync tick on start.
 - Added repeatable `sync --project` to restrict mapping and publication to selected
   configured projects, plus `--workers` and `--retries` publication overrides.
+
+### Changed
+- Logging now defaults to INFO so progress summaries are visible without `-v`;
+  explicit site logging levels still take precedence.
+- Handle publication defaults to four workers for both sync and manual publish;
+  explicit worker settings continue to override the default.
+- Publication summaries say "published" for successful Handle writes; mapping
+  identifies JSONL preparation without suggesting that sync publication is disabled.
+- Statistics summaries now default to 30 seconds or 10,000 messages, whichever
+  threshold is reached first as messages arrive.
+- Routine dataset/file PID reuse and generation messages now log at DEBUG,
+  keeping mapping output at INFO focused on progress summaries.
+- Use compact operation-labelled INFO summaries for harvest, map, and publication;
+  sync distinguishes mapping from publication and logs tick start/completion.
+  Full statistics snapshots are available at DEBUG.
+- Successful per-Handle writes now log at DEBUG. Both sync and publish log
+  cumulative publication progress at INFO every 30 seconds as results arrive,
+  plus a final summary with counts, project, elapsed time, rate, and receipt path.
 
 ### Fixed
 - Require setuptools 84.1.0 or newer in development, Conda, and installation

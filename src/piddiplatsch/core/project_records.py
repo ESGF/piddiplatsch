@@ -133,14 +133,12 @@ class ProjectDatasetRecord(BaseProjectRecord):
     def pid(self) -> str:
         value = self.source_dataset_pid
         if value:
-            logging.info(
+            logging.debug(
                 "Using existing dataset pid: pid=%s, ds_id=%s", value, self.item_id
             )
             return value
         value = item_pid(self.item_id)
-        logging.warning(
-            "Creating new dataset pid: pid=%s, ds_id=%s", value, self.item_id
-        )
+        logging.debug("Creating new dataset pid: pid=%s, ds_id=%s", value, self.item_id)
         return value
 
     @cached_property
@@ -321,14 +319,12 @@ class ProjectFileRecord(BaseProjectRecord):
     def pid(self) -> str:
         value = _source_pid(self.asset, self.tracking_id_fields)
         if value:
-            logging.info(
+            logging.debug(
                 "Using existing file pid: pid=%s, asset=%s", value, self.asset_key
             )
             return value
         value = asset_pid(self.item_id, self.asset_key)
-        logging.warning(
-            "Creating new file pid: pid=%s, asset=%s", value, self.asset_key
-        )
+        logging.debug("Creating new file pid: pid=%s, asset=%s", value, self.asset_key)
         return value
 
     @cached_property

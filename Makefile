@@ -3,6 +3,7 @@ APP_ROOT := $(abspath $(lastword $(MAKEFILE_LIST))/..)
 APP_NAME := piddiplatsch
 ANSIBLE_ARGS ?=
 CONDA_ENV_PREFIX ?= $(APP_ROOT)/.conda
+SYSTEMCTL ?= sudo systemctl
 
 # end of configuration
 
@@ -23,7 +24,7 @@ endef
 export PRINT_HELP_PYSCRIPT
 
 .DEFAULT_GOAL := help
-.PHONY: conda deploy play docs docs-html docs-serve docs-check pages
+.PHONY: conda deploy play docs docs-html docs-serve docs-check pages start stop restart
 
 help: ## print this help message. (Default)
 	@python -c "$$PRINT_HELP_PYSCRIPT" < $(MAKEFILE_LIST)
@@ -66,6 +67,19 @@ play: ## deploy piddi locally using custom variables
 	@ansible-playbook $(ANSIBLE_ARGS) -i localhost, deploy/ansible/piddi.yml
 
 deploy: conda play ## prepare the Conda environment and deploy piddi locally
+
+start: ## start deployed harvest, sync, and log rotation (publishes Handles)
+	$(SYSTEMCTL) start piddi.service
+	$(SYSTEMCTL) start piddi-logrotate.timer piddi-sync.timer
+	$(SYSTEMCTL) --no-block start piddi-sync.service
+
+stop: ## stop deployed timers, sync, harvest, and log rotation
+	$(SYSTEMCTL) stop piddi-sync.timer piddi-logrotate.timer
+	$(SYSTEMCTL) stop piddi-sync.service piddi.service piddi-logrotate.service
+
+restart: ## stop and start all deployed Piddi services and timers
+	$(MAKE) stop
+	$(MAKE) start
 
 develop: ## install application with development and documentation libraries
 	@echo "Installing development requirements ..."

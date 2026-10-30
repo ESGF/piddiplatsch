@@ -235,6 +235,9 @@ projects. Unknown or unconfigured projects fail before publication begins.
 may be zero. For example: `piddi sync --project cmip6 --workers 4 --retries 0`.
 Without overrides, scheduled runs keep using the TOML settings. Projects and
 batches run sequentially; workers publish Handles concurrently within each batch.
+Both sync and manual publish default to four publication workers. Use
+`--workers 1` for serial publication; explicit `[batch].publish_workers` settings
+override the sync default.
 
 Catalog changes use durable monotonic sequences and generation IDs, independent of
 source event dates. Repeated changes coalesce by item and preserve its oldest
@@ -327,8 +330,12 @@ Each receipt line records the outcome, action, PID, URL, project, dataset, asset
 source location, position, retry count, and error. Missing dataset or asset
 metadata remains `null`. `batch_index` and `position` refer to the entire
 selected input, independently of internal batch boundaries. Receipts are
-written regardless of log verbosity; INFO logging additionally records each
-publication outcome in the configured log file.
+written regardless of log verbosity. INFO logs cumulative publication progress
+every 30 seconds as results arrive and a final summary, including project,
+successes, failures, retries, elapsed time, and average processing rate.
+The receipt path is logged when the file opens. These summaries cover each publication attempt, not unique
+Handles across runs. Individual successful writes are logged at DEBUG; failures
+remain at ERROR.
 
 ## Real Handle service contract test
 
@@ -417,19 +424,28 @@ or force the GIL off.
 
 ## Logging and statistics
 
-The CLI writes WARNING and above to `pid.log` by default. Use `-v` for INFO,
+The CLI writes INFO and above to `pid.log` by default. Use `-v` to select INFO,
 `-vv` or its memorable `--debug` alias for DEBUG, and `--log PATH` to override
 the configured file. `--silent` remains an alias for hiding progress;
 `--progress/--no-progress` provides the explicit form. At INFO level Piddiplatsch
 records the selected plugins, the first occurrence of every filtered project
-identity, publication outcomes, and periodic aggregate counts. Per-message
-filter decisions are available at DEBUG level.
+identity, publication summaries, and periodic aggregate counts. Successful
+per-Handle writes and per-message filter decisions are available at DEBUG level.
+INFO summaries have short operation labels: `[harvest]`, `[map]`, `[publish]`,
+`[sync]`, `[sync/map]`, or `[sync/publish]`. They use grouped counts and rates with
+units; harvest omits Handle counts. Full statistics dictionaries are logged at
+DEBUG instead of INFO. SQLite reporting and publication receipts keep full detail.
+Routine dataset/file PID reuse and deterministic generation also log at DEBUG.
+Statistics summaries default to every 30 seconds or 10,000 messages, whichever
+threshold is reached first as messages arrive. Override `[stats].interval_seconds`
+and `[stats].summary_interval` to change the frequency. Restart harvest after
+applying changes. Explicit site settings take precedence over these defaults.
 
 The `[logging]` configuration provides the service defaults:
 
 ```toml
 [logging]
-level = "WARNING"
+level = "INFO"
 file = "/var/log/piddi/piddi.log"
 ```
 

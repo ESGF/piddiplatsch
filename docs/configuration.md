@@ -110,9 +110,28 @@ each project's JSONL separately so server selection is unambiguous.
 
 ### Publication logs
 
-Every successful publication writes an INFO entry to the configured log file
-(`pid.log` by default). Pass `-v` to enable INFO logging and `--log PATH` to
-override the configured destination. The entry identifies whether the server
+Publication writes an INFO progress summary every 30 seconds as results arrive,
+plus a final summary, for both `sync` and `publish`. Summaries include successful,
+failed, and retry counts, project, elapsed time, and average processing rate.
+The receipt path is logged once when the file opens. These are cumulative counts for the current publication attempt;
+they do not count unique Handles across retries or runs. No progress summary is
+emitted while waiting for a result. Pass `-v` to enable INFO logging and `--log PATH`
+to override the configured destination (`pid.log` by default).
+
+INFO summaries use operation labels and grouped numbers, for example:
+
+```text
+[harvest] running | 30,000 messages | 30,000 catalog writes | 0 errors | 294 messages/s | elapsed 106s | projects: cmip6
+[sync/publish] cmip6plus | running | 11,573 published | 0 failed | 0 retries | 193 handles/s avg | elapsed 60s
+```
+
+Manual mapping and publication use `[map]` and `[publish]`; the scheduled worker
+uses `[sync]` for tick lifecycle messages and `[sync/map]` / `[sync/publish]`
+for its phases. Harvest summaries omit Handle counts because harvest only updates
+catalogs. Full statistics snapshots, including per-project counters and run metadata,
+are available at DEBUG; SQLite monitoring and JSONL receipts retain their details.
+
+Every successful Handle write logs its details at DEBUG (`-vv`). The entry identifies whether the server
 created or updated the Handle and includes its directly resolvable REST URL, project,
 dataset ID, file name, and source position. For file assets, the publisher joins
 `IS_PART_OF` to a dataset record in the selected batch so the asset log entry
@@ -270,7 +289,7 @@ complete-item remote recovery.
 trigger_items = 1000
 max_wait_seconds = 3600
 max_items = 1000
-publish_workers = 1
+publish_workers = 4
 publish_retries = 3
 # directory = "/var/lib/piddi/batches"
 ```
@@ -323,7 +342,7 @@ All existing settings remain supported. Only override values your site needs.
 | `handles.profiles.<name>` | `server_url`, `prefix`, `username`, `password` | Connection and credentials for one Handle service. |
 | `handles.profiles.<name>` | `verify_https`, `timeout` | TLS verification and per-request timeout for one Handle service. |
 | `stac` | `base_url`, `timeout`, `collection` | Global STAC defaults; the shared endpoint is `https://discovery.east.esgf.io`. |
-| `logging` | `level` | Baseline `DEBUG`, `INFO`, `WARNING`, `ERROR`, or `CRITICAL` level. `WARN` is accepted as an alias. |
+| `logging` | `level` | Baseline `DEBUG`, `INFO` (default), `WARNING`, `ERROR`, or `CRITICAL` level. `WARN` is accepted as an alias. |
 | `logging` | `file` | Log destination. An empty string selects terminal logging. |
 
 ### Mapping and validation
@@ -367,7 +386,7 @@ fail-fast and has no force option.
 | `catalog` | `version_history` | Optional local predecessor linking during map; disabled by default. |
 | `catalog` | `kafka_commit_batch_size`, `kafka_commit_interval_seconds` | Broker acknowledgement batching after durable local writes. |
 | `lookup` | `enabled`, `backend` | Version lookup adapter: `catalog` (default) or explicit `stac`; map uses its catalog snapshot and separate history switch. |
-| `stats` | `interval_seconds`, `summary_interval` | Statistics reporting intervals. |
+| `stats` | `interval_seconds`, `summary_interval` | Statistics reporting thresholds: 30 seconds or 10,000 messages by default, whichever is reached first as messages arrive. |
 | `stats` | `enable_db`, `db_path`, heartbeat/sample/history intervals | Local SQLite state and history for mapping and batch mapping runs. |
 
 ## Compatibility with older configuration

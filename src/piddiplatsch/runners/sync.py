@@ -143,7 +143,7 @@ class SyncWorker:
         self.trigger_items = settings.get("trigger_items", 1000)
         self.max_wait_seconds = settings.get("max_wait_seconds", 3600)
         self.max_items = settings.get("max_items", 1000)
-        self.publish_workers = settings.get("publish_workers", 1)
+        self.publish_workers = settings.get("publish_workers", 4)
         self.publish_retries = settings.get("publish_retries", 3)
         self.now = now or (lambda: datetime.now(UTC))
         self.publisher = publisher or HandlePublisher()
@@ -157,7 +157,12 @@ class SyncWorker:
         self.horizons = {}
         with _worker_lock(self.root) as acquired:
             if not acquired:
+                LOGGER.info("[sync] Skipped | another worker holds the lock")
                 return completed
+            LOGGER.info(
+                "[sync] Starting | projects: %s",
+                ", ".join(p.name for p in self.plugins),
+            )
             if HarvestState(self.catalog_directory).pending_clean:
                 raise CatalogError(
                     "Catalog clean is incomplete; run harvest before batch processing"
@@ -186,9 +191,16 @@ class SyncWorker:
                     except Exception as exc:
                         blocked.add(plugin.name)
                         self.errors.append(f"{plugin.name}: {exc}")
-                        LOGGER.error("%s batch processing failed: %s", plugin.name, exc)
+                        LOGGER.error(
+                            "[sync] %s | batch processing failed: %s", plugin.name, exc
+                        )
                 if not made_batch:
                     break
+        LOGGER.info(
+            "[sync] Complete | %d batches sealed | %d project errors",
+            len(completed),
+            len(self.errors),
+        )
         return completed
 
     def _map_due(self, project, project_root, force):
@@ -257,6 +269,7 @@ class SyncWorker:
 
     def _map_items(self, project, reader, staging, manifest):
         settings = config.get("stats", {})
+        LOGGER.info("[sync/map] %s | starting batch %s", project, manifest["batch_id"])
         stats.configure_for_run(
             enable_db=settings.get("enable_db", False),
             db_path=settings.get("db_path"),
@@ -272,6 +285,11 @@ class SyncWorker:
             raise
         else:
             stats.close(status="completed")
+            LOGGER.info(
+                "[sync/map] %s | complete | %s items mapped",
+                project,
+                f"{manifest['item_count']:,}",
+            )
 
     def _write_items(self, project, reader, staging, manifest):
         output = staging / "handles.jsonl"
@@ -379,6 +397,7 @@ class SyncWorker:
                     (output,),
                     project=project,
                     handle_profile=manifest["handle_profile"],
+                    log_operation="sync/publish",
                     workers=self.publish_workers,
                     retries=self.publish_retries,
                     progress_callback=show_progress,

@@ -4,6 +4,21 @@ from unittest.mock import patch
 import pytest
 
 from piddiplatsch.config.config import Config
+from piddiplatsch.config.schema import LoggingConfig
+
+
+@pytest.mark.parametrize("missing_level", [False, True])
+@patch("piddiplatsch.config.config.logging.basicConfig")
+@patch("piddiplatsch.config.config.WatchedFileHandler")
+def test_default_logging_level_is_info(watched_handler, basic_config, missing_level):
+    configured = Config()
+    assert configured.get("logging", "level") == LoggingConfig().level == "INFO"
+    if missing_level:
+        configured.config_data["logging"].pop("level")
+
+    configured.configure_logging()
+
+    assert basic_config.call_args.kwargs["level"] == logging.INFO
 
 
 @pytest.mark.parametrize(

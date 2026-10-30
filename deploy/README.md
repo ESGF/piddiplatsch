@@ -17,6 +17,28 @@ make deploy
 `make deploy` creates or updates `.conda`, installs Piddi, and runs Ansible.
 Use `make play` for later Ansible-only configuration changes.
 
+### Start, stop, and restart
+
+After deployment, manage all Piddi processing and log rotation together:
+
+```console
+make start
+make stop
+make restart
+```
+
+`make start` starts harvest, the sync timer, and the log rotation timer, then
+requests an immediate sync tick without waiting for it to finish. This includes
+real Handle publication using the configured profile. `make stop` stops both
+timers first, then stops sync, harvest, and any running log rotation.
+`make restart` completes the stop sequence before starting them again, including
+when Make runs with parallel jobs. Interrupted sync batches are retried on the
+next run, so some successful Handle writes may be repeated.
+
+These targets manage runtime state; Ansible controls which units are enabled at
+boot. Commands use `sudo systemctl` by default; as root without sudo, use
+`make restart SYSTEMCTL=systemctl` (likewise for start/stop).
+
 ### Dependency security updates
 
 After pulling dependency changes, run `make deploy` to update the application
@@ -188,7 +210,7 @@ The shared TOML settings are:
 trigger_items = 1000
 max_wait_seconds = 3600
 max_items = 1000
-publish_workers = 1
+publish_workers = 4
 publish_retries = 3
 # directory = "/var/lib/piddi/batches"
 ```

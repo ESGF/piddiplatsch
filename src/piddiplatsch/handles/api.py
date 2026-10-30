@@ -66,7 +66,7 @@ def get_handle_backend(
     recorder. When publication is disabled, only that JSONL output is written.
     """
     if not publish:
-        logging.info("Handle publication disabled: using JSONL backend")
+        logging.info("[map] Preparing Handle JSONL for publication")
         return JsonlHandleBackend(
             project=project,
             handle_profile=handle_profile,

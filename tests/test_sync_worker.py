@@ -278,6 +278,7 @@ def test_clean_generation_rejects_stale_ready_batch(setup):
 def test_defaults_and_cli_worker_tick(setup, monkeypatch):
     from piddiplatsch.config.schema import BatchConfig
 
+    assert BatchConfig().publish_workers == 4
     assert BatchConfig().trigger_items == 1000
     assert BatchConfig().max_wait_seconds == 3600
     put, _directory, _root = setup
@@ -287,7 +288,8 @@ def test_defaults_and_cli_worker_tick(setup, monkeypatch):
     result = CliRunner().invoke(cli, ["--silent", "sync", "--force-map"])
     assert result.exit_code == 0, result.output
     assert len(publisher.calls) == 1
-    assert publisher.options[0]["workers"] == 1
+    assert publisher.options[0]["workers"] == 4
+    assert publisher.options[0]["log_operation"] == "sync/publish"
     assert publisher.options[0]["retries"] == 3
 
 

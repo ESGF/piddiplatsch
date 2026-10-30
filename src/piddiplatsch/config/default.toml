@@ -54,14 +54,14 @@ max_wait_seconds = 3600
 # Maximum catalog items per immutable output batch; never split an item's Handles.
 max_items = 1000
 # Ready batches publish immediately during the sync tick, in project order.
-publish_workers = 1
+publish_workers = 4
 publish_retries = 3
 # Default: <consumer.output_dir>/batches. Must be shared by all worker invocations.
 # directory = "/var/lib/piddi/batches"
 
 [logging]
-# WARNING keeps normal runs compact. Use -v for INFO or -vv/--debug for DEBUG.
-level = "WARNING"
+# INFO shows progress summaries. Use -vv/--debug for per-record details.
+level = "INFO"
 # Set to an empty string to log to the terminal instead of a file.
 file = "pid.log"
 
@@ -204,10 +204,10 @@ enabled = false
 
 [stats]
 # Log interval (seconds) for console/DB reporters.
-interval_seconds = 10
+interval_seconds = 30
 
 # Message count threshold before logging a stats snapshot.
-summary_interval = 1000
+summary_interval = 10000
 
 # Enable SQLite monitoring for map and the mapping phase of sync runs.
 enable_db = true

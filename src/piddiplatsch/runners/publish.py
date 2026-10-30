@@ -31,6 +31,7 @@ class PreparedHandleBackend(Protocol):
 
 
 BATCH_SIZE = 256
+PUBLICATION_LOG_INTERVAL_SECONDS = 30.0
 ProgressCallback = Callable[[int, int | None, str, Exception | None], None]
 OutcomeCallback = Callable[["_PublicationOutcome"], None]
 
@@ -103,11 +104,12 @@ class HandlePublisher:
         offset: int = 0,
         retries: int = 0,
         retry_delay: float = 1.0,
-        workers: int = 1,
+        workers: int = 4,
         progress_callback: ProgressCallback | None = None,
         result_file: Path | None = None,
         project: str | None = None,
         handle_profile: str | None = None,
+        log_operation: str = "publish",
     ) -> PublishResult:
         if limit is not None and limit < 1:
             raise ValueError("limit must be at least 1")
@@ -123,7 +125,8 @@ class HandlePublisher:
         files = find_jsonl(paths)
         result = PublishResult()
         self.logger.info(
-            "Preparing Handle publication: files=%d offset=%d limit=%s retries=%d workers=%d",
+            "[%s] Starting | %d input files | offset %d | limit %s | retries %d | workers %d",
+            log_operation,
             len(files),
             offset,
             limit if limit is not None else "none",
@@ -138,6 +141,7 @@ class HandlePublisher:
         backend_ready = not self._uses_config
         result.project = selected_project
         completed = 0
+        started_at = last_report_at = time.monotonic()
         with ExitStack() as stack:
             records = stack.enter_context(
                 closing(
@@ -174,15 +178,26 @@ class HandlePublisher:
                         result.project
                     )
                     self.logger.info(
-                        "Writing publication results to %s", result.result_file
+                        "[%s] Receipts: %s", log_operation, result.result_file
                     )
                     writer = stack.enter_context(
                         _PublicationResultWriter(result.result_file)
                     )
 
                 def report(outcome, batch_start=completed, receipt_writer=writer):
+                    nonlocal last_report_at
                     outcome = replace(outcome, index=batch_start + outcome.index)
-                    self._record_outcome(result, receipt_writer, outcome, offset=offset)
+                    self._record_outcome(
+                        result,
+                        receipt_writer,
+                        outcome,
+                        offset=offset,
+                        log_operation=log_operation,
+                    )
+                    now = time.monotonic()
+                    if now - last_report_at >= PUBLICATION_LOG_INTERVAL_SECONDS:
+                        self._log_summary(result, now - started_at, log_operation)
+                        last_report_at = now
                     if progress_callback is not None:
                         progress_callback(
                             outcome.index, None, outcome.handle, outcome.error
@@ -209,15 +224,26 @@ class HandlePublisher:
                 else None
             )
 
-        self.logger.info(
-            "Handle publication complete: published=%d total=%d failed=%d retries=%d offset=%d",
-            result.succeeded,
-            result.total,
-            result.failed,
-            result.retry_attempts,
-            offset,
+        self._log_summary(
+            result, time.monotonic() - started_at, log_operation, complete=True
         )
         return result
+
+    def _log_summary(
+        self, result: PublishResult, elapsed: float, operation: str, *, complete=False
+    ) -> None:
+        self.logger.info(
+            "[%s] %s | %s | %s published | %s failed | %s retries | "
+            "%s handles/s avg | elapsed %ss",
+            operation,
+            result.project or ", ".join(sorted(result.projects)) or "no project",
+            "complete" if complete else "running",
+            f"{result.succeeded:,}",
+            f"{result.failed:,}",
+            f"{result.retry_attempts:,}",
+            f"{result.total / elapsed if elapsed > 0 else 0.0:,.0f}",
+            f"{elapsed:,.0f}",
+        )
 
     @staticmethod
     def _remember_error(result: PublishResult, error: str) -> None:
@@ -233,6 +259,7 @@ class HandlePublisher:
         outcome: _PublicationOutcome,
         *,
         offset: int,
+        log_operation: str,
     ) -> None:
         writer.write(
             self._result_record(
@@ -249,7 +276,10 @@ class HandlePublisher:
             result.succeeded += 1
             project_result.succeeded += 1
             self._log_publication(
-                outcome, position=offset + outcome.index, batch_total=None
+                outcome,
+                position=offset + outcome.index,
+                batch_total=None,
+                log_operation=log_operation,
             )
         else:
             result.failed += 1
@@ -257,7 +287,8 @@ class HandlePublisher:
             location = f"{outcome.path}:{outcome.line_number}"
             self._remember_error(result, f"{location}: {outcome.error}")
             self.logger.error(
-                "Could not publish %s (position=%d): %s",
+                "[%s] Could not publish %s (position=%d): %s",
+                log_operation,
                 location,
                 offset + outcome.index,
                 outcome.error,
@@ -269,6 +300,7 @@ class HandlePublisher:
         *,
         position: int,
         batch_total: int | None,
+        log_operation: str,
     ) -> None:
         details = [
             f"handle={outcome.handle}",
@@ -279,7 +311,12 @@ class HandlePublisher:
             f"position={position}",
             f"batch={outcome.index}/{batch_total if batch_total is not None else '?'}",
         ]
-        self.logger.info("%s handle %s", outcome.action.capitalize(), " ".join(details))
+        self.logger.debug(
+            "[%s] %s handle %s",
+            log_operation,
+            outcome.action.capitalize(),
+            " ".join(details),
+        )
 
     def _publish_records(
         self,
