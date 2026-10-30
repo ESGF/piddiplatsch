@@ -363,7 +363,7 @@ def map_messages(
 @click.option(
     "--workers",
     type=click.IntRange(min=1),
-    default=1,
+    default=4,
     show_default=True,
     help="Publish different handles concurrently; updates to one handle stay ordered.",
 )

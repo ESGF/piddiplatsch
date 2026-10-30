@@ -22,7 +22,7 @@ class PublishCommand(FileBatchCommand):
 
     retries: int = 0
     retry_delay: float = 1.0
-    workers: int = 1
+    workers: int = 4
     project: str | None = None
     handle_profile: str | None = None
 

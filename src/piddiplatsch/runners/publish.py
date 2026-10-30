@@ -104,7 +104,7 @@ class HandlePublisher:
         offset: int = 0,
         retries: int = 0,
         retry_delay: float = 1.0,
-        workers: int = 1,
+        workers: int = 4,
         progress_callback: ProgressCallback | None = None,
         result_file: Path | None = None,
         project: str | None = None,

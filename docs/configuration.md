@@ -289,7 +289,7 @@ complete-item remote recovery.
 trigger_items = 1000
 max_wait_seconds = 3600
 max_items = 1000
-publish_workers = 1
+publish_workers = 4
 publish_retries = 3
 # directory = "/var/lib/piddi/batches"
 ```

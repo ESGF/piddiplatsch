@@ -54,7 +54,7 @@ max_wait_seconds = 3600
 # Maximum catalog items per immutable output batch; never split an item's Handles.
 max_items = 1000
 # Ready batches publish immediately during the sync tick, in project order.
-publish_workers = 1
+publish_workers = 4
 publish_retries = 3
 # Default: <consumer.output_dir>/batches. Must be shared by all worker invocations.
 # directory = "/var/lib/piddi/batches"

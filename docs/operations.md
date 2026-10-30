@@ -235,6 +235,9 @@ projects. Unknown or unconfigured projects fail before publication begins.
 may be zero. For example: `piddi sync --project cmip6 --workers 4 --retries 0`.
 Without overrides, scheduled runs keep using the TOML settings. Projects and
 batches run sequentially; workers publish Handles concurrently within each batch.
+Both sync and manual publish default to four publication workers. Use
+`--workers 1` for serial publication; explicit `[batch].publish_workers` settings
+override the sync default.
 
 Catalog changes use durable monotonic sequences and generation IDs, independent of
 source event dates. Repeated changes coalesce by item and preserve its oldest

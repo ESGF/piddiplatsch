@@ -231,7 +231,7 @@ class BatchConfig(BaseModel):
     trigger_items: int = Field(default=1000, ge=1, strict=True)
     max_wait_seconds: float = Field(default=3600, gt=0)
     max_items: int = Field(default=1000, ge=1, strict=True)
-    publish_workers: int = Field(default=1, ge=1, strict=True)
+    publish_workers: int = Field(default=4, ge=1, strict=True)
     publish_retries: int = Field(default=3, ge=0, strict=True)
 
 

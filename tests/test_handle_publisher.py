@@ -100,7 +100,7 @@ def test_publishes_prepared_records_without_changing_source(tmp_path):
     assert result.total == 2
     assert result.succeeded == 2
     assert result.failed == 0
-    assert backend.published == [
+    assert sorted(backend.published) == [
         (
             "abc",
             {
@@ -208,7 +208,7 @@ def test_logs_periodic_publication_progress_including_failures(
 
     with caplog.at_level(logging.INFO, logger="piddiplatsch.runners.publish"):
         result = HandlePublisher(FakeBackend(failing_pid="bad")).run(
-            [source], project="cmip6", log_operation="sync/publish"
+            [source], project="cmip6", log_operation="sync/publish", workers=1
         )
 
     progress = [line for line in caplog.messages if "| running |" in line]
@@ -394,8 +394,8 @@ def test_continues_after_invalid_record_and_backend_failure(tmp_path):
             },
         )
     ]
-    assert "does not match configured prefix" in result.errors[0]
-    assert "server unavailable" in result.errors[1]
+    assert any("does not match configured prefix" in error for error in result.errors)
+    assert any("server unavailable" in error for error in result.errors)
 
 
 def test_reports_malformed_line_without_discarding_valid_records(tmp_path):
@@ -423,7 +423,7 @@ def test_reads_all_jsonl_files_in_directory(tmp_path):
     result = HandlePublisher(backend).run([tmp_path])
 
     assert result.succeeded == 2
-    assert [pid for pid, _ in backend.published] == ["one", "two"]
+    assert sorted(pid for pid, _ in backend.published) == ["one", "two"]
 
 
 def test_publishes_jsonl_backend_output(tmp_path):
@@ -442,7 +442,7 @@ def test_publishes_jsonl_backend_output(tmp_path):
     result = HandlePublisher(backend).run([source])
 
     assert result.succeeded == 1
-    assert backend.published == [
+    assert sorted(backend.published) == [
         (
             "abc",
             {
@@ -466,7 +466,7 @@ def test_limit_caps_records_across_files_and_stops_reading(tmp_path):
 
     assert result.total == 3
     assert result.succeeded == 3
-    assert [pid for pid, _ in backend.published] == ["one", "two", "three"]
+    assert sorted(pid for pid, _ in backend.published) == ["one", "three", "two"]
 
 
 def test_offset_skips_records_across_files(tmp_path):
@@ -495,7 +495,7 @@ def test_offset_and_limit_select_requested_window(tmp_path):
     result = HandlePublisher(backend).run([source], offset=2, limit=2)
 
     assert result.succeeded == 2
-    assert [pid for pid, _ in backend.published] == ["2", "3"]
+    assert sorted(pid for pid, _ in backend.published) == ["2", "3"]
 
 
 def test_retries_transient_failures_with_exponential_backoff(tmp_path):

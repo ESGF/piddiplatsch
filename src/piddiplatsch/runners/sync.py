@@ -143,7 +143,7 @@ class SyncWorker:
         self.trigger_items = settings.get("trigger_items", 1000)
         self.max_wait_seconds = settings.get("max_wait_seconds", 3600)
         self.max_items = settings.get("max_items", 1000)
-        self.publish_workers = settings.get("publish_workers", 1)
+        self.publish_workers = settings.get("publish_workers", 4)
         self.publish_retries = settings.get("publish_retries", 3)
         self.now = now or (lambda: datetime.now(UTC))
         self.publisher = publisher or HandlePublisher()
