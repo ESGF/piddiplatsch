@@ -338,6 +338,9 @@ activity, publication speed and estimated batch completion. Unknown estimates
 appear as a dash. Errors and stale heartbeats appear below the table. Stale run
 records superseded by newer runs are hidden from the display; JSON retains them.
 Use `--json` for batch health, last publication times, individual runs and history.
+The header shows when cumulative Handle totals began and the rate windows.
+`Harvest/s` shows events per second per project, averaged over available samples
+within `--history` (one hour by default); publication speed uses up to 60 seconds.
 
 History samples are saved every 15 seconds and at startup and shutdown. The
 history window covers one hour; `--json --history 360` includes six hours. Samples are kept

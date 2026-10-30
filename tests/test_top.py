@@ -251,6 +251,7 @@ def test_stale_runs_are_hidden_only_when_superseded():
 
 def test_compact_overview_keeps_eta_and_actionable_warnings():
     status = {
+        "history_seconds": 1800,
         "health": {
             "storage": [],
             "projects": [
@@ -258,6 +259,20 @@ def test_compact_overview_keeps_eta_and_actionable_warnings():
             ],
         },
         "runs": [
+            {
+                "command": "harvest",
+                "status": "running",
+                "state": "healthy",
+                "started_at": "2026-10-30T20:00:00+00:00",
+                "projects": [{"project": "cordex-cmip6"}],
+                "history": [
+                    {
+                        "project": "cordex-cmip6",
+                        "elapsed_seconds": 300,
+                        "message_rate": 123.4,
+                    }
+                ],
+            },
             {
                 "command": "publish",
                 "status": "running",
@@ -280,9 +295,14 @@ def test_compact_overview_keeps_eta_and_actionable_warnings():
         "backlog_estimate": {"reason": "waiting for complete counts"},
     }
     output = StringIO()
-    Console(file=output, width=120).print(TopCommand._overview(status))
+    Console(file=output, width=160).print(TopCommand._overview(status))
     rendered = output.getvalue()
     assert "cordex-cmip6" in rendered
+    assert "Handle totals: since 2026-10-30 20:00 UTC" in rendered
+    assert "Rate windows: harvest up to 30m · publish up to 60s" in rendered
+    assert "Harvest: running · 123.4 events/s" in rendered
+    assert "Harvest/s" in rendered
+    assert rendered.count("123.4") == 2
     assert "227.5" in rendered
     assert "3m 6s (21:28 UTC)" in rendered
     assert "errors recorded" in rendered

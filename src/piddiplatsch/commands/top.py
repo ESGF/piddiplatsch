@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import time
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
 
 import click
@@ -65,6 +65,14 @@ class TopCommand(Command):
         """Keep the daily operator view to one table and actionable status lines."""
         active = _active_runs(status)
         lines = []
+        starts = [run["started_at"] for run in status["runs"] if run.get("started_at")]
+        if starts:
+            start = min(datetime.fromisoformat(value) for value in starts).astimezone(
+                UTC
+            )
+            lines.append(
+                Text(f"Handle totals: since {start:%Y-%m-%d %H:%M} UTC", style="dim")
+            )
         for disk in status["health"]["storage"]:
             free = disk.get("free_bytes")
             space = (
@@ -74,20 +82,23 @@ class TopCommand(Command):
             )
             lines.append(Text(f"Disk: {space} · {disk['state']} · {disk['path']}"))
         harvest = [run for run in active if run["command"] == "harvest"]
+        harvest_rates = _harvest_rates(harvest)
+        window = _eta_duration(status.get("history_seconds", 3600))
         if harvest:
             state = (
                 "stale"
                 if any(run["state"] == "stale" for run in harvest)
                 else "running"
             )
-            rate = sum(
-                row.get("message_rate", 0) or 0
-                for run in harvest
-                for row in run.get("history", [])
-            )
-            lines.append(Text(f"Harvest: {state} · {rate:,.1f} events/s"))
+            rate = f"{sum(harvest_rates.values()):,.1f}" if harvest_rates else "—"
+            lines.append(Text(f"Harvest: {state} · {rate} events/s"))
         else:
             lines.append(Text("Harvest: inactive"))
+        lines.append(
+            Text(
+                f"Rate windows: harvest up to {window} · publish up to 60s", style="dim"
+            )
+        )
 
         table = Table(box=None, padding=(0, 1))
         for heading in (
@@ -96,12 +107,15 @@ class TopCommand(Command):
             "Generated handles",
             "Published handles",
             "Activity",
+            "Harvest/s",
             "Handles/s",
             "Batch ETA ~",
         ):
             table.add_column(
                 heading,
-                min_width=12 if heading == "Project" else None,
+                min_width=(
+                    12 if heading == "Project" else max(map(len, heading.split()))
+                ),
                 no_wrap=heading == "Project",
                 justify=(
                     "right"
@@ -110,6 +124,7 @@ class TopCommand(Command):
                         "Pending datasets",
                         "Generated handles",
                         "Published handles",
+                        "Harvest/s",
                         "Handles/s",
                     }
                     else "left"
@@ -181,6 +196,7 @@ class TopCommand(Command):
                 _count(counts.get("prepared")),
                 _count(counts.get("published")),
                 activity,
+                f"{harvest_rates[name]:,.1f}" if name in harvest_rates else "—",
                 f"{rate:,.1f}" if rate is not None else "—",
                 eta,
             )
@@ -196,6 +212,17 @@ class TopCommand(Command):
             table,
             *alerts,
         )
+
+
+def _harvest_rates(runs: list[dict]) -> dict[str, float]:
+    rates = {}
+    for run in runs:
+        if run["state"] == "healthy":
+            for row in run.get("history", []):
+                if row.get("elapsed_seconds", 0) > 0:
+                    name = row["project"]
+                    rates[name] = rates.get(name, 0) + row["message_rate"]
+    return rates
 
 
 def _count(value: int | None) -> str:
