@@ -325,6 +325,7 @@ Read the database with:
 piddi top
 piddi top --once
 piddi top --project cmip7 --once
+piddi top --history all
 piddi top --json
 piddi top --json --history 360
 ```
@@ -341,6 +342,13 @@ Use `--json` for batch health, last publication times, individual runs and histo
 The header shows when cumulative Handle totals began and the rate windows.
 `Harvest/s` shows events per second per project, averaged over available samples
 within `--history` (one hour by default); publication speed uses up to 60 seconds.
+Use `--history all` for harvest speed since each active run began, calculated
+from its cumulative event counter even after old history samples expire. The
+harvest header always includes the total events in active harvest runs. These
+harvest totals restart with a new run; Handle totals cover all recorded runs.
+`Harvest trend →` shows up to twelve bars, oldest to newest, across the selected
+history window. Bar heights are relative to that project's peak. With
+`--history all`, the average covers the run and the trend shows the last hour.
 `Batch progress` shows successful Handle writes in the active publication run
 against its total, for example `12,345 / 50,000`. An unknown total appears as `?`;
 projects without a single active publisher show a dash.

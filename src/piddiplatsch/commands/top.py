@@ -30,7 +30,7 @@ class TopCommand(Command):
     json_output: bool = False
     refresh_seconds: float = 2.0
     stale_after_seconds: float = 15.0
-    history_minutes: float = 60.0
+    history_minutes: float | str = 60.0
 
     def execute(self) -> None:
         console = Console()
@@ -40,7 +40,14 @@ class TopCommand(Command):
                     self.db_path,
                     project=self.project,
                     stale_after_seconds=self.stale_after_seconds,
-                    history_seconds=self.history_minutes * 60,
+                    history_seconds=(
+                        3600
+                        if self.history_minutes == "all"
+                        else self.history_minutes * 60
+                    ),
+                )
+                status["harvest_rate_window"] = (
+                    "run" if self.history_minutes == "all" else "history"
                 )
                 status["health"] = read_health(self.project)
                 status["backlog_estimate"] = backlog_estimate(status)
@@ -82,8 +89,13 @@ class TopCommand(Command):
             )
             lines.append(Text(f"Disk: {space} · {disk['state']} · {disk['path']}"))
         harvest = [run for run in active if run["command"] == "harvest"]
-        harvest_rates = _harvest_rates(harvest)
-        window = _eta_duration(status.get("history_seconds", 3600))
+        since_start = status.get("harvest_rate_window") == "run"
+        harvest_rates = _harvest_rates(harvest, since_start=since_start)
+        window = (
+            "since run start"
+            if since_start
+            else f"up to {_eta_duration(status.get('history_seconds', 3600))}"
+        )
         if harvest:
             state = (
                 "stale"
@@ -91,12 +103,21 @@ class TopCommand(Command):
                 else "running"
             )
             rate = f"{sum(harvest_rates.values()):,.1f}" if harvest_rates else "—"
-            lines.append(Text(f"Harvest: {state} · {rate} events/s"))
+            total = sum(
+                row.get("consumed", 0) for run in harvest for row in run["projects"]
+            )
+            lines.append(
+                Text(
+                    f"Harvest: {state} · {rate} events/s · {total:,} events since run start"
+                )
+            )
         else:
             lines.append(Text("Harvest: inactive"))
         lines.append(
             Text(
-                f"Rate windows: harvest up to {window} · publish up to 60s", style="dim"
+                f"Rate windows: harvest {window} · publish up to 60s"
+                + (" · harvest trend up to 1h" if since_start else ""),
+                style="dim",
             )
         )
 
@@ -108,6 +129,7 @@ class TopCommand(Command):
             "Published handles",
             "Activity",
             "Harvest/s",
+            "Harvest trend →",
             "Handles/s",
             "Batch progress",
             "Batch ETA ~",
@@ -198,6 +220,7 @@ class TopCommand(Command):
                 _count(counts.get("published")),
                 activity,
                 f"{harvest_rates[name]:,.1f}" if name in harvest_rates else "—",
+                _harvest_trend(harvest, name),
                 f"{rate:,.1f}" if rate is not None else "—",
                 _batch_progress(publishers),
                 eta,
@@ -216,6 +239,31 @@ class TopCommand(Command):
         )
 
 
+def _harvest_trend(runs: list[dict], project: str) -> str:
+    for run in runs:
+        for row in run.get("history", []):
+            if row["project"] == project:
+                return _sparkline(row.get("message_rate_series", []))
+    return "—"
+
+
+def _sparkline(values: list[float], width: int = 12) -> str:
+    """Average the whole history into at most twelve bars, oldest first."""
+    if not values:
+        return "—"
+    size = min(width, len(values))
+    buckets = [
+        values[index * len(values) // size : (index + 1) * len(values) // size]
+        for index in range(size)
+    ]
+    averages = [max(0, sum(bucket) / len(bucket)) for bucket in buckets]
+    peak = max(averages)
+    blocks = "▁▂▃▄▅▆▇█"
+    return "".join(
+        blocks[round(value / peak * 7)] if peak else blocks[0] for value in averages
+    )
+
+
 def _batch_progress(publishers: list[dict]) -> str:
     """Successful Handle writes in this publication run, against its batch size."""
     if len(publishers) != 1:
@@ -228,10 +276,20 @@ def _batch_progress(publishers: list[dict]) -> str:
     return f"{published:,} / {total:,}" if total is not None else f"{published:,} / ?"
 
 
-def _harvest_rates(runs: list[dict]) -> dict[str, float]:
+def _harvest_rates(runs: list[dict], *, since_start: bool = False) -> dict[str, float]:
     rates = {}
     for run in runs:
         if run["state"] == "healthy":
+            if since_start:
+                elapsed = (
+                    datetime.fromisoformat(run["heartbeat_at"])
+                    - datetime.fromisoformat(run["started_at"])
+                ).total_seconds()
+                if elapsed > 0:
+                    for row in run["projects"]:
+                        name = row["project"]
+                        rates[name] = rates.get(name, 0) + row["consumed"] / elapsed
+                continue
             for row in run.get("history", []):
                 if row.get("elapsed_seconds", 0) > 0:
                     name = row["project"]

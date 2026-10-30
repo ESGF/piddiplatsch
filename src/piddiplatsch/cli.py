@@ -14,6 +14,12 @@ CONTEXT_SETTINGS = {"help_option_names": ["-h", "--help"]}
 DEFAULT_USER_CONFIG = "custom.toml"
 
 
+def _parse_history(ctx: click.Context, param: click.Parameter, value: str | None):
+    if value is None or value.casefold() == "all":
+        return "all" if value else None
+    return click.FloatRange(min=1).convert(value, param, ctx)
+
+
 def _parse_date_selector(
     _ctx: click.Context, _param: click.Parameter, value: str | None
 ) -> datetime | str | None:
@@ -503,8 +509,9 @@ def config_explain(
 @click.option(
     "--history",
     "history_minutes",
-    type=click.FloatRange(min=1),
-    help="History window in minutes.",
+    callback=_parse_history,
+    metavar="MINUTES|all",
+    help="Harvest rate window in minutes, or 'all' for the entire active run.",
 )
 @click.pass_context
 def top(
@@ -515,7 +522,7 @@ def top(
     json_output: bool,
     refresh_seconds: float,
     stale_after_seconds: float | None,
-    history_minutes: float | None,
+    history_minutes: float | str | None,
 ) -> None:
     """Watch current processing progress, separated by project."""
     stats_config = config.get("stats", {})

@@ -211,6 +211,34 @@ def test_top_json_history_window(tmp_path):
     assert status["runs"][0]["history"]
 
 
+def test_top_all_uses_run_counters_for_harvest_rate(tmp_path):
+    db = tmp_path / "piddi.db"
+    _monitoring_db(db)
+    with sqlite3.connect(db) as connection:
+        connection.execute(
+            "UPDATE monitor_runs SET command='harvest', status='running', started_at=?, heartbeat_at=?",
+            ("2026-10-30T20:00:00+00:00", "2026-10-30T21:00:00+00:00"),
+        )
+    result = CliRunner().invoke(
+        cli, ["top", "--db", str(db), "--history", "all", "--json"]
+    )
+    assert result.exit_code == 0, result.output
+    status = json.loads(result.output)
+    assert status["harvest_rate_window"] == "run"
+    from piddiplatsch.commands.top import _harvest_rates
+
+    run = status["runs"][0]
+    run["state"] = "healthy"
+    run["projects"][0]["consumed"] = 360000
+    run["history"] = []  # Lifetime speed must survive sample retention.
+    assert _harvest_rates([run], since_start=True)["cmip6"] == 100
+    status["health"] = {"storage": [], "projects": []}
+    output = StringIO()
+    Console(file=output, width=160).print(TopCommand._overview(status))
+    assert "360,000 events since run start" in output.getvalue()
+    assert "harvest since run start" in output.getvalue()
+
+
 def test_top_default_is_one_table_without_history(tmp_path):
     db_path = tmp_path / "piddi.db"
     _monitoring_db(db_path)
@@ -270,6 +298,7 @@ def test_compact_overview_keeps_eta_and_actionable_warnings():
                         "project": "cordex-cmip6",
                         "elapsed_seconds": 300,
                         "message_rate": 123.4,
+                        "message_rate_series": [0, 50, 100],
                     }
                 ],
             },
@@ -297,21 +326,31 @@ def test_compact_overview_keeps_eta_and_actionable_warnings():
         "backlog_estimate": {"reason": "waiting for complete counts"},
     }
     output = StringIO()
-    Console(file=output, width=160).print(TopCommand._overview(status))
+    Console(file=output, width=200).print(TopCommand._overview(status))
     rendered = output.getvalue()
     assert "cordex-cmip6" in rendered
     assert "Handle totals: since 2026-10-30 20:00 UTC" in rendered
     assert "Rate windows: harvest up to 30m · publish up to 60s" in rendered
     assert "Harvest: running · 123.4 events/s" in rendered
     assert "Harvest/s" in rendered
+    assert "Harvest trend" in rendered
+    assert "▁▅█" in rendered
     assert rendered.count("123.4") == 2
     assert "227.5" in rendered
     assert "Batch progress" in rendered
     assert "12,345 / 50,000" in rendered
-    assert "3m 6s (21:28 UTC)" in rendered
+    assert "3m 6s (21:28 UTC)" in " ".join(rendered.split())
     assert "errors recorded" in rendered
     assert "cmip7: map heartbeat is stale (100s)" in rendered
     assert "waiting for complete counts" not in rendered
+
+
+def test_harvest_sparkline_covers_whole_history():
+    from piddiplatsch.commands.top import _sparkline
+
+    assert _sparkline([]) == "—"
+    assert _sparkline([0] * 100) == "▁" * 12
+    assert _sparkline([0] * 120 + [100] * 120) == "▁" * 6 + "█" * 6
 
 
 @patch("piddiplatsch.commands.map.map_catalog")
