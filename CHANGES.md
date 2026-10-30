@@ -5,6 +5,8 @@ All notable changes to this project are documented here.
 ## [Unreleased]
 
 ### Added
+- Added `make start`, `make stop`, and `make restart` for deployed harvest, sync,
+  and log rotation services/timers, with an immediate asynchronous sync tick on start.
 - Added repeatable `sync --project` to restrict mapping and publication to selected
   configured projects, plus `--workers` and `--retries` publication overrides.
 
