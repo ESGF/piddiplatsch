@@ -329,8 +329,8 @@ metadata remains `null`. `batch_index` and `position` refer to the entire
 selected input, independently of internal batch boundaries. Receipts are
 written regardless of log verbosity. INFO logs cumulative publication progress
 every 30 seconds as results arrive and a final summary, including project,
-successes, processed records, failures, retries, elapsed time, processing rate,
-and receipt path. These summaries cover each publication attempt, not unique
+successes, failures, retries, elapsed time, and average processing rate.
+The receipt path is logged when the file opens. These summaries cover each publication attempt, not unique
 Handles across runs. Individual successful writes are logged at DEBUG; failures
 remain at ERROR.
 
@@ -428,6 +428,10 @@ the configured file. `--silent` remains an alias for hiding progress;
 records the selected plugins, the first occurrence of every filtered project
 identity, publication summaries, and periodic aggregate counts. Successful
 per-Handle writes and per-message filter decisions are available at DEBUG level.
+INFO summaries have short operation labels: `[harvest]`, `[map]`, `[publish]`,
+`[sync]`, `[sync/map]`, or `[sync/publish]`. They use grouped counts and rates with
+units; harvest omits Handle counts. Full statistics dictionaries are logged at
+DEBUG instead of INFO. SQLite reporting and publication receipts keep full detail.
 
 The `[logging]` configuration provides the service defaults:
 

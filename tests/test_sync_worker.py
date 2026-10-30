@@ -288,6 +288,7 @@ def test_defaults_and_cli_worker_tick(setup, monkeypatch):
     assert result.exit_code == 0, result.output
     assert len(publisher.calls) == 1
     assert publisher.options[0]["workers"] == 1
+    assert publisher.options[0]["log_operation"] == "sync/publish"
     assert publisher.options[0]["retries"] == 3
 
 

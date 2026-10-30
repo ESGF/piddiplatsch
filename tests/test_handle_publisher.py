@@ -178,7 +178,7 @@ def test_logs_each_publication_at_debug(tmp_path, caplog):
     assert "dataset_id=-" in caplog.text
     assert "file_name=-" in caplog.text
     assert "position=11 batch=1/?" in caplog.text
-    assert "Handle publication complete: published=1 total=1" in caplog.text
+    assert "[publish] cmip6 | complete | 1 written | 0 failed" in caplog.text
 
 
 def test_info_logs_summary_without_successful_handle_details(tmp_path, caplog):
@@ -189,9 +189,9 @@ def test_info_logs_summary_without_successful_handle_details(tmp_path, caplog):
         result = HandlePublisher(ReportingBackend()).run([source])
 
     assert "Updated handle" not in caplog.text
-    assert "Handle publication progress" not in caplog.text
-    assert "Handle publication complete: published=1 total=1 failed=0" in caplog.text
-    assert f"receipt={result.result_file}" in caplog.text
+    assert "| running |" not in caplog.text
+    assert "[publish] cmip6 | complete | 1 written | 0 failed" in caplog.text
+    assert f"Receipts: {result.result_file}" in caplog.text
     assert json.loads(result.result_file.read_text())["status"] == "succeeded"
 
 
@@ -208,18 +208,16 @@ def test_logs_periodic_publication_progress_including_failures(
 
     with caplog.at_level(logging.INFO, logger="piddiplatsch.runners.publish"):
         result = HandlePublisher(FakeBackend(failing_pid="bad")).run(
-            [source], project="cmip6"
+            [source], project="cmip6", log_operation="sync/publish"
         )
 
-    progress = [
-        line for line in caplog.messages if "Handle publication progress" in line
-    ]
+    progress = [line for line in caplog.messages if "| running |" in line]
     assert len(progress) == 2
-    assert "published=1 total=2 failed=1 retries=0" in progress[0]
-    assert "project=cmip6 elapsed=30.0s handles_per_sec=0.07" in progress[0]
-    assert "published=3 total=4 failed=1" in progress[1]
-    assert f"receipt={result.result_file}" in progress[1]
-    assert "Handle publication complete: published=3 total=4 failed=1" in caplog.text
+    assert "1 written | 1 failed | 0 retries" in progress[0]
+    assert "0 handles/s avg | elapsed 30s" in progress[0]
+    assert "3 written | 1 failed" in progress[1]
+    assert "[sync/publish] cmip6 | running" in progress[1]
+    assert "[sync/publish] cmip6 | complete | 3 written | 1 failed" in caplog.text
     assert "Could not publish" in caplog.text
     assert len(result.result_file.read_text().splitlines()) == 4
 

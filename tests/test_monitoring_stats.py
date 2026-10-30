@@ -1,4 +1,5 @@
 import datetime
+import logging
 import sqlite3
 from types import SimpleNamespace
 
@@ -7,6 +8,7 @@ import pytest
 from piddiplatsch.config import config
 from piddiplatsch.consumer import HarvestProcessor, start_consumer
 from piddiplatsch.monitoring.stats import (
+    ConsoleReporter,
     CounterKey,
     SQLiteReporter,
     Stats,
@@ -14,6 +16,46 @@ from piddiplatsch.monitoring.stats import (
 )
 from piddiplatsch.monitoring.status import read_status
 from piddiplatsch.result import ProcessingResult
+
+
+@pytest.mark.parametrize("command", ["harvest", "map", "sync"])
+def test_console_summary_labels_operation_and_keeps_raw_details_at_debug(
+    command, caplog
+):
+    summary = {
+        "messages": 30000,
+        "catalog_writes": 30000,
+        "handles": 11573,
+        "errors": 0,
+        "warnings": 2,
+        "messages_per_sec": 293.9,
+        "uptime": 106.25,
+        "projects": {"cmip6": {"consumed": 30000}, "cmip7": {"consumed": 0}},
+        "run": {"command": command, "status": "running", "run_id": "details-only"},
+    }
+    operation = "sync/map" if command == "sync" else command
+    with caplog.at_level(logging.INFO, logger="piddiplatsch.monitoring.stats"):
+        ConsoleReporter().log(summary)
+
+    assert len(caplog.messages) == 1
+    line = caplog.messages[0]
+    assert line.startswith(f"[{operation}] running | 30,000 ")
+    assert "0 errors | 2 warnings" in line
+    assert "elapsed 106s | projects: cmip6" in line
+    if command == "harvest":
+        assert "30,000 catalog writes" in line
+        assert "294 messages/s" in line
+        assert "Handles" not in line
+    else:
+        assert "11,573 Handles prepared" in line
+        assert "294 items/s" in line
+        assert "catalog writes" not in line
+    assert "details-only" not in caplog.text
+
+    with caplog.at_level(logging.DEBUG, logger="piddiplatsch.monitoring.stats"):
+        ConsoleReporter().log(summary)
+    assert f"[{operation}] Stats snapshot:" in caplog.text
+    assert "details-only" in caplog.text
 
 
 def test_schema_two_history_is_readable_and_migrated_without_loss(tmp_path):

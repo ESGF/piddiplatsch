@@ -9,6 +9,9 @@ All notable changes to this project are documented here.
   configured projects, plus `--workers` and `--retries` publication overrides.
 
 ### Changed
+- Use compact operation-labelled INFO summaries for harvest, map, and publication;
+  sync distinguishes mapping from publication and logs tick start/completion.
+  Full statistics snapshots are available at DEBUG.
 - Successful per-Handle writes now log at DEBUG. Both sync and publish log
   cumulative publication progress at INFO every 30 seconds as results arrive,
   plus a final summary with counts, project, elapsed time, rate, and receipt path.

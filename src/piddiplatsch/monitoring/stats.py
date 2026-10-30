@@ -78,7 +78,37 @@ class StatsReporter:
 
 class ConsoleReporter(StatsReporter):
     def log(self, summary: dict):
-        logger.info(f"Stats snapshot: {summary}")
+        run = summary.get("run") or {}
+        command = run.get("command", "stats")
+        operation = "sync/map" if command == "sync" else command
+        parts = [run.get("status", "running")]
+        unit = "messages" if command in {"harvest", "consume"} else "items"
+        parts.append(f"{summary.get('messages', 0):,} {unit}")
+        if command in {"harvest", "consume"}:
+            parts.append(f"{summary.get('catalog_writes', 0):,} catalog writes")
+        else:
+            parts.append(f"{summary.get('handles', 0):,} Handles prepared")
+        parts.append(f"{summary.get('errors', 0):,} errors")
+        for key, label in (
+            ("catalog_refreshes", "refreshed"),
+            ("retries", "retries"),
+            ("warnings", "warnings"),
+            ("skipped_messages", "skipped"),
+            ("filtered_messages", "filtered"),
+        ):
+            if summary.get(key):
+                parts.append(f"{summary[key]:,} {label}")
+        parts.append(f"{summary.get('messages_per_sec', 0):,.0f} {unit}/s")
+        parts.append(f"elapsed {summary.get('uptime', 0):,.0f}s")
+        projects = [
+            name
+            for name, counters in summary.get("projects", {}).items()
+            if counters.get("consumed", 0)
+        ]
+        if projects:
+            parts.append(f"projects: {', '.join(sorted(projects))}")
+        logger.info("[%s] %s", operation, " | ".join(parts))
+        logger.debug("[%s] Stats snapshot: %s", operation, summary)
 
 
 class SQLiteReporter(StatsReporter):
