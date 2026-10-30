@@ -24,6 +24,7 @@ from piddiplatsch.core.pipeline import (
 )
 from piddiplatsch.core.registry import get_plugins
 from piddiplatsch.exceptions import BatchError, CatalogError
+from piddiplatsch.monitoring.disk import check_disk_space
 from piddiplatsch.monitoring.progress import get_progress
 from piddiplatsch.monitoring.stats import stats
 from piddiplatsch.runners.publish import HandlePublisher
@@ -140,9 +141,9 @@ class SyncWorker:
             or Path(config.get("consumer", "output_dir", "outputs")) / "batches"
         ).resolve()
         self.catalog_directory = get_catalog_directory()
-        self.trigger_items = settings.get("trigger_items", 1000)
+        self.trigger_items = settings["trigger_items"]
         self.max_wait_seconds = settings.get("max_wait_seconds", 3600)
-        self.max_items = settings.get("max_items", 1000)
+        self.max_items = settings["max_items"]
         self.publish_workers = settings.get("publish_workers", 4)
         self.publish_retries = settings.get("publish_retries", 3)
         self.now = now or (lambda: datetime.now(UTC))
@@ -152,6 +153,7 @@ class SyncWorker:
         self.horizons = {}
 
     def run(self, *, force_map=False) -> list[Path]:
+        check_disk_space(force=True)
         completed = []
         self.errors = []
         self.horizons = {}
@@ -187,7 +189,7 @@ class SyncWorker:
                             completed.append(batch)
                             self._publish_ready(plugin.name, project_root)
                             if not batch.exists():
-                                completed[-1] = project_root / "published" / batch.name
+                                completed[-1] = self._published_path(batch)
                     except Exception as exc:
                         blocked.add(plugin.name)
                         self.errors.append(f"{plugin.name}: {exc}")
@@ -204,6 +206,7 @@ class SyncWorker:
         return completed
 
     def _map_due(self, project, project_root, force):
+        check_disk_space(force=True)
         with open_catalog(
             project, directory=self.catalog_directory, read_only=True
         ) as reader:
@@ -406,6 +409,8 @@ class SyncWorker:
                     project=project,
                     handle_profile=manifest["handle_profile"],
                     log_operation="sync/publish",
+                    expected_handles=manifest["handle_count"],
+                    batch_id=manifest["batch_id"],
                     workers=self.publish_workers,
                     retries=self.publish_retries,
                     progress_callback=show_progress,
@@ -416,7 +421,18 @@ class SyncWorker:
             if result.result_file:
                 with result.result_file.open("rb") as stream:
                     os.fsync(stream.fileno())
-                _sync_directory(result.result_file.parent)
+                # Persist the date directory chain before marking the batch
+                # published. Explicit receipt paths outside output_dir retain
+                # the previous parent-directory durability check.
+                directory = result.result_file.parent.resolve()
+                output_dir = Path(
+                    config.get("consumer", "output_dir", "outputs")
+                ).resolve()
+                while True:
+                    _sync_directory(directory)
+                    if directory == output_dir or output_dir not in directory.parents:
+                        break
+                    directory = directory.parent
             if result.failed or result.succeeded != manifest["handle_count"]:
                 manifest["publication_error"] = (
                     f"Published {result.succeeded}/{manifest['handle_count']}; failed {result.failed}"
@@ -430,10 +446,43 @@ class SyncWorker:
             self._archive(batch)
 
     @staticmethod
-    def _archive(batch):
+    def _published_path(batch: Path) -> Path:
+        # Batch IDs carry their creation time in UTC. This partition is stable
+        # even when publication or crash recovery finishes on a later day.
+        day = datetime.strptime(batch.name[:8], "%Y%m%d")
+        return (
+            batch.parent.parent
+            / "published"
+            / day.strftime("%Y")
+            / day.strftime("%m")
+            / day.strftime("%d")
+            / batch.name
+        )
+
+    @classmethod
+    def _archive(cls, batch):
+        manifest = json.loads((batch / "manifest.json").read_text())
+        # A small durable marker lets top show the latest success without
+        # walking the complete publication archive on every refresh.
+        _save_manifest(
+            batch.parent.parent / "last-publication.json",
+            {
+                key: manifest.get(key)
+                for key in ("batch_id", "published_at", "handle_count", "receipt")
+            },
+        )
+        destination = cls._published_path(batch)
         published = batch.parent.parent / "published"
-        published.mkdir(exist_ok=True)
-        _sync_directory(published.parent)
-        batch.rename(published / batch.name)
+        # Persist every newly created level before the atomic move, including
+        # when a previous crash left part of the directory tree behind.
+        for directory in (
+            published,
+            destination.parent.parent.parent,
+            destination.parent.parent,
+            destination.parent,
+        ):
+            directory.mkdir(exist_ok=True)
+            _sync_directory(directory.parent)
+        batch.rename(destination)
         _sync_directory(batch.parent)
-        _sync_directory(published)
+        _sync_directory(destination.parent)

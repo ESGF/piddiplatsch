@@ -1,0 +1,11 @@
+[Unit]
+Description=Daily Piddiplatsch storage maintenance
+
+[Timer]
+OnCalendar=*-*-* 02:00:00 UTC
+Persistent=true
+RandomizedDelaySec=15min
+Unit=piddi-maintenance.service
+
+[Install]
+WantedBy=timers.target

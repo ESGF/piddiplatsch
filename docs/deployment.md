@@ -34,6 +34,13 @@ make deploy
 This also creates the data directories and sets up log rotation. Harvest and
 sync stay off until you enable them.
 
+Deployment also installs `piddi-maintenance.service` and its daily timer. The
+timer is enabled with harvest by default and runs at 02:00 UTC with up to fifteen
+minutes of randomized delay. It compresses only prior-day raw dumps. Override
+`piddi_enable_maintenance_timer: false` in `deploy/ansible/custom.yml` to keep it
+disabled. The job runs as `piddi` at low CPU and I/O priority and never publishes
+Handles. See [Closed raw dumps](operations.md#closed-raw-dumps).
+
 ### 2. Start harvest
 
 Create the deployment settings file:
@@ -76,7 +83,8 @@ make play
 ```
 
 **Sync now publishes real Handles.** The timer checks for work every minute.
-By default, it maps a project after 1,000 changed items or one hour of waiting.
+By default, it maps a project after 1,000 changed items or one hour of waiting,
+with up to 2,000 items per batch.
 See [Scheduled batches](configuration.md#scheduled-batches) to change these limits.
 
 ## Run updates
@@ -133,6 +141,18 @@ checkout's local settings.
 `top` shows harvest and mapping counts, errors, and heartbeats. An idle topic is
 healthy while the heartbeat keeps updating. Publication results are in
 `piddi.log`.
+
+It also shows free disk space, pending items, ready/failed mapping batches, and
+the last successful sync publication. The default disk guard warns below 40 GiB
+and stops new processing below 20 GiB; both thresholds are configurable.
+
+Check or trigger maintenance manually:
+
+```console
+systemctl status piddi-maintenance.timer piddi-maintenance.service
+journalctl -u piddi-maintenance.service --since today
+systemctl start piddi-maintenance.service
+```
 
 If progress stops, see [Service troubleshooting](deployment-reference.md#service-troubleshooting).
 

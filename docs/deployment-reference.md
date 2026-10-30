@@ -84,7 +84,8 @@ Harvest should stay active, and the sync timer should show its next run. The
 sync service exits between runs, so an inactive `piddi-sync.service` can be normal.
 
 Use `piddi top --once` for one snapshot or `piddi top --json` for JSON output.
-Publication receipts are saved under `/var/lib/piddi/published/`.
+Publication receipts are saved under `/var/lib/piddi/published/YYYY/MM/DD/`,
+grouped by UTC date. Existing flat receipt files remain in place.
 
 Failed batches stay in `batches/<project>/ready/` and block newer work for that
 project. Other projects can continue. See [Scheduled batch recovery](recovery.md#scheduled-batch-recovery).
@@ -95,6 +96,11 @@ Stop Piddi before taking a file-based backup. Save the configuration, catalog
 directory (including `.harvest-state.json`), and batch directory together.
 Keep daily Handle files and receipts according to your site's audit policy.
 Output files and batches have no automatic retention policy.
+
+The maintenance timer compresses closed raw dumps daily; it does not delete old
+archives, receipts, or batches. Control it with `piddi_enable_maintenance_timer`
+in Ansible's `custom.yml` (defaults to `piddi_enable_service`). Its command,
+`piddi maintain`, can also be run manually with `--dry-run` for inspection.
 
 Do not delete catalogs to fix a stopped harvest. Clean options replay retained
 Kafka history and can invalidate ready batches. Read [Recovery](recovery.md)

@@ -71,7 +71,9 @@ mapping succeeds.
 
 Failed publication keeps the fixed batch under `batches/<project>/ready/`.
 Fix the cause, then repeat `piddi sync`. It retries that batch before newer work
-for the project. Successful batches move to `batches/<project>/published/`.
+for the project. Successful batches move to
+`batches/<project>/published/YYYY/MM/DD/<batch-id>/`, using the UTC date in the
+batch ID. Older flat archives remain valid and do not need to be moved.
 A crash can repeat Handle writes already sent to the server.
 
 A checksum or catalog generation mismatch blocks publication. Inspect the batch

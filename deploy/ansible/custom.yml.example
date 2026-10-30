@@ -14,5 +14,8 @@
 # piddi_enable_sync_timer: true
 # piddi_sync_check_interval: 1min
 
+# Defaults to the harvest service setting; compresses only closed raw dumps.
+# piddi_enable_maintenance_timer: true
+
 # Override only when the Conda environment uses another location.
 # piddi_conda_env: /opt/piddiplatsch/.conda

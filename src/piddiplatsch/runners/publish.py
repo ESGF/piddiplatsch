@@ -21,6 +21,8 @@ from piddiplatsch.core.plugin import normalize_project_id
 from piddiplatsch.handles.rest_backend import RestHandleClient
 from piddiplatsch.helpers import find_jsonl, utc_now
 from piddiplatsch.jsonl_stream import JsonlRecord, iter_jsonl_records
+from piddiplatsch.monitoring.disk import get_disk_guard
+from piddiplatsch.monitoring.stats import publication_monitor
 from piddiplatsch.result import ProjectPublishResult, PublishResult
 
 
@@ -110,6 +112,8 @@ class HandlePublisher:
         project: str | None = None,
         handle_profile: str | None = None,
         log_operation: str = "publish",
+        expected_handles: int | None = None,
+        batch_id: str | None = None,
     ) -> PublishResult:
         if limit is not None and limit < 1:
             raise ValueError("limit must be at least 1")
@@ -122,6 +126,10 @@ class HandlePublisher:
         if workers < 1:
             raise ValueError("workers must be at least 1")
 
+        disk_guard = get_disk_guard(
+            extra_paths=(result_file.parent,) if result_file else ()
+        )
+        disk_guard.check(force=True)
         files = find_jsonl(paths)
         result = PublishResult()
         self.logger.info(
@@ -142,7 +150,12 @@ class HandlePublisher:
         result.project = selected_project
         completed = 0
         started_at = last_report_at = time.monotonic()
-        with ExitStack() as stack:
+        with (
+            publication_monitor(
+                selected_project, expected_handles=expected_handles, batch_id=batch_id
+            ) as monitoring,
+            ExitStack() as stack,
+        ):
             records = stack.enter_context(
                 closing(
                     iter_jsonl_records(
@@ -155,6 +168,7 @@ class HandlePublisher:
             )
             writer = None
             while batch := list(islice(records, BATCH_SIZE)):
+                disk_guard.check()
                 contexts = self._publication_contexts(batch)
                 if not backend_ready and any(
                     isinstance(record, dict) for _, _, record in batch
@@ -193,6 +207,7 @@ class HandlePublisher:
                         outcome,
                         offset=offset,
                         log_operation=log_operation,
+                        monitoring=monitoring,
                     )
                     now = time.monotonic()
                     if now - last_report_at >= PUBLICATION_LOG_INTERVAL_SECONDS:
@@ -260,6 +275,7 @@ class HandlePublisher:
         *,
         offset: int,
         log_operation: str,
+        monitoring=None,
     ) -> None:
         writer.write(
             self._result_record(
@@ -267,6 +283,12 @@ class HandlePublisher:
             )
         )
         result.total += 1
+        if monitoring is not None:
+            monitoring.record_publication(
+                outcome.project or "unknown",
+                success=outcome.error is None,
+                error=str(outcome.error) if outcome.error is not None else None,
+            )
         result.retry_attempts += outcome.retry_attempts
         project_result = result.projects.setdefault(
             outcome.project or "unknown", ProjectPublishResult()
@@ -421,9 +443,10 @@ class HandlePublisher:
     @staticmethod
     def _new_result_file(project: str | None = None) -> Path:
         output_dir = Path(config.get("consumer", {}).get("output_dir", "outputs"))
-        result_dir = output_dir / "published"
+        now = utc_now()
+        result_dir = output_dir / "published" / now.strftime("%Y/%m/%d")
         result_dir.mkdir(parents=True, exist_ok=True)
-        timestamp = utc_now().strftime("%Y-%m-%d_%H-%M-%S")
+        timestamp = now.strftime("%Y-%m-%d_%H-%M-%S")
         project_slug = re.sub(r"[^a-z0-9-]+", "-", project or "").strip("-")
         stem = (
             f"published_{project_slug}_handles_{timestamp}"

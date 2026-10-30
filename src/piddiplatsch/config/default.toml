@@ -28,6 +28,12 @@ output_dir = "outputs"
 # Map/sync stop on first error. Catalog harvest always stops on any error.
 max_errors = 1
 
+[disk]
+enabled = true
+warn_free_gib = 40
+stop_free_gib = 20
+check_interval_seconds = 10
+
 [catalog]
 # Harvest maintains one SQLite database per registered project encountered.
 # Missing PATCH bases fetch current remote STAC state without reapplying the patch.
@@ -52,7 +58,7 @@ version_history = false
 trigger_items = 1000
 max_wait_seconds = 3600
 # Maximum catalog items per immutable output batch; never split an item's Handles.
-max_items = 1000
+max_items = 2000
 # Ready batches publish immediately during the sync tick, in project order.
 publish_workers = 4
 publish_retries = 3
@@ -221,4 +227,3 @@ heartbeat_interval_seconds = 5
 sample_interval_seconds = 15
 sample_retention_days = 30
 stale_after_seconds = 15
-history_minutes = 60

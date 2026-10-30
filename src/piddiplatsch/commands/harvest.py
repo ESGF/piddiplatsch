@@ -70,5 +70,5 @@ class HarvestCommand(KafkaCommand):
                     limit=self.limit,
                     monitor_db=True,
                 )
-        except (CatalogError, ValueError) as exc:
+        except (CatalogError, ValueError, OSError) as exc:
             raise click.ClickException(str(exc)) from exc

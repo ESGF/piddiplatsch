@@ -16,6 +16,7 @@ from piddiplatsch.core.plugin import normalize_project_id
 from piddiplatsch.core.registry import get_plugins
 from piddiplatsch.core.routing import extract_project_id
 from piddiplatsch.exceptions import CatalogError
+from piddiplatsch.monitoring.disk import get_disk_guard
 from piddiplatsch.result import ProcessingResult
 
 LOGGER = logging.getLogger(__name__)
@@ -40,6 +41,8 @@ class CatalogHarvester:
         backend: str = "sqlite",
         clean_projects: tuple[str, ...] = (),
     ):
+        self.disk_guard = get_disk_guard(extra_paths=(directory,))
+        self.disk_guard.check(force=True)
         if backend != "sqlite":
             raise ValueError(f"Unsupported catalog backend: {backend!r}")
         self.directory = Path(directory)
@@ -164,6 +167,7 @@ class CatalogHarvester:
         metadata = value.get("metadata") or {}
         if not isinstance(metadata, dict):
             raise ValueError("Publication metadata must be an object")
+        self.disk_guard.check()
         project = self.plugin_name_for(value)
         if project is None:
             raise CatalogError("Publication project is missing or not registered")
@@ -263,6 +267,7 @@ class CatalogHarvester:
         for project, catalog in self._catalogs.items():
             with closing(catalog.iter_items(remote_refresh_only=True)) as entries:
                 for base in entries:
+                    self.disk_guard.check()
                     trigger = base.remote_refresh["trigger"]
                     source = KafkaSource(
                         trigger["topic"], trigger["partition"], trigger["offset"]

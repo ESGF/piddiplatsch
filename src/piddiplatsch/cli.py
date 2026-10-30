@@ -403,6 +403,15 @@ def publish(
     ).execute()
 
 
+@cli.command("maintain")
+@click.option(
+    "--dry-run", is_flag=True, help="List closed dumps without compressing them."
+)
+def maintain(dry_run: bool):
+    """Compress raw dumps dated before today in UTC; no retention deletion."""
+    commands.MaintainCommand(dry_run=dry_run).execute()
+
+
 # command config
 
 
@@ -491,12 +500,6 @@ def config_explain(
     type=click.FloatRange(min=0.1),
     help="Mark a running process stale after this many seconds without a heartbeat.",
 )
-@click.option(
-    "--history",
-    "history_minutes",
-    type=click.FloatRange(min=1),
-    help="History window in minutes.",
-)
 @click.pass_context
 def top(
     ctx: click.Context,
@@ -506,7 +509,6 @@ def top(
     json_output: bool,
     refresh_seconds: float,
     stale_after_seconds: float | None,
-    history_minutes: float | None,
 ) -> None:
     """Watch current processing progress, separated by project."""
     stats_config = config.get("stats", {})
@@ -520,7 +522,6 @@ def top(
         stale_after_seconds=(
             stale_after_seconds or stats_config.get("stale_after_seconds", 15)
         ),
-        history_minutes=(history_minutes or stats_config.get("history_minutes", 60)),
     ).execute()
 
 

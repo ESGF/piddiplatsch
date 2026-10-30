@@ -183,7 +183,7 @@ selected configured projects. Unknown or unconfigured names fail before publicat
 `--force-map` skips mapping thresholds for pending items. Ready batches publish
 regardless of those thresholds. A shared lock prevents overlapping sync runs.
 
-Each batch holds up to `batch.max_items` catalog items (default: 1,000). An item's
+Each batch holds up to `batch.max_items` catalog items (default: 2,000). An item's
 Handles stay together. Changes to one item count once and keep the oldest pending
 time. Changes arriving during a sync run remain for the next run. Eligible
 projects take turns; missing catalogs are skipped until harvest creates them.
@@ -200,7 +200,11 @@ checks the saved batch and does not append to it.
 
 Failed publication leaves the batch ready and blocks newer work for that project.
 Other projects can continue. A later run repeats the failed batch. Successful
-batches move to `batches/<project>/published/`. A crash can repeat successful
+batches move to `batches/<project>/published/YYYY/MM/DD/<batch-id>/`, partitioned
+by the UTC creation date in the batch ID. The path stays stable across retries
+and midnight recovery. Existing flat published archives remain in place and
+are not republished. Only ready work is scanned by sync, so growing archive
+history does not add to that scan. A crash can repeat successful
 Handle writes because the server write and local completion marker are separate.
 
 Publication uses four workers by default. Projects and batches run in sequence;
@@ -250,7 +254,9 @@ project's records separately. See [Handle profiles](configuration.md#multiple-ha
 
 ### Publication receipts
 
-Each attempt writes a JSONL receipt under `published/` and prints its path.
+Each attempt writes a JSONL receipt under `published/YYYY/MM/DD/` and prints its
+path. The date is the UTC start date of the receipt. Existing flat receipt files
+remain in place; explicit output paths are used exactly as supplied.
 Receipt names use UTC timestamps and get a suffix if the name already exists.
 Each line records the outcome, PID, action, URL, project, source position, retry
 count, and error. Dataset and asset metadata come from the current input record;
@@ -271,7 +277,7 @@ JSONL files store one JSON object per line. Paths below are relative to `consume
 | `catalog/` | One SQLite catalog per registered project encountered. |
 | `<project>/handles/` | Daily prepared Handle JSONL, including the project name. |
 | `batches/<project>/` | Sync batches, manifests, and failed mapping files. |
-| `published/` | Per-record publication receipts. |
+| `published/YYYY/MM/DD/` | Per-record publication receipts, grouped by UTC date. |
 | `<project>/failures/r0/` | Failed STAC records and error details. |
 | `<project>/skipped/` | Skipped diagnostic records from legacy processing. |
 | `failures/`, `skipped/` | Diagnostics without a resolved project. |
@@ -312,24 +318,44 @@ Publication summaries count successes, failures, and retries for that attempt.
 They do not count unique Handles across runs. Receipts keep per-record details.
 Successful individual writes appear at DEBUG; failures appear at ERROR.
 
-The optional monitoring database tracks harvest, map, and sync's mapping phase.
-Publication does not yet write monitoring data. Read the database with:
+The optional monitoring database tracks harvest, mapping and publication.
+Read the database with:
 
 ```bash
 piddi top
 piddi top --once
 piddi top --project cmip7 --once
 piddi top --json
-piddi top --history 360
 ```
 
 `top` is read-only and needs no Kafka or Handle connection. It reports an error
 if the database is missing or invalid. A heartbeat updates every five seconds,
 even when Kafka is idle. An unfinished run is marked stale after 15 seconds
-without a heartbeat.
+without a heartbeat. The default view shows disk space, harvest status and one
+row per project: pending datasets awaiting mapping, generated/published Handle totals,
+activity, publication speed and estimated batch completion. Unknown estimates
+appear as a dash. Errors and stale heartbeats appear below the table. Stale run
+records superseded by newer runs are hidden from the display; JSON retains them.
+Use `--json` for batch health, last publication times, individual runs and history.
+The header shows when cumulative Handle totals began.
+`Harvest/s` shows recent events per second per project, averaged over available
+samples from the last five minutes; publication speed uses up to 60 seconds.
+The harvest header includes total events in active harvest runs. These harvest
+counts restart with a new run; Handle totals cover all recorded runs.
+`Harvest trend →` shows up to twelve bars across the last five minutes, oldest to
+newest. Bar heights are relative to that project's peak. There is no selectable
+harvest window.
+`Batch progress` shows successful Handle writes in the active publication run
+against its total, for example `12,345 / 50,000`. An unknown total appears as `?`;
+projects without a single active publisher show a dash.
+`DB datasets` counts all dataset records currently stored in each catalog,
+including mapped records; `Pending datasets` is the subset awaiting mapping.
+The catalog and generated Handle totals are also summed in the header (restricted
+to the selected project with `--project`). Generated Handles are recorded mapping
+outputs, including repeat runs, rather than unique PIDs.
 
 History samples are saved every 15 seconds and at startup and shutdown. The
-default view covers one hour; `--history 360` shows six hours. Samples are kept
+display uses the last five minutes. Samples are kept
 for 30 days. They contain counters, not raw messages or log text. Catalog writes
 exclude duplicate events. Schema 3 adds catalog counters automatically on writer
 startup; `top` can also read schema 2.
@@ -361,6 +387,65 @@ PIDDI_MOCK_HANDLE_PUT_DELAY_SECONDS=0.1 docker compose up -d
 ```
 
 ## Local cleanup
+
+### Closed raw dumps
+
+Run maintenance manually before enabling its daily schedule:
+
+```bash
+piddi maintain --dry-run
+piddi maintain
+```
+
+Maintenance compresses `dump/dump_messages_YYYY-MM-DD.jsonl` files dated before
+today in UTC, using gzip level 1. It skips today's file, future dates, symbolic
+links, and files with an existing `.jsonl.gz` archive. A lock prevents overlapping
+maintenance runs. The original remains until the gzip output is complete and
+durably stored; a dump that changes during compression is preserved with an
+error. Compression needs temporary free space and observes the disk guard.
+
+Only closed raw dumps are compressed. Batch payloads and receipts remain intact
+because manifests reference them. There is no age-based deletion or off-host
+archiving. Inspect compressed dumps with `gzip -cd <file.jsonl.gz>`; mapping uses
+the catalog and does not need the raw dump files.
+
+### Disk and project health
+
+`piddi top` shows disk headroom, pending catalog items and Handle totals.
+`piddi top --json` also includes ready and failed batch
+counts, and the latest successful sync publication.
+Failed publication batches remain ready and also count as failed.
+The project table keeps generated and published Handle totals visible while
+harvest is active and after mapping or publication finishes. These totals sum
+recorded outcomes in the monitoring database, including alias Handles. Repeated
+mapping or publication runs count again; these are not counts of unique PIDs.
+Publication now records its own live run, counters, heartbeat, and history, with
+the same monitoring intervals as harvest. Existing publication receipts are not
+backfilled: a dash means no publication counters have been recorded yet, and
+publication totals start with runs using this monitoring support. Monitoring
+must be enabled with `stats.enable_db = true`.
+
+The compact project table includes publication speed and approximate batch
+completion in UTC. JSON output also includes remaining Handles and the duration
+separately.
+Sync supplies the exact batch Handle count from its manifest; recent speed uses
+up to sixty seconds of monitoring samples with a five-second warmup. Old runs
+and manual publications with no known total show an unavailable batch ETA.
+Errors, stale heartbeats, or no recent progress suppress the end-time estimate.
+
+The **Overall publish ETA** shows an approximate duration and finish time in UTC.
+It combines remaining ready Handles with
+pending catalog items multiplied by the Handles-per-item ratio from up to five
+recent mapping runs for each project. It deducts confirmed progress in the active
+batch, so that batch is not counted twice. This is a snapshot of known local
+work, excluding unread Kafka messages, future arrivals, mapping time, scheduling
+waits, and additional retries. The estimate updates as harvest discovers more
+items. Missing counts or ratios hide this estimate in the compact view; the reason
+is available in JSON. All estimate fields are also available in `top --json`.
+The checks are read-only and report unavailable or older catalogs without
+migrating them. Publication status uses a small `last-publication.json` marker
+per project, written by successful sync runs; old archives are not scanned. A
+project has no last-publication value until a new sync run records a success.
 
 Monitor disk use and choose a retention policy for dumps, Handle files, batches,
 and receipts. Piddi does not remove old runtime output automatically.

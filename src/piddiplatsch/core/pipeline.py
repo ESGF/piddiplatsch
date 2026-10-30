@@ -8,6 +8,7 @@ from piddiplatsch.config import config
 from piddiplatsch.core.messages import SourceMessage
 from piddiplatsch.core.routing import ProjectRouter
 from piddiplatsch.exceptions import MaxErrorsExceededError, StopOnTransientSkipError
+from piddiplatsch.monitoring.disk import get_disk_guard
 from piddiplatsch.monitoring.progress import BaseProgress, get_progress
 from piddiplatsch.monitoring.stats import stats
 from piddiplatsch.persist.dump import DumpRecorder
@@ -84,6 +85,7 @@ class ProcessingPipeline:
             publish=publish,
         )
         self.dump_messages = dump_messages
+        self.disk_guard = get_disk_guard()
         self.max_errors = int(
             config.get("consumer", "max_errors", 1)
             if max_errors is None
@@ -119,6 +121,7 @@ class ProcessingPipeline:
         filtered_before = self.stats.filtered_messages
         processed = 0
         for message in self.messages:
+            self.disk_guard.check()
             source_message = message if isinstance(message, SourceMessage) else None
             key, value = (message.key, message.value) if source_message else message
             result = self._safe_process_message(

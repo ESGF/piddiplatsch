@@ -9,6 +9,7 @@ import threading
 import time
 import uuid
 from collections import defaultdict
+from contextlib import contextmanager
 from enum import StrEnum
 
 from piddiplatsch.config import config
@@ -194,6 +195,12 @@ class SQLiteReporter(StatsReporter):
         # Additive migration preserves historical counters and samples.
         # Serialize concurrent harvest/map startup before inspecting columns.
         self._conn.execute("BEGIN IMMEDIATE")
+        run_columns = {
+            row[1] for row in self._conn.execute("PRAGMA table_info(monitor_runs)")
+        }
+        for name, kind in (("expected_handles", "INTEGER"), ("batch_id", "TEXT")):
+            if name not in run_columns:
+                self._conn.execute(f"ALTER TABLE monitor_runs ADD COLUMN {name} {kind}")
         for table in ("monitor_project_stats", "monitor_samples"):
             columns = {
                 row[1] for row in self._conn.execute(f"PRAGMA table_info({table})")
@@ -247,8 +254,9 @@ class SQLiteReporter(StatsReporter):
             INSERT INTO monitor_runs (
                 run_id, command, pid, hostname, started_at, heartbeat_at,
                 finished_at, status, topic, consumer_group, selected_projects,
-                last_message_at, last_success_at, last_error_at, error_summary
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                last_message_at, last_success_at, last_error_at, error_summary,
+                expected_handles, batch_id
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(run_id) DO UPDATE SET
                 heartbeat_at=excluded.heartbeat_at,
                 finished_at=excluded.finished_at,
@@ -274,6 +282,8 @@ class SQLiteReporter(StatsReporter):
                 summary.get("last_success_time"),
                 summary.get("last_error_time"),
                 run.get("error_summary"),
+                run.get("expected_handles"),
+                run.get("batch_id"),
             ),
         )
         for project, counters in summary.get("projects", {}).items():
@@ -491,6 +501,8 @@ class Stats:
         heartbeat_interval_seconds: float = 5.0,
         sample_interval_seconds: float = 15.0,
         sample_retention_days: float = 30.0,
+        expected_handles: int | None = None,
+        batch_id: str | None = None,
     ):
         """Reset counters and reporters for a fresh run, optionally enabling DB.
 
@@ -529,6 +541,8 @@ class Stats:
                 "topic": topic,
                 "consumer_group": consumer_group,
                 "selected_projects": list(selected_projects),
+                "expected_handles": expected_handles,
+                "batch_id": batch_id,
                 "finished_at": None,
                 "error_summary": None,
             }
@@ -608,6 +622,27 @@ class Stats:
                 counters["routed"] += 1
                 counters["failed"] += 1
                 self.error(message=result.error)
+
+    def record_publication(
+        self, project: str, *, success: bool, error: str | None = None
+    ):
+        """Count completed writes without adding per-Handle log messages."""
+        with self._lock:
+            counters = self._project_counters[project]
+            counters["consumed"] += 1
+            counters["routed"] += 1
+            if success:
+                counters["succeeded"] += 1
+                counters["handles"] += 1
+                self.handle()
+                self._last_success_time = datetime.datetime.now(datetime.UTC)
+            else:
+                counters["failed"] += 1
+                self.increment(CounterKey.ERRORS)
+                self._last_error_time = datetime.datetime.now(datetime.UTC)
+                if self._run and error:
+                    self._run["error_summary"] = concise_error(error)
+            self.tick()
 
     # --- Core increment ---
     def increment(self, key: CounterKey, n=1):
@@ -846,3 +881,36 @@ stats = Stats(
     # importing the read-only top command must never create a database.
     enable_db=False,
 )
+
+
+@contextmanager
+def publication_monitor(project: str | None, *, expected_handles=None, batch_id=None):
+    """Give publication its own heartbeat and persistent counters."""
+    settings = config.get("stats", {})
+    if not settings.get("enable_db", False):
+        yield None
+        return
+    stats.configure_for_run(
+        enable_db=True,
+        db_path=settings.get("db_path"),
+        command="publish",
+        expected_handles=expected_handles,
+        batch_id=batch_id,
+        selected_projects=(project,) if project else (),
+        heartbeat_interval_seconds=settings.get("heartbeat_interval_seconds", 5),
+        sample_interval_seconds=settings.get("sample_interval_seconds", 15),
+        sample_retention_days=settings.get("sample_retention_days", 30),
+    )
+    # HandlePublisher already owns the INFO summaries and detailed error logs.
+    stats.reporters = [
+        reporter
+        for reporter in stats.reporters
+        if not isinstance(reporter, ConsoleReporter)
+    ]
+    try:
+        yield stats
+    except BaseException as exc:
+        stats.close(status="failed", error_summary=str(exc))
+        raise
+    else:
+        stats.close(status="failed" if stats.errors else "completed")

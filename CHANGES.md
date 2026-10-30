@@ -4,6 +4,10 @@
 
 ### Added
 
+- Publication batch ETA and approximate known-backlog completion estimates in
+  `piddi top`, based on recent Handle throughput and observed mapping ratios.
+- Configurable disk-space warning/stop guards, daily maintenance for closed raw
+  dump compression, and storage/backlog/publication health in `piddi top`.
 - Shared alias Handle schema and dataset redirects for all projects when
   `force_dataset_pid` is enabled, including CMIP7.
 - Service controls: `make start`, `make stop`, and `make restart`.
@@ -12,6 +16,9 @@
 
 ### Changed
 
+- Published sync batches use UTC date directories; default sync batches now
+  trigger at 1,000 and contain up to 2,000 catalog items.
+- Publication receipts also use UTC date directories under `published/`.
 - Simpler INFO progress logs; per-record details moved to DEBUG.
 - Statistics summaries every 30 seconds or 10,000 messages by default.
 - Four publication workers by default.
@@ -20,6 +27,8 @@
 
 ### Fixed
 
+- Keep prepared/published Handle totals visible in `piddi top` alongside harvest,
+  and persist live publication progress and heartbeats.
 - Explain malformed asset checksums, including duplicated SHA-256 multihash
   prefixes; standalone map rejects invalid assets and processing defaults to
   stopping at the first error when no error limit is configured.

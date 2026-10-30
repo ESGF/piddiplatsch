@@ -182,7 +182,7 @@ acknowledgement for each message and can reduce throughput.
 [batch]
 trigger_items = 1000
 max_wait_seconds = 3600
-max_items = 1000
+max_items = 2000
 publish_workers = 4
 publish_retries = 3
 # directory = "/var/lib/piddi/batches"
@@ -195,6 +195,14 @@ pending change has waited one hour. Repeated changes to one item count once.
 `max_items` limits catalog items per batch. An item's dataset and file Handles
 stay together. Ready batches publish during the same sync run, even when no new
 mapping is due. Failed publication stays ready for the next run.
+
+These limits count catalog items, not Handles or bytes. With ten Handles per
+item, a full default batch contains about 20,000 Handles and takes roughly
+80 seconds to publish at 250 Handles per second, plus mapping time. Larger batches reduce
+directory counts but increase the work repeated after a publication failure.
+Existing site configurations retain their explicit limits; update both
+`trigger_items = 1000` and `max_items = 2000` to use these defaults. Existing ready
+batches retain their original size.
 
 `publish_workers` sets concurrent Handle requests. `publish_retries` sets retries
 for each temporary HTTP failure. Sync's `--workers` and `--retries` options
@@ -219,7 +227,6 @@ summary_interval = 10000
 heartbeat_interval_seconds = 5
 stale_after_seconds = 15
 sample_interval_seconds = 15
-history_minutes = 60
 sample_retention_days = 30
 ```
 
@@ -268,6 +275,32 @@ at the first error. Sync leaves the failed batch unpublished and its catalog
 changes pending. Malformed checksum errors identify the dataset and asset;
 verify the checksum against the source file, correct its STAC metadata, and
 reharvest before retrying. Other projects can continue in sync.
+
+## Disk headroom
+
+```toml
+[disk]
+enabled = true
+warn_free_gib = 40
+stop_free_gib = 20
+check_interval_seconds = 10
+```
+
+Piddi checks available space on the output, catalog, batch, and enabled monitoring
+database locations. Separate configured receipt output paths are checked too.
+Missing directories use their nearest existing parent without creating it.
+Thresholds are in GiB, and the warning threshold must exceed the stop threshold.
+Paths on the same filesystem share a check and a health row. The application
+logs a warning once per checked filesystem while it remains below the
+warning threshold, and logs recovery when space becomes healthy again.
+
+Checks run at startup and batch boundaries, and at most every ten seconds during
+processing. Below the stop threshold, harvest stops before processing or
+acknowledging the next message. Mapping and publication stop new work; sync keeps
+incomplete work unpublished or ready for retry. Completed server writes can be
+repeated on retry. This is a headroom guard rather than a disk reservation: other
+processes and large writes can consume space between checks. Free space before
+restarting a stopped job. Set `enabled = false` only for a deliberate override.
 
 ## Dataset version lookup
 
