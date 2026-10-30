@@ -30,6 +30,8 @@ def read_health(project: str | None = None) -> dict:
             "ready_batches": 0,
             "failed_batches": 0,
             "last_publication": None,
+            "ready_handles": 0,
+            "ready_batch_ids": [],
             "errors": [],
         }
         catalog = catalogs / f"{name}.sqlite"
@@ -57,9 +59,15 @@ def _batch_health(root: Path, row: dict):
                 continue
             row["ready_batches"] += 1
             try:
-                if json.loads((path / "manifest.json").read_text()).get(
-                    "publication_error"
-                ):
+                manifest = json.loads((path / "manifest.json").read_text())
+                if manifest.get("status") != "published":
+                    row["ready_batch_ids"].append(path.name)
+                    handles = manifest.get("handle_count")
+                    if not isinstance(handles, int) or handles < 0:
+                        row["ready_handles"] = None
+                    elif row["ready_handles"] is not None:
+                        row["ready_handles"] += handles
+                if manifest.get("publication_error"):
                     row["failed_batches"] += 1
             except (OSError, ValueError, AttributeError) as exc:
                 row["errors"].append(f"Batch status unavailable: {exc}")

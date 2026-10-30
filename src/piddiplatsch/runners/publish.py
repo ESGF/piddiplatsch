@@ -112,6 +112,8 @@ class HandlePublisher:
         project: str | None = None,
         handle_profile: str | None = None,
         log_operation: str = "publish",
+        expected_handles: int | None = None,
+        batch_id: str | None = None,
     ) -> PublishResult:
         if limit is not None and limit < 1:
             raise ValueError("limit must be at least 1")
@@ -148,7 +150,12 @@ class HandlePublisher:
         result.project = selected_project
         completed = 0
         started_at = last_report_at = time.monotonic()
-        with publication_monitor(selected_project) as monitoring, ExitStack() as stack:
+        with (
+            publication_monitor(
+                selected_project, expected_handles=expected_handles, batch_id=batch_id
+            ) as monitoring,
+            ExitStack() as stack,
+        ):
             records = stack.enter_context(
                 closing(
                     iter_jsonl_records(

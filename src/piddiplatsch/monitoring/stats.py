@@ -195,6 +195,12 @@ class SQLiteReporter(StatsReporter):
         # Additive migration preserves historical counters and samples.
         # Serialize concurrent harvest/map startup before inspecting columns.
         self._conn.execute("BEGIN IMMEDIATE")
+        run_columns = {
+            row[1] for row in self._conn.execute("PRAGMA table_info(monitor_runs)")
+        }
+        for name, kind in (("expected_handles", "INTEGER"), ("batch_id", "TEXT")):
+            if name not in run_columns:
+                self._conn.execute(f"ALTER TABLE monitor_runs ADD COLUMN {name} {kind}")
         for table in ("monitor_project_stats", "monitor_samples"):
             columns = {
                 row[1] for row in self._conn.execute(f"PRAGMA table_info({table})")
@@ -248,8 +254,9 @@ class SQLiteReporter(StatsReporter):
             INSERT INTO monitor_runs (
                 run_id, command, pid, hostname, started_at, heartbeat_at,
                 finished_at, status, topic, consumer_group, selected_projects,
-                last_message_at, last_success_at, last_error_at, error_summary
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                last_message_at, last_success_at, last_error_at, error_summary,
+                expected_handles, batch_id
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(run_id) DO UPDATE SET
                 heartbeat_at=excluded.heartbeat_at,
                 finished_at=excluded.finished_at,
@@ -275,6 +282,8 @@ class SQLiteReporter(StatsReporter):
                 summary.get("last_success_time"),
                 summary.get("last_error_time"),
                 run.get("error_summary"),
+                run.get("expected_handles"),
+                run.get("batch_id"),
             ),
         )
         for project, counters in summary.get("projects", {}).items():
@@ -492,6 +501,8 @@ class Stats:
         heartbeat_interval_seconds: float = 5.0,
         sample_interval_seconds: float = 15.0,
         sample_retention_days: float = 30.0,
+        expected_handles: int | None = None,
+        batch_id: str | None = None,
     ):
         """Reset counters and reporters for a fresh run, optionally enabling DB.
 
@@ -530,6 +541,8 @@ class Stats:
                 "topic": topic,
                 "consumer_group": consumer_group,
                 "selected_projects": list(selected_projects),
+                "expected_handles": expected_handles,
+                "batch_id": batch_id,
                 "finished_at": None,
                 "error_summary": None,
             }
@@ -871,7 +884,7 @@ stats = Stats(
 
 
 @contextmanager
-def publication_monitor(project: str | None):
+def publication_monitor(project: str | None, *, expected_handles=None, batch_id=None):
     """Give publication its own heartbeat and persistent counters."""
     settings = config.get("stats", {})
     if not settings.get("enable_db", False):
@@ -881,6 +894,8 @@ def publication_monitor(project: str | None):
         enable_db=True,
         db_path=settings.get("db_path"),
         command="publish",
+        expected_handles=expected_handles,
+        batch_id=batch_id,
         selected_projects=(project,) if project else (),
         heartbeat_interval_seconds=settings.get("heartbeat_interval_seconds", 5),
         sample_interval_seconds=settings.get("sample_interval_seconds", 15),

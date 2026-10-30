@@ -8,6 +8,8 @@ import sqlite3
 from itertools import pairwise
 from pathlib import Path
 
+from piddiplatsch.monitoring.eta import publication_progress
+
 
 def read_status(
     db_path: str | Path,
@@ -100,6 +102,8 @@ def read_status(
                 projects=[dict(row) for row in project_rows],
                 history=_summarize_history(sample_rows),
             )
+            if run["command"] == "publish":
+                run["publication"] = publication_progress(run, sample_rows, now)
             result_runs.append(run)
 
     return {

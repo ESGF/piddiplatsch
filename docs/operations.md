@@ -403,6 +403,22 @@ the same monitoring intervals as harvest. Existing publication receipts are not
 backfilled: a dash means no publication counters have been recorded yet, and
 publication totals start with runs using this monitoring support. Monitoring
 must be enabled with `stats.enable_db = true`.
+
+The publication estimates table shows remaining Handles, recent successful
+writes per second, an approximate duration, and expected completion in UTC.
+Sync supplies the exact batch Handle count from its manifest; recent speed uses
+up to sixty seconds of monitoring samples with a five-second warmup. Old runs
+and manual publications with no known total show an unavailable batch ETA.
+Errors, stale heartbeats, or no recent progress suppress the end-time estimate.
+
+The separate **Known backlog ~** estimate combines remaining ready Handles with
+pending catalog items multiplied by the Handles-per-item ratio from up to five
+recent mapping runs for each project. It deducts confirmed progress in the active
+batch, so that batch is not counted twice. This is a snapshot of known local
+work, excluding unread Kafka messages, future arrivals, mapping time, scheduling
+waits, and additional retries. The estimate updates as harvest discovers more
+items. Missing counts or ratios show a waiting state rather than a guessed end
+time. All estimate fields are also available in `top --json`.
 The checks are read-only and report unavailable or older catalogs without
 migrating them. Publication status uses a small `last-publication.json` marker
 per project, written by successful sync runs; old archives are not scanned. A

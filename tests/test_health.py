@@ -32,6 +32,8 @@ def test_health_reads_backlog_failed_work_and_last_success_without_migration(tmp
             "ready_batches": 1,
             "failed_batches": 1,
             "last_publication": marker,
+            "ready_handles": None,
+            "ready_batch_ids": ["batch-one"],
             "errors": [],
         }
     ]

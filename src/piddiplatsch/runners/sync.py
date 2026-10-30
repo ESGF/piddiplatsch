@@ -409,6 +409,8 @@ class SyncWorker:
                     project=project,
                     handle_profile=manifest["handle_profile"],
                     log_operation="sync/publish",
+                    expected_handles=manifest["handle_count"],
+                    batch_id=manifest["batch_id"],
                     workers=self.publish_workers,
                     retries=self.publish_retries,
                     progress_callback=show_progress,

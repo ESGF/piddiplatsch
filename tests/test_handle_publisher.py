@@ -47,10 +47,18 @@ def test_publication_monitor_records_live_counts_and_preserves_partial_success(
         snapshots.append(read_status(db))
 
     result = HandlePublisher(FakeBackend(failing_pid="bad")).run(
-        [source], project="cmip6", workers=1, progress_callback=progress
+        [source],
+        project="cmip6",
+        workers=1,
+        progress_callback=progress,
+        expected_handles=3,
+        batch_id="test-batch",
     )
 
     assert snapshots[0]["runs"][0]["command"] == "publish"
+    assert snapshots[0]["runs"][0]["expected_handles"] == 3
+    assert snapshots[0]["runs"][0]["batch_id"] == "test-batch"
+    assert snapshots[0]["runs"][0]["publication"]["remaining_handles"] == 2
     assert snapshots[0]["runs"][0]["state"] == "healthy"
     assert snapshots[0]["handle_totals"] == [
         {"project": "cmip6", "prepared": None, "published": 1}

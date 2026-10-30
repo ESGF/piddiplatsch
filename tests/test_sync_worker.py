@@ -347,6 +347,8 @@ def test_defaults_and_cli_worker_tick(setup, monkeypatch):
     assert publisher.options[0]["workers"] == 4
     assert publisher.options[0]["log_operation"] == "sync/publish"
     assert publisher.options[0]["retries"] == 3
+    assert publisher.options[0]["expected_handles"] == 2
+    assert publisher.options[0]["batch_id"]
 
 
 def test_worker_uses_larger_defaults_when_batch_settings_are_omitted(setup):

@@ -5,12 +5,14 @@ from __future__ import annotations
 import json
 import time
 from dataclasses import dataclass
+from datetime import datetime
 from pathlib import Path
 
 import click
 from rich.console import Console, Group
 from rich.table import Table
 
+from piddiplatsch.monitoring.eta import backlog_estimate
 from piddiplatsch.monitoring.health import read_health
 from piddiplatsch.monitoring.status import read_status
 
@@ -40,6 +42,7 @@ class TopCommand(Command):
                     history_seconds=self.history_minutes * 60,
                 )
                 status["health"] = read_health(self.project)
+                status["backlog_estimate"] = backlog_estimate(status)
             except (FileNotFoundError, ValueError) as exc:
                 raise click.ClickException(str(exc)) from exc
 
@@ -52,6 +55,7 @@ class TopCommand(Command):
                 Group(
                     self._disk_table(status),
                     self._health_table(status),
+                    self._publication_table(status),
                     self._table(status),
                     self._history_table(status),
                 )
@@ -122,6 +126,25 @@ class TopCommand(Command):
                     error,
                     style="yellow",
                 )
+        return table
+
+    @staticmethod
+    def _publication_table(status: dict) -> Table:
+        estimate = status["backlog_estimate"]
+        table = Table(title="Publication estimates", caption=estimate.get("reason"))
+        for heading in (
+            "Scope",
+            "Remaining Handles",
+            "Handles/s",
+            "ETA ~",
+            "End ~ (UTC)",
+        ):
+            table.add_column(heading)
+        for run in status["runs"]:
+            if run["command"] == "publish" and run["status"] == "running":
+                names = ",".join(row["project"] for row in run["projects"])
+                table.add_row(*_eta_row(f"{names} batch", run["publication"]))
+        table.add_row(*_eta_row("Known backlog ~", estimate))
         return table
 
     @staticmethod
@@ -236,6 +259,33 @@ def _input_unit(command: str) -> str:
     if command == "publish":
         return "handles"
     return "events" if command in {"harvest", "consume"} else "items"
+
+
+def _eta_row(scope: str, estimate: dict) -> tuple[str, ...]:
+    remaining = estimate.get("remaining_handles")
+    rate = estimate.get("handles_per_second")
+    end = estimate.get("estimated_end")
+    return (
+        scope,
+        f"{remaining:,}" if remaining is not None else "—",
+        f"{rate:,.1f}" if rate is not None else "—",
+        _eta_duration(estimate.get("eta_seconds")),
+        datetime.fromisoformat(end).strftime("%Y-%m-%d %H:%M") if end else "—",
+    )
+
+
+def _eta_duration(seconds: float | None) -> str:
+    if seconds is None:
+        return "waiting"
+    minutes, seconds = divmod(int(max(0, seconds)), 60)
+    hours, minutes = divmod(minutes, 60)
+    days, hours = divmod(hours, 24)
+    parts = [
+        f"{value}{unit}"
+        for value, unit in ((days, "d"), (hours, "h"), (minutes, "m"), (seconds, "s"))
+        if value
+    ]
+    return " ".join(parts[:2]) or "0s"
 
 
 def _sparkline(values: list[float]) -> str:

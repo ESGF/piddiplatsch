@@ -4,6 +4,8 @@
 
 ### Added
 
+- Publication batch ETA and approximate known-backlog completion estimates in
+  `piddi top`, based on recent Handle throughput and observed mapping ratios.
 - Configurable disk-space warning/stop guards, daily maintenance for closed raw
   dump compression, and storage/backlog/publication health in `piddi top`.
 - Shared alias Handle schema and dataset redirects for all projects when
