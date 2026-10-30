@@ -9,6 +9,8 @@ All notable changes to this project are documented here.
   configured projects, plus `--workers` and `--retries` publication overrides.
 
 ### Fixed
+- Require setuptools 84.1.0 or newer in development, Conda, and installation
+  bootstrap steps so preinstalled vulnerable versions are upgraded before audits.
 - Raised security minimums for Certifi, Brotli, Requests, urllib3, and pip;
   updated Black to 26.10.1 across pip, Conda, and pre-commit;
   refreshed Conda CA requirements and pip bootstrap steps, and added a CI

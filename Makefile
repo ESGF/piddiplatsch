@@ -48,7 +48,7 @@ docs-check: ## check required pages and relative links/assets in the built site
 
 install: ## install application
 	@echo "Installing application ..."
-	@python -m pip install --upgrade "pip>=26.2.2"
+	@python -m pip install --upgrade "pip>=26.2.2" "setuptools>=84.1.0"
 	@python -m pip install -e .
 	@echo "\nInspect commands with \`piddi --help\`."
 
@@ -69,7 +69,7 @@ deploy: conda play ## prepare the Conda environment and deploy piddi locally
 
 develop: ## install application with development and documentation libraries
 	@echo "Installing development requirements ..."
-	@python -m pip install --upgrade "pip>=26.2.2"
+	@python -m pip install --upgrade "pip>=26.2.2" "setuptools>=84.1.0"
 	@python -m pip install -e ".[dev,docs]"
 
 clean: clean-build clean-pyc clean-test ## remove all build, test, coverage and Python artifacts
