@@ -233,7 +233,7 @@ class HandlePublisher:
         self, result: PublishResult, elapsed: float, operation: str, *, complete=False
     ) -> None:
         self.logger.info(
-            "[%s] %s | %s | %s written | %s failed | %s retries | "
+            "[%s] %s | %s | %s published | %s failed | %s retries | "
             "%s handles/s avg | elapsed %ss",
             operation,
             result.project or ", ".join(sorted(result.projects)) or "no project",

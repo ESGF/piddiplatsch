@@ -122,7 +122,7 @@ INFO summaries use operation labels and grouped numbers, for example:
 
 ```text
 [harvest] running | 30,000 messages | 30,000 catalog writes | 0 errors | 294 messages/s | elapsed 106s | projects: cmip6
-[sync/publish] cmip6plus | running | 11,573 written | 0 failed | 0 retries | 193 handles/s avg | elapsed 60s
+[sync/publish] cmip6plus | running | 11,573 published | 0 failed | 0 retries | 193 handles/s avg | elapsed 60s
 ```
 
 Manual mapping and publication use `[map]` and `[publish]`; the scheduled worker

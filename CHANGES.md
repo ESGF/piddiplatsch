@@ -9,6 +9,8 @@ All notable changes to this project are documented here.
   configured projects, plus `--workers` and `--retries` publication overrides.
 
 ### Changed
+- Publication summaries say "published" for successful Handle writes; mapping
+  identifies JSONL preparation without suggesting that sync publication is disabled.
 - Statistics summaries now default to 30 seconds or 10,000 messages, whichever
   threshold is reached first as messages arrive.
 - Routine dataset/file PID reuse and generation messages now log at DEBUG,

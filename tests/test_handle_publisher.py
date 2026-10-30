@@ -178,7 +178,7 @@ def test_logs_each_publication_at_debug(tmp_path, caplog):
     assert "dataset_id=-" in caplog.text
     assert "file_name=-" in caplog.text
     assert "position=11 batch=1/?" in caplog.text
-    assert "[publish] cmip6 | complete | 1 written | 0 failed" in caplog.text
+    assert "[publish] cmip6 | complete | 1 published | 0 failed" in caplog.text
 
 
 def test_info_logs_summary_without_successful_handle_details(tmp_path, caplog):
@@ -190,7 +190,7 @@ def test_info_logs_summary_without_successful_handle_details(tmp_path, caplog):
 
     assert "Updated handle" not in caplog.text
     assert "| running |" not in caplog.text
-    assert "[publish] cmip6 | complete | 1 written | 0 failed" in caplog.text
+    assert "[publish] cmip6 | complete | 1 published | 0 failed" in caplog.text
     assert f"Receipts: {result.result_file}" in caplog.text
     assert json.loads(result.result_file.read_text())["status"] == "succeeded"
 
@@ -213,11 +213,11 @@ def test_logs_periodic_publication_progress_including_failures(
 
     progress = [line for line in caplog.messages if "| running |" in line]
     assert len(progress) == 2
-    assert "1 written | 1 failed | 0 retries" in progress[0]
+    assert "1 published | 1 failed | 0 retries" in progress[0]
     assert "0 handles/s avg | elapsed 30s" in progress[0]
-    assert "3 written | 1 failed" in progress[1]
+    assert "3 published | 1 failed" in progress[1]
     assert "[sync/publish] cmip6 | running" in progress[1]
-    assert "[sync/publish] cmip6 | complete | 3 written | 1 failed" in caplog.text
+    assert "[sync/publish] cmip6 | complete | 3 published | 1 failed" in caplog.text
     assert "Could not publish" in caplog.text
     assert len(result.result_file.read_text().splitlines()) == 4
 
