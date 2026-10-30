@@ -116,15 +116,14 @@ def test_manual_publication_with_unknown_size_does_not_show_zero_remaining():
     assert backlog_estimate(status)["eta_seconds"] is None
 
 
-def test_top_renders_remaining_speed_and_estimated_completion_time():
+def test_top_renders_speed_batch_completion_and_known_backlog():
     status = backlog()
+    status["health"]["storage"] = []
     status["backlog_estimate"] = backlog_estimate(status)
     stream = StringIO()
     console = Console(file=stream, width=120)
-    console.print(TopCommand._publication_table(status))
+    console.print(TopCommand._overview(status))
     text = stream.getvalue()
-    assert "Known backlog ~" in text
-    assert "94,000" in text
+    assert "Known backlog: ~6m 16s" in text
     assert "250.0" in text
-    assert "6m 16s" in text
-    assert "2026-10-30 21:07" in text
+    assert "5m 36s (21:06 UTC)" in text

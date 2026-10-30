@@ -326,7 +326,7 @@ piddi top
 piddi top --once
 piddi top --project cmip7 --once
 piddi top --json
-piddi top --details --history 360
+piddi top --json --history 360
 ```
 
 `top` is read-only and needs no Kafka or Handle connection. It reports an error
@@ -337,10 +337,10 @@ row per project: pending catalog items, recorded prepared/published Handle total
 activity, publication speed and estimated batch completion. Unknown estimates
 appear as a dash. Errors and stale heartbeats appear below the table. Stale run
 records superseded by newer runs are hidden from the display; JSON retains them.
-Use `--details` for batch health, last publication times, individual runs and history.
+Use `--json` for batch health, last publication times, individual runs and history.
 
 History samples are saved every 15 seconds and at startup and shutdown. The
-history window covers one hour; `--details --history 360` shows six hours. Samples are kept
+history window covers one hour; `--json --history 360` includes six hours. Samples are kept
 for 30 days. They contain counters, not raw messages or log text. Catalog writes
 exclude duplicate events. Schema 3 adds catalog counters automatically on writer
 startup; `top` can also read schema 2.
@@ -397,7 +397,7 @@ the catalog and does not need the raw dump files.
 ### Disk and project health
 
 `piddi top` shows disk headroom, pending catalog items and Handle totals.
-`piddi top --details` and `piddi top --json` also show ready and failed batch
+`piddi top --json` also includes ready and failed batch
 counts, and the latest successful sync publication.
 Failed publication batches remain ready and also count as failed.
 The project table keeps prepared and published Handle totals visible while
@@ -411,8 +411,8 @@ publication totals start with runs using this monitoring support. Monitoring
 must be enabled with `stats.enable_db = true`.
 
 The compact project table includes publication speed and approximate batch
-completion in UTC. With `--details`, the publication estimates table also shows
-remaining Handles and the duration separately.
+completion in UTC. JSON output also includes remaining Handles and the duration
+separately.
 Sync supplies the exact batch Handle count from its manifest; recent speed uses
 up to sixty seconds of monitoring samples with a five-second warmup. Old runs
 and manual publications with no known total show an unavailable batch ETA.
@@ -424,8 +424,8 @@ recent mapping runs for each project. It deducts confirmed progress in the activ
 batch, so that batch is not counted twice. This is a snapshot of known local
 work, excluding unread Kafka messages, future arrivals, mapping time, scheduling
 waits, and additional retries. The estimate updates as harvest discovers more
-items. Missing counts or ratios hide this estimate in the compact view and show a
-waiting state with `--details`. All estimate fields are also available in `top --json`.
+items. Missing counts or ratios hide this estimate in the compact view; the reason
+is available in JSON. All estimate fields are also available in `top --json`.
 The checks are read-only and report unavailable or older catalogs without
 migrating them. Publication status uses a small `last-publication.json` marker
 per project, written by successful sync runs; old archives are not scanned. A

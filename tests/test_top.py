@@ -180,15 +180,13 @@ def test_top_harvest_reports_durable_writes_and_duplicate_events(tmp_path):
     assert project["catalog_writes"] == project["catalog_refreshes"] == 1
     history = status["runs"][0]["history"][0]
     assert history["deltas"]["catalog_writes"] == 1
-    result = CliRunner().invoke(
-        cli, ["top", "--db", str(db_path), "--once", "--details"]
-    )
+    result = CliRunner().invoke(cli, ["top", "--db", str(db_path), "--once"])
     assert result.exit_code == 0, result.output
-    assert "events" in result.output
-    assert "ΔWrites" in result.output
+    assert "cmip6" in result.output
+    assert "ΔWrites" not in result.output
 
 
-def test_top_once_shows_history(tmp_path):
+def test_top_json_history_window(tmp_path):
     db_path = tmp_path / "piddi.db"
     _monitoring_db(db_path)
 
@@ -203,49 +201,14 @@ def test_top_once_shows_history(tmp_path):
             "--once",
             "--history",
             "30",
-            "--details",
+            "--json",
         ],
     )
 
     assert result.exit_code == 0
-    assert "Active runs" in result.output
-    assert "no active runs" in result.output
-    assert "stopped" not in result.output
-    assert "Latest run history · last 30 minutes" in result.output
-    assert "ΔInput" in result.output
-
-
-def test_top_history_excludes_previous_stopped_run(tmp_path):
-    db_path = tmp_path / "piddi.db"
-    _monitoring_db(db_path)
-    stats = Stats(enable_db=False)
-    stats.configure_for_run(
-        enable_db=True,
-        db_path=str(db_path),
-        command="consume",
-        selected_projects=("cmip6", "cmip7"),
-        heartbeat_interval_seconds=60,
-    )
-    try:
-        result = CliRunner().invoke(
-            cli,
-            [
-                "--log",
-                str(tmp_path / "test.log"),
-                "top",
-                "--db",
-                str(db_path),
-                "--once",
-                "--details",
-            ],
-        )
-    finally:
-        stats.close(status="stopped")
-
-    assert result.exit_code == 0
-    assert "Current run history · last 60 minutes" in result.output
-    assert result.output.count("cmip6") == 2
-    assert result.output.count("cmip7") == 2
+    status = json.loads(result.output)
+    assert status["history_seconds"] == 1800
+    assert status["runs"][0]["history"]
 
 
 def test_top_default_is_one_table_without_history(tmp_path):
@@ -259,7 +222,7 @@ def test_top_default_is_one_table_without_history(tmp_path):
     assert "Active runs" not in result.output
     assert "Publication estimates" not in result.output
     assert "Trend" not in result.output
-    assert "--details" in result.output
+    assert "--details" not in result.output
 
 
 def test_stale_runs_are_hidden_only_when_superseded():
