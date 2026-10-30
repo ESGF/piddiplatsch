@@ -31,6 +31,7 @@ class PreparedHandleBackend(Protocol):
 
 
 BATCH_SIZE = 256
+PUBLICATION_LOG_INTERVAL_SECONDS = 30.0
 ProgressCallback = Callable[[int, int | None, str, Exception | None], None]
 OutcomeCallback = Callable[["_PublicationOutcome"], None]
 
@@ -138,6 +139,7 @@ class HandlePublisher:
         backend_ready = not self._uses_config
         result.project = selected_project
         completed = 0
+        started_at = last_report_at = time.monotonic()
         with ExitStack() as stack:
             records = stack.enter_context(
                 closing(
@@ -181,8 +183,13 @@ class HandlePublisher:
                     )
 
                 def report(outcome, batch_start=completed, receipt_writer=writer):
+                    nonlocal last_report_at
                     outcome = replace(outcome, index=batch_start + outcome.index)
                     self._record_outcome(result, receipt_writer, outcome, offset=offset)
+                    now = time.monotonic()
+                    if now - last_report_at >= PUBLICATION_LOG_INTERVAL_SECONDS:
+                        self._log_summary(result, offset, now - started_at)
+                        last_report_at = now
                     if progress_callback is not None:
                         progress_callback(
                             outcome.index, None, outcome.handle, outcome.error
@@ -209,15 +216,26 @@ class HandlePublisher:
                 else None
             )
 
+        self._log_summary(result, offset, time.monotonic() - started_at, complete=True)
+        return result
+
+    def _log_summary(
+        self, result: PublishResult, offset: int, elapsed: float, *, complete=False
+    ) -> None:
         self.logger.info(
-            "Handle publication complete: published=%d total=%d failed=%d retries=%d offset=%d",
+            "Handle publication %s: published=%d total=%d failed=%d retries=%d offset=%d "
+            "project=%s elapsed=%.1fs handles_per_sec=%.2f receipt=%s",
+            "complete" if complete else "progress",
             result.succeeded,
             result.total,
             result.failed,
             result.retry_attempts,
             offset,
+            result.project or ",".join(sorted(result.projects)) or "-",
+            elapsed,
+            result.total / elapsed if elapsed > 0 else 0.0,
+            result.result_file or "-",
         )
-        return result
 
     @staticmethod
     def _remember_error(result: PublishResult, error: str) -> None:
@@ -279,7 +297,9 @@ class HandlePublisher:
             f"position={position}",
             f"batch={outcome.index}/{batch_total if batch_total is not None else '?'}",
         ]
-        self.logger.info("%s handle %s", outcome.action.capitalize(), " ".join(details))
+        self.logger.debug(
+            "%s handle %s", outcome.action.capitalize(), " ".join(details)
+        )
 
     def _publish_records(
         self,

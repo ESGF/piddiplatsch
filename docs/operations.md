@@ -327,8 +327,12 @@ Each receipt line records the outcome, action, PID, URL, project, dataset, asset
 source location, position, retry count, and error. Missing dataset or asset
 metadata remains `null`. `batch_index` and `position` refer to the entire
 selected input, independently of internal batch boundaries. Receipts are
-written regardless of log verbosity; INFO logging additionally records each
-publication outcome in the configured log file.
+written regardless of log verbosity. INFO logs cumulative publication progress
+every 30 seconds as results arrive and a final summary, including project,
+successes, processed records, failures, retries, elapsed time, processing rate,
+and receipt path. These summaries cover each publication attempt, not unique
+Handles across runs. Individual successful writes are logged at DEBUG; failures
+remain at ERROR.
 
 ## Real Handle service contract test
 
@@ -422,8 +426,8 @@ The CLI writes WARNING and above to `pid.log` by default. Use `-v` for INFO,
 the configured file. `--silent` remains an alias for hiding progress;
 `--progress/--no-progress` provides the explicit form. At INFO level Piddiplatsch
 records the selected plugins, the first occurrence of every filtered project
-identity, publication outcomes, and periodic aggregate counts. Per-message
-filter decisions are available at DEBUG level.
+identity, publication summaries, and periodic aggregate counts. Successful
+per-Handle writes and per-message filter decisions are available at DEBUG level.
 
 The `[logging]` configuration provides the service defaults:
 

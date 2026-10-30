@@ -110,9 +110,15 @@ each project's JSONL separately so server selection is unambiguous.
 
 ### Publication logs
 
-Every successful publication writes an INFO entry to the configured log file
-(`pid.log` by default). Pass `-v` to enable INFO logging and `--log PATH` to
-override the configured destination. The entry identifies whether the server
+Publication writes an INFO progress summary every 30 seconds as results arrive,
+plus a final summary, for both `sync` and `publish`. Summaries include successful,
+processed, failed, and retry counts, project, elapsed time, processing rate, and
+receipt path. These are cumulative counts for the current publication attempt;
+they do not count unique Handles across retries or runs. No progress summary is
+emitted while waiting for a result. Pass `-v` to enable INFO logging and `--log PATH`
+to override the configured destination (`pid.log` by default).
+
+Every successful Handle write logs its details at DEBUG (`-vv`). The entry identifies whether the server
 created or updated the Handle and includes its directly resolvable REST URL, project,
 dataset ID, file name, and source position. For file assets, the publisher joins
 `IS_PART_OF` to a dataset record in the selected batch so the asset log entry

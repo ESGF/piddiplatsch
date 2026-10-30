@@ -8,6 +8,11 @@ All notable changes to this project are documented here.
 - Added repeatable `sync --project` to restrict mapping and publication to selected
   configured projects, plus `--workers` and `--retries` publication overrides.
 
+### Changed
+- Successful per-Handle writes now log at DEBUG. Both sync and publish log
+  cumulative publication progress at INFO every 30 seconds as results arrive,
+  plus a final summary with counts, project, elapsed time, rate, and receipt path.
+
 ### Fixed
 - Require setuptools 84.1.0 or newer in development, Conda, and installation
   bootstrap steps so preinstalled vulnerable versions are upgraded before audits.

@@ -4,6 +4,7 @@ import threading
 import time
 from datetime import UTC, datetime
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 import requests
@@ -161,14 +162,14 @@ def test_configured_publisher_rejects_other_projects_per_record(tmp_path, monkey
     assert "does not match project 'cmip6'" in result.errors[0]
 
 
-def test_logs_each_publication_and_summary(tmp_path, caplog):
+def test_logs_each_publication_at_debug(tmp_path, caplog):
     source = tmp_path / "handles.jsonl"
     write_jsonl(
         source,
         [handle_record(str(index)) for index in range(10)] + [handle_record("abc")],
     )
 
-    with caplog.at_level(logging.INFO, logger="piddiplatsch.runners.publish"):
+    with caplog.at_level(logging.DEBUG, logger="piddiplatsch.runners.publish"):
         HandlePublisher(ReportingBackend()).run([source], offset=10, limit=1)
 
     assert "Updated handle handle=21.TEST/abc" in caplog.text
@@ -178,6 +179,49 @@ def test_logs_each_publication_and_summary(tmp_path, caplog):
     assert "file_name=-" in caplog.text
     assert "position=11 batch=1/?" in caplog.text
     assert "Handle publication complete: published=1 total=1" in caplog.text
+
+
+def test_info_logs_summary_without_successful_handle_details(tmp_path, caplog):
+    source = tmp_path / "handles.jsonl"
+    write_jsonl(source, [handle_record("abc")])
+
+    with caplog.at_level(logging.INFO, logger="piddiplatsch.runners.publish"):
+        result = HandlePublisher(ReportingBackend()).run([source])
+
+    assert "Updated handle" not in caplog.text
+    assert "Handle publication progress" not in caplog.text
+    assert "Handle publication complete: published=1 total=1 failed=0" in caplog.text
+    assert f"receipt={result.result_file}" in caplog.text
+    assert json.loads(result.result_file.read_text())["status"] == "succeeded"
+
+
+def test_logs_periodic_publication_progress_including_failures(
+    tmp_path, caplog, monkeypatch
+):
+    source = tmp_path / "handles.jsonl"
+    write_jsonl(source, [handle_record(pid) for pid in ("one", "bad", "two", "three")])
+    ticks = iter((0.0, 10.0, 30.0, 35.0, 60.0, 60.0))
+    monkeypatch.setattr(
+        "piddiplatsch.runners.publish.time",
+        SimpleNamespace(monotonic=lambda: next(ticks)),
+    )
+
+    with caplog.at_level(logging.INFO, logger="piddiplatsch.runners.publish"):
+        result = HandlePublisher(FakeBackend(failing_pid="bad")).run(
+            [source], project="cmip6"
+        )
+
+    progress = [
+        line for line in caplog.messages if "Handle publication progress" in line
+    ]
+    assert len(progress) == 2
+    assert "published=1 total=2 failed=1 retries=0" in progress[0]
+    assert "project=cmip6 elapsed=30.0s handles_per_sec=0.07" in progress[0]
+    assert "published=3 total=4 failed=1" in progress[1]
+    assert f"receipt={result.result_file}" in progress[1]
+    assert "Handle publication complete: published=3 total=4 failed=1" in caplog.text
+    assert "Could not publish" in caplog.text
+    assert len(result.result_file.read_text().splitlines()) == 4
 
 
 def test_logs_dataset_context_for_file_asset(tmp_path, caplog):
@@ -201,7 +245,7 @@ def test_logs_dataset_context_for_file_asset(tmp_path, caplog):
     )
     write_jsonl(source, [dataset, file])
 
-    with caplog.at_level(logging.INFO, logger="piddiplatsch.runners.publish"):
+    with caplog.at_level(logging.DEBUG, logger="piddiplatsch.runners.publish"):
         HandlePublisher(ReportingBackend()).run([source], workers=2)
 
     file_line = next(line for line in caplog.messages if "handle=21.TEST/file" in line)
