@@ -8,8 +8,7 @@ from piddiplatsch.cli import cli
 from piddiplatsch.config import config
 from piddiplatsch.monitoring.stats import Stats
 from piddiplatsch.monitoring.status import read_status
-from piddiplatsch.result import FeedResult
-from piddiplatsch.result import ProcessingResult
+from piddiplatsch.result import FeedResult, ProcessingResult
 
 
 def _monitoring_db(path):
