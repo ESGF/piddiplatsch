@@ -2,7 +2,12 @@ import pytest
 
 from piddiplatsch.config import config
 from piddiplatsch.config.config import Config
-from piddiplatsch.config.schema import LoggingConfig, LookupConfig, validate_config
+from piddiplatsch.config.schema import (
+    ConsumerConfig,
+    LoggingConfig,
+    LookupConfig,
+    validate_config,
+)
 from piddiplatsch.core.models import strict_mode
 from piddiplatsch.lookup.api import get_lookup
 from piddiplatsch.lookup.base import DummyLookup
@@ -22,6 +27,11 @@ def _base_config():
         # Disable lookups unless explicitly tested
         "lookup": {"enabled": False},
     }
+
+
+def test_production_defaults_stop_on_first_error():
+    assert Config().get("consumer", "max_errors") == 1
+    assert ConsumerConfig(projects=["cmip7"], topic="CMIP7").max_errors == 1
 
 
 def test_config_layers_merge_defaults_then_site_then_local(tmp_path):

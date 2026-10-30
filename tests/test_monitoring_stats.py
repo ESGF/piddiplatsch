@@ -99,6 +99,55 @@ def test_schema_two_history_is_readable_and_migrated_without_loss(tmp_path):
     assert migrated["runs"] == original
 
 
+@pytest.mark.parametrize("enable_db", [False, True])
+@pytest.mark.parametrize("aliases", [0, 1])
+def test_map_final_summary_reports_aliases_without_per_item_info(
+    enable_db, aliases, tmp_path, caplog
+):
+    stats = Stats(enable_db=False)
+    stats.configure_for_run(
+        enable_db=enable_db,
+        db_path=str(tmp_path / "monitor.db"),
+        command="map",
+        log_interval_messages=10000,
+        log_interval_seconds=3600,
+    )
+    with caplog.at_level(logging.INFO, logger="piddiplatsch.monitoring.stats"):
+        stats.record_result(
+            ProcessingResult(
+                key="dataset-details",
+                success=True,
+                plugin="cmip7",
+                num_handles=2 + aliases,
+                num_alias_handles=aliases,
+            )
+        )
+        assert not caplog.messages
+        stats.close(status="completed")
+        stats.close(status="completed")
+
+    assert len(caplog.messages) == 1
+    assert f"[map] completed | 1 items | {2 + aliases} Handles prepared" in caplog.text
+    if aliases:
+        assert "(1 alias)" in caplog.text
+    else:
+        assert "aliases" not in caplog.text
+    assert "dataset-details" not in caplog.text
+    assert stats.summary()["alias_handles"] == aliases
+
+
+def test_periodic_map_summary_includes_current_handles_and_aliases(caplog):
+    stats = Stats(enable_db=False)
+    stats.configure_for_run(command="map", log_interval_messages=1)
+    with caplog.at_level(logging.INFO, logger="piddiplatsch.monitoring.stats"):
+        stats.record_result(
+            ProcessingResult(
+                key="item", success=True, num_handles=3, num_alias_handles=1
+            )
+        )
+    assert "3 Handles prepared (1 alias)" in caplog.text
+
+
 class _MappingProcessor:
     def preflight_check(self, **_kwargs):
         return None

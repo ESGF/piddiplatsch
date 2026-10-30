@@ -10,6 +10,7 @@ from piddiplatsch.consumer import HarvestProcessor
 from piddiplatsch.core.messages import KafkaSource
 from piddiplatsch.core.pipeline import ProcessingPipeline
 from piddiplatsch.core.routing import ProjectRouter
+from piddiplatsch.exceptions import MaxErrorsExceededError
 from piddiplatsch.runners.mapping import map_catalog
 
 pytestmark = pytest.mark.integration
@@ -93,7 +94,7 @@ def test_map_reads_catalog_without_kafka_or_handle_service(
 
 
 def test_map_force_dataset_pid_corrects_dataset_and_file_parent(
-    tmp_path, testdata_path
+    tmp_path, testdata_path, caplog
 ):
     from piddiplatsch.utils.models import item_pid, parse_pid
 
@@ -108,20 +109,45 @@ def test_map_force_dataset_pid_corrects_dataset_and_file_parent(
     source.write_text(original)
     with closing(CatalogHarvester(tmp_path / "outputs/catalog")) as harvester:
         harvester.process_with_source("harvest", message, KafkaSource("topic", 0, 0))
-    result = map_catalog(projects=["cmip7"])
+    with caplog.at_level("INFO"):
+        result = map_catalog(projects=["cmip7"])
+
+    assert "[map] project=cmip7 force_dataset_pid=True" in caplog.text
+    assert "Prepared dataset alias Handle" not in caplog.text
 
     assert result.succeeded == 1
     assert result.failed == 0
     output_files = list((tmp_path / "outputs/cmip7/handles").glob("*.jsonl"))
     assert len(output_files) == 1
     records = [json.loads(line) for line in output_files[0].read_text().splitlines()]
-    dataset, file = records
+    dataset, alias, file = records
     generated = f"21.TEST/{item_pid(item['id'])}"
     asset = next(iter(item["assets"].values()))
     file_handle = f"21.TEST/{parse_pid(asset['cmip7:tracking_id'])}"
     assert dataset["handle"] == generated
     assert dataset["URL"].endswith(f"/{generated}")
     assert json.loads(dataset["data"]["HAS_PARTS"]) == [f"hdl:{file_handle}"]
+    assert alias["handle"] == f"21.TEST/{parse_pid(item['properties']['cmip7:pid'])}"
+    assert alias["URL"] == f"https://hdl.handle.net/{generated}"
+    assert alias["data"] == {}
     assert file["handle"] == file_handle
     assert file["data"]["IS_PART_OF"] == f"hdl:{generated}"
     assert source.read_text() == original
+
+
+def test_map_rejects_invalid_asset_instead_of_skipping_it(
+    tmp_path, testdata_path, caplog
+):
+    config._set("consumer", "max_errors", 1)
+    config._set("consumer", "output_dir", str(tmp_path / "outputs"))
+    message = _sample(testdata_path, "cmip7")
+    item = message["data"]["payload"]["item"]
+    asset = next(iter(item["assets"].values()))
+    asset["file:checksum"] = "not-hex"
+    with closing(CatalogHarvester(tmp_path / "outputs/catalog")) as harvester:
+        harvester.process_with_source("bad", message, KafkaSource("topic", 0, 0))
+
+    with pytest.raises(MaxErrorsExceededError, match="1/1"):
+        map_catalog(projects=["cmip7"])
+    assert "expected a hexadecimal multihash" in caplog.text
+    assert "Skipping asset" not in caplog.text

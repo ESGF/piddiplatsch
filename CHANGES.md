@@ -4,6 +4,8 @@
 
 ### Added
 
+- Shared alias Handle schema and dataset redirects for all projects when
+  `force_dataset_pid` is enabled, including CMIP7.
 - Service controls: `make start`, `make stop`, and `make restart`.
 - Sync options: `--project`, `--workers`, and `--retries`.
 - Dependency checks in CI and `make audit`.
@@ -18,6 +20,9 @@
 
 ### Fixed
 
+- Explain malformed asset checksums, including duplicated SHA-256 multihash
+  prefixes; standalone map rejects invalid assets and processing defaults to
+  stopping at the first error when no error limit is configured.
 - Suppressed the expected Brotli GIL warning in CLI commands.
 
 ## [2.3.0] - 2026-10-12

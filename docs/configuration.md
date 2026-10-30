@@ -250,10 +250,24 @@ See [Logging and statistics](operations.md#logging-and-statistics) for examples.
 
 Use `force_dataset_pid` only for projects that need it. It ignores source dataset
 PIDs and updates file parent links to the generated PID. File tracking IDs stay
-the same. It does not create redirects for old PIDs. Remap existing Handle files
-before publishing with the new policy.
+the same. For every project, a different source dataset PID also produces a
+minimal alias Handle whose `URL` redirects to
+`https://hdl.handle.net/<prefix>/<generated-pid>`.
+The alias uses the configured Handle prefix and contains no dataset or file
+metadata; the REST backend adds `HS_ADMIN` as usual. Missing or unchanged source
+PIDs produce no alias. Alias Handles use the shared `AliasHandleModel` schema;
+aliases are created only for datasets, never for files. Conflicting source
+dataset PID fields must be resolved before an alias can be created. Remap
+existing Handle files before publishing with the new policy.
 
 The packaged `src/piddiplatsch/config/default.toml` lists all defaults.
+
+Production defaults use `schema.strict_mode = true` and `consumer.max_errors = 1`.
+Map and sync treat invalid assets as errors and stop the affected mapping run
+at the first error. Sync leaves the failed batch unpublished and its catalog
+changes pending. Malformed checksum errors identify the dataset and asset;
+verify the checksum against the source file, correct its STAC metadata, and
+reharvest before retrying. Other projects can continue in sync.
 
 ## Dataset version lookup
 

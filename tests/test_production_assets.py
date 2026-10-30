@@ -223,18 +223,30 @@ def test_vagrantfile_installs_verified_miniforge_for_supported_architectures():
     assert "/etc/profile.d/miniforge.sh" in vagrantfile
 
 
-def test_vagrant_deployment_documents_manual_root_checkout_and_conda_env():
-    guide = (PROJECT_ROOT / "deploy" / "README.md").read_text()
+def test_deployment_readme_links_to_the_maintained_guides():
+    readme = (PROJECT_ROOT / "deploy" / "README.md").read_text()
+    assert "../docs/deployment.md" in readme
+    assert "../docs/deployment-reference.md" in readme
+
+
+def test_deployment_guides_document_root_checkout_environment_and_monitoring():
+    guide = (PROJECT_ROOT / "docs" / "deployment.md").read_text()
+    reference = (PROJECT_ROOT / "docs" / "deployment-reference.md").read_text()
 
     assert "sudo -i" in guide
     assert (
         "git clone https://github.com/ESGF/piddiplatsch.git /opt/piddiplatsch" in guide
     )
     assert "make deploy" in guide
-    assert "Use `make play` for later Ansible-only configuration changes." in guide
-    assert "`conda init` is not needed" in guide
-    assert "systemctl status piddi" in guide
-    assert "piddi --config /etc/piddi/piddi.toml top" in guide
+    assert "For settings changes only" in guide
+    assert "run `make play`" in guide
+    assert "You do not need `conda init`" in reference
+    assert (
+        "systemctl status piddi.service piddi-sync.timer piddi-sync.service"
+        in reference
+    )
+    assert "cd /var/lib/piddi" in guide
+    assert "piddi top" in guide
     assert "tail -f /var/log/piddi/piddi.log" in guide
 
 

@@ -1,5 +1,6 @@
 """Stream complete local catalog items through the shared processing pipeline."""
 
+import logging
 from contextlib import ExitStack, closing
 from datetime import date, datetime
 from itertools import chain, islice
@@ -22,6 +23,8 @@ from piddiplatsch.core.registry import get_plugins
 from piddiplatsch.exceptions import CatalogError
 from piddiplatsch.monitoring.progress import BaseProgress
 from piddiplatsch.result import FeedResult
+
+logger = logging.getLogger(__name__)
 
 
 def map_catalog(
@@ -69,6 +72,12 @@ def map_catalog(
         if version_history is None
         else version_history
     )
+    for plugin in available:
+        logger.info(
+            "[map] project=%s force_dataset_pid=%s",
+            plugin.name,
+            config.get_plugin(plugin.name, "force_dataset_pid", False),
+        )
     with ExitStack() as stack:
         catalogs = {
             plugin.name: stack.enter_context(
@@ -130,6 +139,7 @@ def map_catalog(
             handle_profile=handle_profile,
             catalogs=catalogs,
             version_history=history,
+            require_all_assets=True,
         )
         return process_messages(
             chain((first,), selected),
@@ -137,7 +147,7 @@ def map_catalog(
             verbose=verbose,
             progress=progress,
             handle_profile=handle_profile,
-            max_errors=config.get("consumer", "max_errors", -1),
+            max_errors=config.get("consumer", "max_errors", 1),
         )
 
 

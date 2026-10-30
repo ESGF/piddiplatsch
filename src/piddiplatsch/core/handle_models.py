@@ -49,6 +49,14 @@ class BaseHandleModel(BaseModel):
         return self._PID
 
 
+class AliasHandleModel(BaseHandleModel):
+    """Project-neutral alias schema: only a URL pointing to the target Handle.
+
+    The alias PID uses the shared UUID validation. Administrative values are
+    supplied by the Handle backend, as for dataset and file Handles.
+    """
+
+
 class DatasetHandleModel(BaseHandleModel):
     """Project-neutral ESGF dataset Handle schema."""
 
@@ -112,4 +120,9 @@ class FileHandleModel(BaseHandleModel):
         return self
 
 
-__all__ = ["BaseHandleModel", "DatasetHandleModel", "FileHandleModel"]
+__all__ = [
+    "AliasHandleModel",
+    "BaseHandleModel",
+    "DatasetHandleModel",
+    "FileHandleModel",
+]
