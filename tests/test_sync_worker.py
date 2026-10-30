@@ -103,6 +103,32 @@ def test_count_trigger_seals_and_publishes_then_empty_tick_does_nothing(setup):
     assert (batch / "handles.jsonl").read_bytes() == original
 
 
+@pytest.mark.parametrize("force", [False, True])
+def test_sync_map_info_reports_force_setting_and_alias_summary(setup, caplog, force):
+    put, _directory, _root = setup
+    config._set(
+        "plugins", "cmip7", {**config.get_plugin("cmip7"), "force_dataset_pid": force}
+    )
+    put(1)
+    put(2)
+    worker = SyncWorker(publisher=Publisher())
+
+    with caplog.at_level("INFO"):
+        worker.run()
+
+    assert not worker.errors
+    starts = [
+        line for line in caplog.messages if "[sync/map] cmip7 | starting batch" in line
+    ]
+    assert len(starts) == 1
+    assert f"force_dataset_pid={force}" in starts[0]
+    assert (
+        f"[sync/map] cmip7 | complete | 2 items mapped | {6 if force else 4} Handles prepared | "
+        f"{2 if force else 0} alias Handles"
+    ) in caplog.messages
+    assert "Prepared dataset alias Handle" not in caplog.text
+
+
 def test_hour_trigger_uses_first_pending_change_and_coalesces_patches(setup):
     put, directory, root = setup
     put(1)

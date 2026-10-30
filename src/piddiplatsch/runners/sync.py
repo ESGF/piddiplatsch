@@ -269,7 +269,12 @@ class SyncWorker:
 
     def _map_items(self, project, reader, staging, manifest):
         settings = config.get("stats", {})
-        LOGGER.info("[sync/map] %s | starting batch %s", project, manifest["batch_id"])
+        LOGGER.info(
+            "[sync/map] %s | starting batch %s | force_dataset_pid=%s",
+            project,
+            manifest["batch_id"],
+            config.get_plugin(project, "force_dataset_pid", False),
+        )
         stats.configure_for_run(
             enable_db=settings.get("enable_db", False),
             db_path=settings.get("db_path"),
@@ -285,10 +290,13 @@ class SyncWorker:
             raise
         else:
             stats.close(status="completed")
+            summary = stats.summary()
             LOGGER.info(
-                "[sync/map] %s | complete | %s items mapped",
+                "[sync/map] %s | complete | %s items mapped | %s Handles prepared | %s alias Handles",
                 project,
                 f"{manifest['item_count']:,}",
+                f"{summary['handles']:,}",
+                f"{summary['alias_handles']:,}",
             )
 
     def _write_items(self, project, reader, staging, manifest):
