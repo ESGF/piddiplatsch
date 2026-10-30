@@ -86,9 +86,13 @@ Production runs `piddi harvest --idle-timeout 0` continuously and schedules
 `consume` has been removed. Use `harvest` for ingestion and `map`/`publish` for
 manual operation, or `sync` for the scheduled workflow.
 
-Select projects with `[consumer].projects`, repeated `--project` flags, or
-`--all-projects`. Map command-line selection takes precedence; the sync worker uses the configured
-selection. Harvest caches all registered projects and uses a separate Kafka group.
+Set the default project selection with `[consumer].projects`. Map accepts repeated
+`--project` flags or `--all-projects` to override that selection. Sync accepts
+repeated `--project` flags to restrict both mapping and ready-batch publication
+to selected configured projects; unknown or unconfigured projects fail before
+publication. Its `--workers` and `--retries` flags override
+`[batch].publish_workers` and `[batch].publish_retries` for one run. Harvest caches
+all registered projects and uses a separate Kafka group.
 
 Use `-v` for INFO logging, `-vv` for DEBUG, and `--log PATH` to select a log file.
 For permanent changes, set `[logging].level` and `[logging].file`.
