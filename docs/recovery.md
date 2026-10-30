@@ -1,68 +1,82 @@
 # Recovery
 
-Failure files are inspection artifacts. There is no `retry` command, and normal
-commands never consume failure or skipped records as inputs.
+Fix the cause of a failure, then repeat the normal command. Failure and skipped
+files are for inspection. Commands do not read them as inputs, and there is no
+`retry` command.
 
-Decoded failures include the source STAC record, error description, and available
-project/source coordinates. They retain the historical directory layout:
+## Find the failed record
+
+Failures include the STAC record, error, and available project and source details:
 
 ```text
 outputs/<project>/failures/r0/failed_items_<date>.jsonl
 outputs/<project>/skipped/skipped_items_<date>.jsonl
 ```
 
-Unresolved projects use the global `failures/` or `skipped/` directories. Original
-Kafka messages remain in `outputs/dump/dump_messages_<date>.jsonl`.
+Records without a resolved project use the global `failures/` or `skipped/`
+directory. Original Kafka messages are in `outputs/dump/`.
 
-Catalog harvest stops immediately on an unresolved event without acknowledging it.
-Missing PATCH bases trigger per-item remote recovery: fetch the complete current
-item without applying the patch, then persist remote-refresh mode. Later events
-for that item also fetch current state. Harvest startup refreshes marked items
-without new Kafka events; map remains local. A failed fetch stops harvest without
-advancing the event checkpoint. See [remote recovery](operations.md#remote-current-item-recovery).
+## Restart harvest
 
-Fix the cause and repeat `harvest`; checkpoints prevent previously stored patches
-from being reapplied. To rebuild a catalog, use `--clean-project NAME` or
-`--clean-catalog`, using retained Kafka publications and per-item remote recovery where available.
-Recovery requires the item to remain available in remote STAC; it does not restore
-missing historical versions. Remote lag can temporarily omit an update, so repeat
-harvest after the service catches up before mapping.
-There is currently no harvest option to skip an unresolved event.
-
-Mapping stops at the configured `consumer.max_errors` threshold. Fix the problem
-and repeat the normal command using its catalog selection:
+Harvest stops on an unresolved event and leaves it unacknowledged. Repair the
+configuration, source data, remote service, or storage problem, then run:
 
 ```bash
-piddi map --project cmip6 --date today-1
-# Or select an inclusive window and a bounded portion of catalog items
-piddi map --project cmip6 --from 2026-10-08 --to today-1 --offset 1000 --limit 1000
+piddi harvest
 ```
 
-Map and publish share date selectors and default to `last`; use `--date all` for
-full filling. Mapping appends Handles to files named for each item's UTC event day.
-An item's assets produce several Handle records, so publication offsets count a
-different unit from mapping offsets. Inspect prepared files before publication:
+Local checkpoints skip events already saved, so stored patches are not applied
+twice. Harvest has no option to skip an unresolved event.
+
+A patch without a local base triggers a remote STAC fetch. Recovered items stay
+marked for refresh on later events and startup. If STAC is behind Kafka, wait
+for it to catch up and repeat harvest before mapping. Remote recovery uses
+current state and cannot restore missing historical versions.
+See [Remote current-item recovery](operations.md#remote-current-item-recovery).
+
+Do not delete catalogs as a restart step. If you need a rebuild, stop other users
+of the catalog and follow [Rebuild catalogs](operations.md#rebuild-catalogs).
+Rebuilding depends on retained Kafka history and available remote items.
+
+## Repeat mapping or publication
+
+Mapping stops at `consumer.max_errors`. Fix the cause, then select the same
+catalog items again:
 
 ```bash
-piddi publish --project cmip6 --date today-1
-piddi publish --project cmip6 --from 2026-10-08 --to today-1
+piddi map --project cmip6 --date yesterday
+# Or repeat part of a date range
+piddi map --project cmip6 --from 2026-10-08 --to yesterday --offset 1000 --limit 1000
 ```
 
-Publication keeps its inputs and writes per-record receipts. Repeating a completed
-input uses Handle overwrite semantics. `publish --retries` remains available for
-transient HTTP failures within a run; it is independent of diagnostic files.
-See [Operations](operations.md) for selection, ordering, and receipt details.
+Map appends to daily Handle files, so repeated mapping can add duplicate records.
+Inspect the output before publishing. Mapping offsets count catalog items;
+publication offsets count Handle records. These are different units.
+
+```bash
+piddi publish --project cmip6 --date yesterday --retries 3
+```
+
+Publication keeps its inputs and writes a receipt for every result. Repeating
+an input overwrites the same Handles and can repeat earlier successful writes.
+`--retries` handles temporary HTTP failures within the run.
+See [Deferred publication](operations.md#deferred-publication) for ordering and
+selection rules.
 
 ## Scheduled batch recovery
 
-The worker's source remains the catalog. Failed mapping staging directories under
-`batches/<project>/.building-*` are inspection artifacts; pending catalog changes
-remain eligible for a future tick. Batches only become ready when mapping succeeds.
+Failed sync mapping leaves files under `batches/<project>/.building-*` for
+inspection. The source items stay pending. A batch becomes ready only after
+mapping succeeds.
 
-Ready batches are immutable. Publication failures retain their ready state and
-receipts; repeating `piddi sync` republishes the same batch before newer work for
-that project. A checksum mismatch or catalog generation mismatch blocks publication
-for inspection. Successful batches are archived under `published/`. A crash after
-remote writes but before recording success may repeat those writes with overwrite
-semantics. Back up both the catalog and batch spool: mapping progress can reference
-sealed batches whose publication has not completed.
+Failed publication keeps the fixed batch under `batches/<project>/ready/`.
+Fix the cause, then repeat `piddi sync`. It retries that batch before newer work
+for the project. Successful batches move to `batches/<project>/published/`.
+A crash can repeat Handle writes already sent to the server.
+
+A checksum or catalog generation mismatch blocks publication. Inspect the batch
+before making changes. Stop sync before cleaning catalogs, and finish or
+explicitly archive the old ready queue first.
+
+Back up catalogs, `.harvest-state.json`, and the batch directory together.
+Catalog progress can refer to saved batches that have not yet been published.

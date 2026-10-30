@@ -1,219 +1,105 @@
 # Contributing to Piddiplatsch
 
-Thank you for your interest in contributing to Piddiplatsch!  
-This guide will help you get started with development, testing, and making contributions.
+Use this guide to set up a development environment, run checks, and add plugins.
+For CLI usage, start with the [README](README.md) and [Operations](docs/operations.md).
 
----
+## Set up development
 
-## 🚀 Development Setup
-
-### Prerequisites
-
-- [Miniconda (via conda-forge)](https://conda-forge.org/download/)
-- Git
-- Python 3.11+
-
-### Setting Up Your Development Environment
+You need Git, Conda, and Python 3.11 or newer.
 
 ```bash
-# Clone the repository
-git clone git@github.com:ESGF/piddiplatsch.git
+git clone https://github.com/ESGF/piddiplatsch.git
 cd piddiplatsch
-
-# Create and activate conda environment
 conda env create
 conda activate piddi
-
-# Install the project and its development dependencies with pip:
-pip install -e ".[dev]"
-# OR
 make develop
-```
-
----
-
-## 🔧 CLI Usage & Options
-
-Kafka is required for queue commands. Handle services are required only for
-explicit publication (or use the local Docker stack for smoke tests).
-
-- Harvest queue messages only: `piddi harvest`
-- Map a dated raw dump: `piddi map --date YYYY-MM-DD`
-- Map explicit saved JSONL: `piddi map <path...>`
-- Harvest catalogs: `piddi harvest`
-- Map catalogs: `piddi map --project cmip6 --date all`
-- Map pending items and publish ready batches: `piddi sync --force-map`
-- Common flags:
-  - `--config <path>`: point to your TOML config
-  - `--silent`: hide the default progress display
-  - `-v`: INFO logging; `-vv` or `--debug`: DEBUG logging
-  - `--log my.log`: override the configured log destination
-  - `batch --force-map`: map pending changes without waiting for thresholds
-
-`harvest` always writes raw queue messages to `outputs/dump/` before catalog
-routing. `map` prepares daily Handle JSONL without contacting a Handle Service;
-`sync` seals and publishes completed batches. The consume command is removed.
-
-### Config Validation
-
-Validate the loaded configuration (packaged defaults, then the optional site
-config, then `custom.toml` or `--config FILE`). Offline structural and consistency checks; exits
-non-zero on errors:
-
-```bash
-# Validate current setup
-piddi config validate
-
-# Validate a specific TOML
-piddi --config tests/config.toml config validate
-```
-
-Validations include presence and format of `consumer.projects`, `consumer.topic`, `kafka.bootstrap.servers` (comma-separated `host:port`), named Handle profiles and project references, lookup backend requirements, SASL PLAIN credentials, and retry/monitoring ranges.
-Likely application-key typos produce warnings, as do demo credentials and missing
-landing pages for selected projects. Explicit `--config` files must exist.
-
-### Makefile: Config Validation Target
-
-Before smoke tests, the Makefile validates the ESGF example and test config,
-each layered over packaged defaults. CI uses the same two configurations.
-Packaged defaults alone intentionally omit the site-specific SASL credentials;
-the ESGF example supplies placeholders for offline validation, without requiring
-production secrets or a Kafka connection.
-
-```bash
-# Validate etc/esgf-example.toml and tests/config.toml with packaged defaults
-make config-validate
-
-# Smoke tests automatically run validation first
-make test-smoke
-```
-
-This catches misconfigurations early (non-zero exit on errors) before bringing up Docker.
-
----
-
-## ✅ Testing
-
-Piddiplatsch uses a three-tier testing strategy: **unit**, **integration**, and **smoke tests**.
-
-### Test Types
-
-**Unit Tests** (fast, no external dependencies)  
-- Located in `tests/`
-- Pure logic tests with mocked dependencies
-- Run on every commit
-
-**Integration Tests** (medium speed, JSONL backend)  
-- Located in `tests/integration/`
-- Test component interactions using JSONL backend
-- Marked with `@pytest.mark.integration`
-- No Docker required
-- Uses test configuration from `tests/config.toml`
-
-**Smoke Tests** (end-to-end, requires Docker)  
-- Located in `tests/smoke/`
-- Full workflow tests with Kafka + mock Handle server
-- Marked with `@pytest.mark.smoke`
-- Docker services started/stopped automatically
-
-### Running Tests
-
-```bash
-# Run all unit + integration tests
-make test
-
-# Run tests once with a coverage report
-make coverage
-
-# Run only unit tests
-make test-unit
-
-# Run only integration tests
-make test-integration
-
-# Run smoke tests (Docker services started automatically)
-make test-smoke
-
-# Run all tests including smoke tests
-make test-all
-
-# Run a single test file (example)
-pytest tests/test_my_module.py
-```
-
-### Docker Management for Testing
-
-Docker is only used for smoke tests. The containers provide:
-- Kafka cluster (3 nodes)
-- Mock Handle server
-
-Manual commands:
-
-```bash
-make start-docker    # start services
-make stop-docker     # stop services
-make docker-build    # rebuild images
-make docker-clean    # clean images and volumes
-```
-
-See [scripts/README.md](scripts/README.md) for details on the Docker/smoke helper scripts used by these targets.
-
-### Troubleshooting (Kafka Healthchecks)
-
-If Docker services don’t become healthy quickly:
-
-- Verify container status and logs:
-   ```bash
-   docker-compose ps
-   docker-compose logs kafka1 kafka2 kafka3
-   ```
-- Use the helper script to wait for broker health:
-   ```bash
-   scripts/wait_for_kafka_health.sh 20 2
-   ```
-- Fallback check (port open on localhost):
-   ```bash
-   nc -z localhost 39092 && echo "Kafka port open"
-   ```
-- Adjust retries:
-   - Compose healthchecks use short intervals and 12 retries.
-   - Increase retries in `scripts/wait_for_kafka_health.sh` if your machine is slow.
-
-Notes:
-- Healthchecks probe internal broker ports via container hostnames (e.g., `kafka1:19092`).
-- The Makefile falls back to a quick port probe on `localhost:39092` to avoid long waits.
-
----
-
-## 🧼 Code Style and Linting
-
-This project uses automated tools to maintain code quality:
-
-- [`black`](https://black.readthedocs.io) - Code formatting
-- [`isort`](https://pycqa.github.io/isort/) - Import sorting
-- [`ruff`](https://docs.astral.sh/ruff/) - Linting and fast checks
-- [`pre-commit`](https://pre-commit.com) - Git hooks
-
-### Setup Pre-commit Hooks
-
-```bash
-pip install pre-commit
 pre-commit install
 ```
 
-Pre-commit hooks run automatically before each commit.
+`make develop` installs Piddi, test and style tools, and MkDocs.
+Pre-commit runs the configured checks before each commit.
 
-### Manual Checks
+Copy `etc/esgf-example.toml` to `custom.toml` for manual work. Keep real
+credentials in that ignored file. Use `tests/config.toml` for the local Docker
+services. See [Configuration](docs/configuration.md) for loading rules.
+
+## Check configuration
 
 ```bash
-pre-commit run --all-files
-make lint         # Run ruff, black, and isort checks
-make format       # Auto-format with black and isort
-make check-format # Check formatting only
-make fix          # Fix linting errors automatically
+piddi config validate
+piddi --config tests/config.toml config validate
+make config-validate
 ```
 
-Before opening a pull request, run the complete non-Docker quality gate:
+Validation runs offline. It checks structure, names, required settings, and
+numeric limits. It does not test connections or verify credentials.
+
+`make config-validate` checks both the ESGF example and test configuration over
+packaged defaults. The examples provide placeholders for offline checks.
+CI and smoke tests use the same validation target.
+
+## Run tests
+
+| Command | Coverage |
+| --- | --- |
+| `make test` | Unit and integration tests; no Docker. |
+| `make test-unit` | Unit tests only. |
+| `make test-integration` | Integration tests only. |
+| `make coverage` | Non-smoke tests with a coverage report. |
+| `make test-smoke` | End-to-end tests with Docker Kafka and a mock Handle service. |
+| `make test-all` | Unit, integration, and smoke tests. |
+
+To run one file, use `pytest tests/integration/test_cli.py`.
+
+Unit tests live in `tests/`. Integration tests live in `tests/integration/` and
+use the `integration` marker. Smoke tests live in `tests/smoke/` and use the
+`smoke` marker. Smoke tests start Docker services and run harvest followed by sync.
+
+Tests must use pytest's temporary directories. Do not read, truncate, or delete
+the checkout's ignored `outputs/`, `pid.log`, or `piddi.db`. These may contain
+local operational data.
+
+Live Handle tests are opt-in and need a disposable prefix. See
+[Real Handle service contract test](docs/operations.md#real-handle-service-contract-test).
+
+### Docker test services
+
+```bash
+make start-docker
+make stop-docker
+make docker-build
+```
+
+The stack has three Kafka brokers and a mock Handle server.
+`make stop-docker` removes the test volumes. `make docker-clean` also prunes
+unused Docker images.
+
+If Kafka does not become ready, check its containers and logs:
+
+```bash
+docker-compose ps
+docker-compose logs kafka1 kafka2 kafka3
+scripts/wait_for_kafka_health.sh 20 2
+```
+
+The Makefile also checks port `39092` on localhost if the health check times out.
+See [Test scripts](scripts/README.md) for the helper scripts.
+
+## Check code style
+
+Ruff checks the code. Black formats it, and isort sorts imports.
+
+```bash
+make lint
+make format
+make check-format
+make fix
+pre-commit run --all-files
+```
+
+`make format` and `make fix` change files. Review their changes before committing.
+
+Before opening a pull request, run:
 
 ```bash
 make lint
@@ -223,135 +109,22 @@ make dist
 python -m twine check dist/*
 ```
 
-Tests must write only to pytest-provided temporary directories. Do not read,
-truncate, or delete the repository's ignored `outputs/`, `pid.log`, or
-`piddi.db`; developers may retain those files for operational inspection.
+For documentation changes, follow [Building the documentation](docs/building.md).
 
----
+## Add a project plugin
 
-## 📦 Versioning and Releases
+Plugins share mapping code and Handle models. Keep project-specific code small.
 
-This project uses [bump-my-version](https://github.com/callowayproject/bump-my-version) for version management.
+1. Add a package under `src/piddiplatsch/plugins/<python_name>/` with `model.py`,
+   `record.py`, `processor.py`, and `plugin.py` as needed.
+2. Reuse `DatasetHandleModel`, `FileHandleModel`, `ProjectDatasetRecord`,
+   `ProjectFileRecord`, and `StacProjectProcessor`.
+3. Declare a plugin specification and register it in the static registry.
+4. Add `[plugins.<name>]` settings where needed.
+5. Add a fixture based on a real publication, plus plugin and integration tests.
 
-### Bumping Version
+A specification looks like this:
 
-```bash
-# Preview version bump (dry-run)
-bump-my-version bump patch --dry-run --allow-dirty
-
-# Bump version and create git tag
-make bump-patch    # 1.0.0 → 1.0.1
-make bump-minor    # 1.0.0 → 1.1.0
-make bump-major    # 1.0.0 → 2.0.0
-
-# Push changes and tags
-git push && git push --tags
-```
-
-Version is stored in `pyproject.toml` and automatically tagged in git.
-
----
-
-## 🔄 Development Workflow
-
-1. **Create a branch**
-   ```bash
-   git checkout -b feature/your-feature-name
-   ```
-2. **Make your changes**
-   - Write code
-   - Add/update tests
-   - Update documentation if needed
-3. **Run tests and linting**
-   ```bash
-   make lint
-   make test
-   ```
-4. **Commit your changes**
-   ```bash
-   git add .
-   git commit -m "Description of your changes"
-   ```
-   Pre-commit hooks run automatically.
-5. **Push and create Pull Request**
-   ```bash
-   git push origin feature/your-feature-name
-   ```
-
----
-
-## 📝 Writing Tests
-
-### Unit Tests
-
-Place unit tests in `tests/` with descriptive names:
-
-```python
-# tests/test_my_module.py
-def test_function_does_something():
-    result = my_function(input_data)
-    assert result == expected_output
-```
-
-### Integration Tests
-
-Place integration tests in `tests/integration/` and mark them:
-
-```python
-# tests/integration/test_my_integration.py
-import pytest
-
-pytestmark = pytest.mark.integration
-
-def test_pipeline_with_deferred_output():
-    # Test component interactions
-    pass
-```
-
-### Smoke Tests
-
-Place smoke tests in `tests/smoke/` and mark them:
-
-```python
-# tests/smoke/test_end_to_end.py
-import pytest
-
-pytestmark = pytest.mark.smoke
-
-def test_full_workflow(handle_client, testfile):
-    # Test complete workflow
-    pass
-```
-
----
-
-## 🔌 Project plugins
-
-- Map selects one, several, or all plugins via `consumer.projects` or its
-  `--project/--all-projects` options. Batch uses the configured selection; harvest
-  caches every registered project.
-- Config for each plugin lives under `[plugins.<name>]` in the TOML.
-- Example (CMIP6):
-
-```toml
-[plugins.cmip6]
-landing_page_url = "https://handle-esgf.dkrz.de/lp"
-max_parts = -1
-excluded_asset_keys = ["reference_file", "globus", "thumbnail", "quicklook"]
-```
-
-### Adding a Plugin
-
-1. Add a package containing thin `model.py`, `record.py`, `processor.py`, and
-   `plugin.py` modules:
-```
-src/piddiplatsch/plugins/<python_name>/
-```
-Reuse `DatasetHandleModel`, `FileHandleModel`, `ProjectDatasetRecord`,
-`ProjectFileRecord`, and `StacProjectProcessor`; keep only PID field names and
-real project differences in the plugin.
-
-2. Declare the plugin specification:
 ```python
 from piddiplatsch.core.plugin import PluginSpec
 
@@ -361,29 +134,33 @@ plugin = PluginSpec(
     make_processor=YourProcessor,
 )
 ```
-3. Import and register that specification explicitly in the static registry.
-4. Provide `[plugins.<name>]` config as needed.
-5. Add a real-record-derived fixture and plugin/integration tests.
 
----
+Keep PID field names and real project differences in the plugin. Shared behavior
+belongs in the common classes. See [Architecture](docs/architecture.md).
 
-## 🐛 Reporting Issues
+Harvest stores every registered project it encounters. Map and sync select
+projects through `consumer.projects` and their CLI options. Plugin settings live
+under `[plugins.<name>]`.
 
-Include:
-- Python version
-- Operating system
-- Steps to reproduce
-- Expected vs actual behavior
-- Relevant logs or error messages
+## Versions and releases
 
----
+The version is stored in `pyproject.toml`. Bump-my-version updates it and creates
+a Git commit and tag:
 
-## 💡 Questions?
+```bash
+# Preview a patch release
+bump-my-version bump patch --dry-run --allow-dirty
 
-- Open an issue on GitHub
-- Start a discussion
-- Check existing issues and PRs
+# Create the version commit and tag
+make bump-patch
+# Or use make bump-minor / make bump-major
+```
 
----
+Review the result before pushing commits and tags. `make dist` builds packages;
+`make release` builds and uploads them.
 
-Thank you for contributing to Piddiplatsch! 🎉
+## Report a problem
+
+Include the Python version, operating system, steps to reproduce, expected result,
+and actual result. Add relevant logs with credentials removed. Use GitHub issues
+for bugs and discussions for questions.

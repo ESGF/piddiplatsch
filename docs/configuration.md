@@ -1,153 +1,96 @@
 # Configuration
 
-Piddiplatsch loads configuration in this order, with each existing file
-overriding values from the preceding layer:
+Start with the example file. Change only the values your site needs:
 
-1. packaged `src/piddiplatsch/config/default.toml`
-2. site-wide `/etc/piddi/piddi.toml`
-3. local `./custom.toml`
+```bash
+cp etc/esgf-example.toml custom.toml
+```
 
-Missing optional site and local files are ignored. An explicit `--config PATH`
-must name an existing file; a missing file or directory is an error. Keep credentials in the
-local ignored file. `--config PATH` replaces the third layer with the selected
-file; the packaged and site-wide layers are still loaded first.
+Set the Kafka connection and credentials, projects, and Handle service profiles.
+Keep real credentials in this ignored local file.
 
-## Start with a small site override
+## Configuration files
 
-Copy `etc/esgf-example.toml` to `custom.toml` and replace its placeholders.
-Set the projects/topic, Kafka connection and consumer group, Handle service and
-credentials, and output directory. Packaged defaults supply `SASL_SSL` and `PLAIN`
-for authenticated ESGF Kafka; the example supplies Kafka credential placeholders. Match
-these values to your broker; they are connection requirements, not advanced
-tuning. See `etc/esgf-example.toml` for alternative mechanisms and a custom CA.
-Ansible uses the same `custom.toml` for production and installs it as
-`/etc/piddi/piddi.toml`, adding production output/log/database path defaults
-only where the TOML omits them. Explicit TOML values take precedence.
-The optional `deploy/ansible/custom.yml` contains only deployment controls;
-Kafka, Handle, project, and mapping values belong in TOML once.
-See [deployment and migration](https://github.com/ESGF/piddiplatsch/blob/main/deploy/README.md).
+Piddi loads files in this order. Later values replace earlier values:
 
-You do not need to copy the full packaged defaults. Leave retry delays, monitoring
-intervals, mapping limits, and optional backends inherited until you need to tune them.
-The packaged `default.toml` is the full reference, not a setup checklist.
+1. Packaged `src/piddiplatsch/config/default.toml`.
+2. Site file `/etc/piddi/piddi.toml`, if present.
+3. Local `custom.toml`, if present.
+
+`--config PATH` replaces the third file. That path must exist. The packaged and
+site settings still load first. Relative paths start at the current working
+directory. Deployed services use `/var/lib/piddi` as their working directory.
+
+Ansible reads the checkout's `custom.toml` and installs a copy at
+`/etc/piddi/piddi.toml`. It adds production paths where you have not set them.
+See [Deployment](deployment.md).
+
+## Check your settings
 
 ```bash
 piddi config validate
 piddi config explain --project cmip6
-piddi config explain --project cmip6 --handle-profile production
+piddi config show --section consumer
 ```
 
-`explain` shows the resolved Handle service, prefix, STAC collection, and catalog
-settings, with the configuration keys and files supplying them. It lists loaded
-files in precedence order, listing full filenames once with short labels such
-as `defaults` and `custom.toml`. Settings use those labels; repeated filenames
-receive numbered labels to keep their origins distinct. It resolves output,
-log, and database paths against
-the current working directory. `--log` is reflected as a command-line override;
-terminal logging and disabled database reporting are identified. Username/password
-fields are omitted. The installed production config is attributed to
-`/etc/piddi/piddi.toml`; inspect the source `custom.toml` separately when needed.
-Use `config show` for the merged configuration, or narrow it with
-`config show --section consumer`. Recognized credential fields (including
-usernames, passwords, tokens, API keys, and private keys) display as
-`***` by default, including nested plugin settings. Embedded URL
-credentials and recognized secret query parameters are also redacted.
-This applies to TOML/JSON output and to section/key filters. Runtime settings
-are unchanged. Custom extension secrets should use descriptive credential keys
-so they can be recognized.
+`validate` checks the file structure, project names, profiles, required
+credentials, and numeric limits. It suggests fixes for likely key typos.
+It runs offline: it does not test connections or verify credentials.
 
-To explicitly include the original credential values:
+`explain` shows the selected Handle service, prefix, STAC settings, and catalog
+paths. It also shows which file supplied each value. Credentials are omitted.
+
+`show` prints the merged configuration. It hides recognized credentials with
+`***`, including credentials in URLs. Use descriptive names for custom secret
+keys so they can be recognized. To include secrets explicitly:
 
 ```bash
 piddi config show --show-secrets
 piddi config show --format json --show-secrets
 ```
 
-`config validate` runs offline. It checks credentials when SASL PLAIN is selected,
-nonnegative retry counts and backoff delays, ordered backoff bounds, and positive
-monitoring intervals. Zero retries/delays and zero sample retention (no pruning)
-remain supported. Likely misspelled application keys produce suggestions;
-arbitrary Kafka options and plugin extensions remain accepted. Demo credential
-and missing landing-page warnings concern only configured projects and the
-Handle profiles they select (`projects = "all"` includes all registered projects).
-These checks do not test broker connectivity or credential validity.
+These inspection commands do not open the configured log file. They can run
+when the production log directory is not writable.
 
-`config show`, `config explain`, and `config validate` do not initialize file
-logging or create log files. They work even if the configured production log
-directory is not writable. `--log` is shown as an override by `explain` but does
-not open the file during inspection.
+## Kafka and projects
 
-## Routine operation
+```toml
+[consumer]
+projects = ["cmip6", "cmip7"]
+topic = "ESGF-PUBLICATIONS"
 
-Production runs `piddi harvest --idle-timeout 0` continuously and schedules
-`piddi sync` to map pending catalog items and publish sealed batches. Manual
-`map` and `publish` remain available for selected dates/windows.
-
-`consume` has been removed. Use `harvest` for ingestion and `map`/`publish` for
-manual operation, or `sync` for the scheduled workflow.
-
-Set the default project selection with `[consumer].projects`. Map accepts repeated
-`--project` flags or `--all-projects` to override that selection. Sync accepts
-repeated `--project` flags to restrict both mapping and ready-batch publication
-to selected configured projects; unknown or unconfigured projects fail before
-publication. Its `--workers` and `--retries` flags override
-`[batch].publish_workers` and `[batch].publish_retries` for one run. Harvest caches
-all registered projects and uses a separate Kafka group.
-
-Use `-v` for INFO logging, `-vv` for DEBUG, and `--log PATH` to select a log file.
-For permanent changes, set `[logging].level` and `[logging].file`.
-
-Direct REST publication always appends the prepared record to
-the project-scoped Handle JSONL file before contacting the service. This audit
-output is not optional; `[consumer].output_dir` controls its root directory.
-
-`piddi publish` always uses the REST Handle client, independently of the
-profile's configured `backend`. The deferred command
-publishes closed daily files using the project's selected profile and its
-`server_url`, `prefix`, `username`, `password`, TLS verification, and timeout
-settings. A deferred batch containing multiple projects is rejected; publish
-each project's JSONL separately so server selection is unambiguous.
-
-### Publication logs
-
-Publication writes an INFO progress summary every 30 seconds as results arrive,
-plus a final summary, for both `sync` and `publish`. Summaries include successful,
-failed, and retry counts, project, elapsed time, and average processing rate.
-The receipt path is logged once when the file opens. These are cumulative counts for the current publication attempt;
-they do not count unique Handles across retries or runs. No progress summary is
-emitted while waiting for a result. Pass `-v` to enable INFO logging and `--log PATH`
-to override the configured destination (`pid.log` by default).
-
-INFO summaries use operation labels and grouped numbers, for example:
-
-```text
-[harvest] running | 30,000 messages | 30,000 catalog writes | 0 errors | 294 messages/s | elapsed 106s | projects: cmip6
-[sync/publish] cmip6plus | running | 11,573 published | 0 failed | 0 retries | 193 handles/s avg | elapsed 60s
+[kafka]
+"bootstrap.servers" = "broker.example.org:9092"
+"group.id" = "my-site-piddi"
+"sasl.username" = "replace-me"
+"sasl.password" = "replace-me"
 ```
 
-Manual mapping and publication use `[map]` and `[publish]`; the scheduled worker
-uses `[sync]` for tick lifecycle messages and `[sync/map]` / `[sync/publish]`
-for its phases. Harvest summaries omit Handle counts because harvest only updates
-catalogs. Full statistics snapshots, including per-project counters and run metadata,
-are available at DEBUG; SQLite monitoring and JSONL receipts retain their details.
+Kafka defaults to `SASL_SSL` with `PLAIN` authentication. The ESGF example also
+shows other authentication options and a custom CA file. Quote Kafka keys that
+contain dots. Piddi passes additional `[kafka]` keys to the Kafka client.
 
-Every successful Handle write logs its details at DEBUG (`-vv`). The entry identifies whether the server
-created or updated the Handle and includes its directly resolvable REST URL, project,
-dataset ID, file name, and source position. For file assets, the publisher joins
-`IS_PART_OF` to a dataset record in the selected batch so the asset log entry
-also includes `DATASET_ID`. Context that is unavailable in older JSONL input is
-written as `-`.
+For an unauthenticated local test broker, set:
+
+```toml
+[kafka]
+"security.protocol" = "PLAINTEXT"
+```
+
+The Docker test configuration already sets this value. Use it with
+`piddi --config tests/config.toml harvest`.
+
+`consumer.projects` selects projects for mapping and sync. Use a list of plugin
+names or `"all"`. Supported plugins are `cmip6`, `cmip6plus`, `cmip7`, and
+`cordex-cmip6`.
+
+Map can override the selection with repeated `--project NAME` options or
+`--all-projects`. Sync can use repeated `--project NAME` options to restrict the
+configured selection. Harvest always stores all registered projects it encounters.
 
 ## Multiple Handle servers
 
-Each named profile inherits `[handles.defaults]` and overrides those values
-with its own table. All projects inherit `[handles].default`. A project may select another named
-profile with `plugins.<name>.handle`, and `--handle-profile NAME` temporarily
-overrides both settings for `map` or `publish`. Existing
-Handle files retain their mapped prefix, so publication still rejects an
-override whose prefix does not match the records.
-
-Plugins can share a service and credentials while using different prefixes:
+Use named profiles to choose a server and credentials:
 
 ```toml
 [handles]
@@ -156,7 +99,7 @@ default = "production"
 [handles.profiles.production]
 server_url = "https://handles.example.org"
 prefix = "21.DEFAULT"
-username = "shared-user"
+username = "replace-me"
 password = "replace-me"
 
 [plugins.cmip6]
@@ -166,73 +109,26 @@ handle_prefix = "21.CMIP6"
 handle_prefix = "21.CMIP7"
 ```
 
-Both plugins inherit the production profile. A plugin can still select another
-service with `handle = "another-profile"`. Prefix precedence is the plugin's
-`handle_prefix`, then the selected profile's `prefix`, then
-`[handles.defaults].prefix`. Profiles must still provide a fallback prefix,
-either directly or through defaults, for callers without a project override.
-The plugin prefix also applies when `--handle-profile` selects a different
-service. Mapping,
-JSONL output, immediate publication, and deferred publication all use this
-effective prefix. The shared credentials must have permission to write each
-plugin's prefix.
+Profiles inherit common values from `[handles.defaults]`, including HTTPS
+verification and the request timeout. The default timeout is 10 seconds.
+Keep HTTPS verification enabled for production.
 
-Keep real credentials in an ignored local override. Configuration examples can
-live under `etc/`.
+Projects use `[handles].default` unless they set `handle = "profile-name"` under
+`[plugins.<name>]`. Map and publish also accept `--handle-profile NAME` for one run.
 
-### How inheritance works
+A project's `handle_prefix` overrides its profile's prefix. In the example,
+CMIP6 and CMIP7 share the server and credentials but use different prefixes.
+The credentials must allow writes to both prefixes. Profiles still need a
+fallback prefix, either in the profile or in `[handles.defaults]`.
 
-Suppose the site file contains the `production` profile above, and your local
-file contains only:
+Prepared Handle files keep the prefix chosen during mapping. Changing the
+publication profile does not rewrite those PIDs. A mismatched prefix is rejected.
+`publish` and `sync` send prepared Handles through REST.
 
-```toml
-[plugins.cmip6]
-handle_prefix = "21.LOCAL"
-```
+Use `piddi config explain --project cmip6` to check the resolved settings.
+You can also add `--handle-profile NAME` to inspect an override.
 
-For CMIP6, the service and credentials still come from `handles.profiles.production`,
-the prefix becomes `21.LOCAL`, and the timeout remains inherited from
-`handles.defaults` (10 seconds unless overridden). CMIP7 keeps its own prefix.
-`piddi config explain --project cmip6` displays these resolved choices.
-
-File merging happens first: packaged defaults → site file → local/`--config` file.
-Project resolution happens afterwards: shared settings → selected profile or
-project settings. A local file need only contain the individual keys you change.
-
-## Kafka and project STAC settings
-
-Kafka authentication defaults to `SASL_SSL` with the `PLAIN` mechanism.
-Set broker addresses and credentials in your site/local override. Other
-protocols and mechanisms can still be selected there.
-
-The Docker test cluster uses unauthenticated Kafka. Its `tests/config.toml`
-explicitly overrides the protocol, so run it with
-`piddi --config tests/config.toml harvest`. For another local configuration, add:
-
-```toml
-[kafka]
-"security.protocol" = "PLAINTEXT"
-```
-
-Omitting this key inherits `SASL_SSL`; it does not select plaintext automatically.
-
-All additional keys under `[kafka]` are passed to `confluent-kafka`. Dotted
-librdkafka keys must be quoted in TOML, for example
-`"bootstrap.servers" = "broker:9092"`.
-
-Use `etc/esgf-example.toml` as a starting point for authenticated ESGF Kafka
-settings.
-
-Select projects in configuration:
-
-```toml
-[consumer]
-projects = ["cmip6"]
-# projects = ["cmip6", "cmip7"]
-# projects = "all"
-```
-
-STAC settings may be shared while each project selects its own collection:
+## STAC recovery settings
 
 ```toml
 [stac]
@@ -246,41 +142,39 @@ collection = "CMIP6"
 collection = "CMIP7"
 ```
 
-Project settings inherit unspecified values from `[stac]`. A project-specific
-`base_url` or `timeout` can therefore be added later if that collection moves to
-another service. Harvest PATCH recovery uses the event
-`collection_id`. Catalog mapping uses stored collections and does not contact
-this endpoint. Harvest uses the same project endpoint and timeout for missing-base
-recovery and persistent per-item remote refresh. This is independent of the legacy
-`[lookup].enabled` setting; an absent endpoint stops recovery instead of creating
-a placeholder. Its predecessor queries are controlled by `[catalog].version_history`.
+Projects inherit the shared STAC settings. Set a project-specific `base_url` or
+`timeout` when needed.
 
-Elasticsearch version lookup has been removed. Remove the old `[elasticsearch]`
-section and any `[lookup].backend = "es"` setting from site configuration.
-Dataset predecessor links use `[catalog].version_history`. Remote harvest recovery
-continues to use the project STAC endpoint.
+Harvest fetches a complete remote item when a patch has no local base. It uses
+the collection and item identity from the event. Recovered items stay marked for
+remote refresh on later events and harvest startup. A failed fetch stops harvest.
+See [Remote current-item recovery](operations.md#remote-current-item-recovery).
 
-## Dataset version lookup
+Map reads local catalogs and does not contact STAC.
 
-The `lookup` module handles dataset versions only. It provides `CatalogLookup`
-(default) and the retained `STACLookup` implementation:
+## Local catalog
 
 ```toml
-[lookup]
-backend = "catalog"  # explicit remote alternative: "stac"
-enabled = false
+[catalog]
+enabled = true
+backend = "sqlite"
+version_history = false
+kafka_commit_batch_size = 100
+kafka_commit_interval_seconds = 1.0
+# directory = "/var/lib/piddi/catalog"
 ```
 
-`get_lookup(project)` uses this configuration. Catalog lookup opens the project's
-local database read-only for each query, or reuses a caller-owned injected reader.
-It lists version IDs and finds the nearest predecessor through metadata indexes,
-without decompressing STAC payloads. Missing catalogs are errors, not empty results.
+The default directory is `<consumer.output_dir>/catalog`. SQLite is the supported
+backend. `enabled` controls catalog writes during harvest. Map always reads
+catalogs, even if harvest catalog writes are disabled.
 
-Map always uses `CatalogLookup` with its existing item snapshot, regardless of
-`[lookup].backend`; `[catalog].version_history` or the map CLI option controls
-whether it adds predecessor links. This preserves offline mapping. STAC remains
-an explicit adapter for separate version queries; it is independent of harvest's
-complete-item remote recovery.
+Keep `version_history` disabled for the first fill. Enable it to link each dataset
+to the nearest older version in the same local catalog. Map's `--version-history`
+and `--no-version-history` options override it for one run.
+
+The two commit settings control how often harvest acknowledges saved events to
+Kafka. Local writes remain durable for each event. A batch size of `1` sends an
+acknowledgement for each message and can reduce throughput.
 
 ## Scheduled batches
 
@@ -294,108 +188,91 @@ publish_retries = 3
 # directory = "/var/lib/piddi/batches"
 ```
 
-`piddi sync` maps when either the per-project distinct pending-item threshold or
-maximum wait is reached. The age is measured from the first pending change.
-`max_items` caps catalog items per output batch; an item's dataset/file Handles are
-never split. Ready batches publish immediately during the tick, independently of
-those mapping thresholds. `publish_retries` controls transient HTTP retries per
-Handle; failed batches remain ready for later ticks. Positive counts/wait and
-nonnegative retry counts are validated. The batch directory defaults to
-`<consumer.output_dir>/batches` and must be shared by every worker invocation.
-The deployment timer cadence is configured separately in Ansible.
+Sync maps a project when either 1,000 distinct items have changed or the oldest
+pending change has waited one hour. Repeated changes to one item count once.
+`sync --force-map` skips the wait for pending items.
 
-## Local catalog
+`max_items` limits catalog items per batch. An item's dataset and file Handles
+stay together. Ready batches publish during the same sync run, even when no new
+mapping is due. Failed publication stays ready for the next run.
 
-```toml
-[catalog]
-enabled = true
-backend = "sqlite"
-# Default: <consumer.output_dir>/catalog
-# directory = "/var/lib/piddi/catalog"
-version_history = false
-kafka_commit_batch_size = 100
-kafka_commit_interval_seconds = 1.0
-```
+`publish_workers` sets concurrent Handle requests. `publish_retries` sets retries
+for each temporary HTTP failure. Sync's `--workers` and `--retries` options
+override these values for one run, including publication of existing ready batches.
 
-`enabled` controls catalog maintenance during harvest. Map always reads the
-catalog; it uses read-only snapshots and can use existing catalogs even when
-harvest maintenance is disabled. `version_history` enables local predecessor
-links for every built-in project; map's `--version-history`/`--no-version-history`
-overrides it for one run. No remote lookup backend is involved. See
-[staged operations](operations.md#staged-commands) for cleaning and migration.
+The default directory is `<consumer.output_dir>/batches`. All sync runs must use
+the same directory so they share batches and the worker lock. The Ansible setting
+`piddi_sync_check_interval` controls how often the timer runs.
 
-## Settings reference
-
-All existing settings remain supported. Only override values your site needs.
-
-### Site connections and project selection
-
-| Section | Key | Purpose |
-| --- | --- | --- |
-| `consumer` | `projects` | Plugin names to run, as a list or the string `all`. |
-| `consumer` | `topic` | Kafka topic to consume. |
-| `consumer` | `output_dir` | Root for global dump/recovery files and `<plugin>/handles/` JSONL output. |
-| `consumer` | `max_errors` | Stop after this many processing errors; `-1` disables the limit. |
-| `handles` | `default` | Handle profile used when a project does not select one explicitly. |
-| `handles.defaults` | `backend`, `verify_https`, `timeout` | Common values inherited by every named Handle profile. |
-| `handles.profiles.<name>` | `backend` | `rest` for publication; always writes JSONL first. |
-| `handles.profiles.<name>` | `server_url`, `prefix`, `username`, `password` | Connection and credentials for one Handle service. |
-| `handles.profiles.<name>` | `verify_https`, `timeout` | TLS verification and per-request timeout for one Handle service. |
-| `stac` | `base_url`, `timeout`, `collection` | Global STAC defaults; the shared endpoint is `https://discovery.east.esgf.io`. |
-| `logging` | `level` | Baseline `DEBUG`, `INFO` (default), `WARNING`, `ERROR`, or `CRITICAL` level. `WARN` is accepted as an alias. |
-| `logging` | `file` | Log destination. An empty string selects terminal logging. |
-
-### Mapping and validation
-
-| Section | Key | Purpose |
-| --- | --- | --- |
-| `schema` | `strict_mode` | Reject incomplete or unsupported records; defaults to `true`. |
-| `plugins.<name>` | `handle` | Named Handle profile used by this project. |
-| `plugins.<name>` | `handle_prefix` | Optional prefix overriding the selected Handle profile's prefix for this project. |
-| `plugins.<name>` | `force_dataset_pid` | Default `false`. Generate dataset PIDs from the full STAC item ID, ignoring source dataset PIDs; also updates file parent links. File tracking IDs are preserved. |
-| `plugins.<name>` | `landing_page_url`, `max_parts`, `excluded_asset_keys` | Project-specific Handle-record behavior. |
-| `plugins.<name>.stac` | `base_url`, `timeout`, `collection` | Optional project overrides for the global STAC settings. |
-
-To correct publisher dataset PIDs generated from an unversioned `dataset_id`,
-enable the override only for affected projects in your configuration:
+## Logging and monitoring
 
 ```toml
-[plugins.cmip7]
-force_dataset_pid = true
+[logging]
+level = "INFO"
+file = "pid.log"
+
+[stats]
+enable_db = true
+db_path = "piddi.db"
+interval_seconds = 30
+summary_interval = 10000
+heartbeat_interval_seconds = 5
+stale_after_seconds = 15
+sample_interval_seconds = 15
+history_minutes = 60
+sample_retention_days = 30
 ```
 
-This applies to manual and scheduled catalog mapping. Piddi uses its deterministic
-UUIDv3 generator with the complete STAC item `id` (the versioned `instance_id`).
-Source dataset PID fields are ignored, including conflicting compatibility fields.
-File `IS_PART_OF` links point to the generated dataset PID, while file tracking
-IDs and dataset `HAS_PARTS` links retain their existing behavior. The input STAC
-JSON is not modified. This does not create redirects for previously published
-PIDs; existing mapped Handle JSONL must be regenerated to use the new policy.
-`batch --force-map` skips mapping thresholds for pending items; harvest remains
-fail-fast and has no force option.
+INFO logs show progress summaries. Use `-vv` or `--debug` for record details.
+`--log PATH` overrides the log file for one command. Set `logging.file = ""`
+to log to the terminal. `--silent` hides progress bars but keeps final summaries.
 
-### Advanced tuning and optional services
+Statistics log every 30 seconds or 10,000 messages as results arrive.
+The monitoring database records harvest and mapping. `piddi top` reads it.
+Publication results are in the logs and JSONL receipts.
 
-| Section | Key | Purpose |
-| --- | --- | --- |
-| `consumer.transient` | `stop_on_skip` | Legacy library setting; catalog harvest always stops on failed recovery. |
-| `consumer.transient` | `retries` | Number of retries for transient STAC patch retrieval. |
-| `consumer.transient` | `backoff_initial`, `backoff_max` | Exponential retry delay bounds in seconds. |
-| `consumer.transient` | `preflight_stac` | Probe the configured STAC service before consuming; disabled by default. |
-| `catalog` | `enabled`, `backend`, `directory` | Harvest maintenance and per-project local catalog storage. |
-| `catalog` | `version_history` | Optional local predecessor linking during map; disabled by default. |
-| `catalog` | `kafka_commit_batch_size`, `kafka_commit_interval_seconds` | Broker acknowledgement batching after durable local writes. |
-| `lookup` | `enabled`, `backend` | Version lookup adapter: `catalog` (default) or explicit `stac`; map uses its catalog snapshot and separate history switch. |
-| `stats` | `interval_seconds`, `summary_interval` | Statistics reporting thresholds: 30 seconds or 10,000 messages by default, whichever is reached first as messages arrive. |
-| `stats` | `enable_db`, `db_path`, heartbeat/sample/history intervals | Local SQLite state and history for mapping and batch mapping runs. |
+Heartbeats update every five seconds, even when Kafka is idle. Unfinished runs
+become stale after 15 seconds without a heartbeat. History samples are kept for
+30 days; use `sample_retention_days = 0` to keep them indefinitely.
+See [Logging and statistics](operations.md#logging-and-statistics) for examples.
+
+## Mapping settings
+
+| Setting | Purpose |
+| --- | --- |
+| `consumer.output_dir` | Root directory for catalogs, Handle files, receipts, and diagnostic files. |
+| `consumer.max_errors` | Stop mapping at this error count. Default: `1`; `-1` removes the limit. |
+| `schema.strict_mode` | Reject incomplete or unsupported records. Default: `true`. |
+| `plugins.<name>.landing_page_url` | Base URL for Handle landing pages. |
+| `plugins.<name>.max_parts` | Limit dataset `HAS_PARTS` entries; `-1` means unlimited. |
+| `plugins.<name>.excluded_asset_keys` | Asset keys excluded from `HAS_PARTS`. |
+| `plugins.<name>.force_dataset_pid` | Generate dataset PIDs from the full versioned STAC item ID. Default: `false`. |
+
+Use `force_dataset_pid` only for projects that need it. It ignores source dataset
+PIDs and updates file parent links to the generated PID. File tracking IDs stay
+the same. It does not create redirects for old PIDs. Remap existing Handle files
+before publishing with the new policy.
+
+The packaged `src/piddiplatsch/config/default.toml` lists all defaults.
+
+## Dataset version lookup
+
+The library's `[lookup]` section selects `catalog` or `stac` for separate version
+queries. Map always uses its local catalog snapshot. Its predecessor links are
+controlled by `catalog.version_history`, not by `[lookup]`.
+
+Elasticsearch lookup is no longer supported. Remove old `[elasticsearch]` settings
+and `[lookup].backend = "es"`.
 
 ## Compatibility with older configuration
 
-Legacy `[handle]` remains supported and takes precedence over named profiles,
-including an explicit `--handle-profile` selection. A project `handle_prefix`
-still overrides its prefix. Prefer `[handles.profiles.<name>]` for new setups.
+Old `[handle]` settings still work and take priority over named profiles, even
+with `--handle-profile`. A project's `handle_prefix` still overrides the prefix.
+Use named profiles for new configurations.
 
-Legacy top-level project tables such as `[cmip6]` also remain supported. Their
-keys override `[plugins.cmip6]`; nested values such as `stac` are replaced at
-that level rather than recursively merged by project resolution. Prefer
-`[plugins.<name>]` for new setups and avoid mixing both forms.
+Old project tables such as `[cmip6]` override `[plugins.cmip6]`. Nested values such
+as `stac` replace that table rather than merge individual keys. Use
+`[plugins.<name>]` for new settings and avoid mixing both forms.
+
+`[consumer.transient]` applies only to legacy library processing. Catalog harvest
+stops when remote recovery fails; map uses local items.

@@ -3,6 +3,10 @@
 Piddiplatsch reads ESGF STAC publications from Kafka and registers persistent
 identifiers with the Handle System for CMIP6, CMIP6Plus, CMIP7, and CORDEX-CMIP6.
 
+For a Linux service, follow the
+[deployment guide](https://esgf.github.io/piddiplatsch/deployment/).
+It covers first setup, updates, and monitoring. The steps below are for local use.
+
 ## Install and configure
 
 ```bash
@@ -39,14 +43,13 @@ piddi publish --project cmip6 --date all --workers 4 --retries 3
 
 ## Map and publish with sync
 
-As an alternative to separate `map` and `publish` commands, map and publish
-pending changes for the configured projects:
+Use `sync` to map and publish pending changes for the configured projects:
 
 ```bash
 piddi sync --workers 4
 ```
 
-To publish pending changes immediately, without waiting for batch thresholds:
+To process pending changes now, without waiting for enough items or elapsed time:
 
 ```bash
 piddi sync --force-map --workers 4
@@ -74,6 +77,6 @@ piddi sync --help
 See the [configuration](https://esgf.github.io/piddiplatsch/configuration/),
 [operations](https://esgf.github.io/piddiplatsch/operations/),
 [recovery](https://esgf.github.io/piddiplatsch/recovery/), and
-[deployment](https://github.com/ESGF/piddiplatsch/blob/main/deploy/README.md)
+[deployment](https://esgf.github.io/piddiplatsch/deployment/)
 guides for advanced use. See [Contributing](https://github.com/ESGF/piddiplatsch/blob/main/CONTRIBUTING.md)
 for development and testing.

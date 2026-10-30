@@ -1,20 +1,29 @@
-# Test Scripts (Docker/Smoke)
+# Helper scripts
 
-This folder contains helper scripts used exclusively for local Docker services and smoke tests. They are not required for production deployments.
+Use the Makefile targets to run these scripts.
 
-What these scripts do:
-- `create_cluster_id.sh`: Generates a KRaft Cluster ID for the demo Kafka stack.
-- `update_run.sh`: Injects the generated Cluster ID into broker env before startup.
-- `wait_for_kafka_health.sh`: Waits for brokers to become healthy via `/dev/tcp` hostname probes.
-- `ensure_kafka_topic.py`: Ensures the configured topic exists before starting the consumer or running smoke tests.
+| Script | Purpose |
+| --- | --- |
+| `create_cluster_id.sh` | Create a KRaft cluster ID for the Docker Kafka stack. |
+| `update_run.sh` | Set the cluster ID before starting a broker. |
+| `wait_for_kafka_health.sh` | Wait for Docker broker health checks to pass. |
+| `ensure_kafka_topic.py` | Create the configured topic if it does not exist. |
+| `check_docs_links.py` | Check local links in the built documentation and slides. |
 
-How to use (via Makefile):
-- Start services: `make start-docker`
-- Run smoke tests: `make test-smoke`
-- Stop services: `make stop-docker`
+For local Docker tests:
 
-Notes:
-- These scripts are wired through `docker-compose.yml` and the `Makefile` targets above.
-- For non-Docker ESGF Kafka setups, use `etc/esgf-example.toml`. `harvest`
-  maintains local catalogs; `map` prepares Handles without publication. `sync`
-  maps pending items and publishes ready batches when Handle writes are intended.
+```bash
+make start-docker
+make test-smoke
+make stop-docker
+```
+
+For documentation checks, build the full site first:
+
+```bash
+make docs
+make docs-check
+```
+
+Docker services are for local tests. Production uses the site configuration in
+`custom.toml`. See [Deployment](../docs/deployment.md) for setup and updates.

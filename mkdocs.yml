@@ -13,13 +13,9 @@ nav:
   - Architecture: architecture.md
   - Configuration: configuration.md
   - Operations: operations.md
+  - Deployment: deployment.md
   - Advanced:
-      - Recovery & retry: recovery.md
-  - Kafka notes: README_kafka.md
+      - Deployment reference: deployment-reference.md
+      - Recovery: recovery.md
   - Talks: talks.md
   - Building the documentation: building.md
-
-# Internal maintenance notes and diagnostic output are not public docs.
-exclude_docs: |
-  /GITHUB_TRANSFER_CHECKLIST.md
-  /errors_dc_04.txt

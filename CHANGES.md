@@ -1,203 +1,76 @@
 # Changelog
 
-All notable changes to this project are documented here.
-
 ## [Unreleased]
 
 ### Added
-- Added `make start`, `make stop`, and `make restart` for deployed harvest, sync,
-  and log rotation services/timers, with an immediate asynchronous sync tick on start.
-- Added repeatable `sync --project` to restrict mapping and publication to selected
-  configured projects, plus `--workers` and `--retries` publication overrides.
+
+- Service controls: `make start`, `make stop`, and `make restart`.
+- Sync options: `--project`, `--workers`, and `--retries`.
+- Dependency checks in CI and `make audit`.
 
 ### Changed
-- Logging now defaults to INFO so progress summaries are visible without `-v`;
-  explicit site logging levels still take precedence.
-- Handle publication defaults to four workers for both sync and manual publish;
-  explicit worker settings continue to override the default.
-- Publication summaries say "published" for successful Handle writes; mapping
-  identifies JSONL preparation without suggesting that sync publication is disabled.
-- Statistics summaries now default to 30 seconds or 10,000 messages, whichever
-  threshold is reached first as messages arrive.
-- Routine dataset/file PID reuse and generation messages now log at DEBUG,
-  keeping mapping output at INFO focused on progress summaries.
-- Use compact operation-labelled INFO summaries for harvest, map, and publication;
-  sync distinguishes mapping from publication and logs tick start/completion.
-  Full statistics snapshots are available at DEBUG.
-- Successful per-Handle writes now log at DEBUG. Both sync and publish log
-  cumulative publication progress at INFO every 30 seconds as results arrive,
-  plus a final summary with counts, project, elapsed time, rate, and receipt path.
+
+- Simpler INFO progress logs; per-record details moved to DEBUG.
+- Statistics summaries every 30 seconds or 10,000 messages by default.
+- Four publication workers by default.
+- Updated dependencies, security minimums, and development tools.
+- Removed obsolete docs, simplified the guides, and added deployment to MkDocs.
 
 ### Fixed
-- Require setuptools 84.1.0 or newer in development, Conda, and installation
-  bootstrap steps so preinstalled vulnerable versions are upgraded before audits.
-- Raised security minimums for Certifi, Brotli, Requests, urllib3, and pip;
-  updated Black to 26.10.1 across pip, Conda, and pre-commit;
-  refreshed Conda CA requirements and pip bootstrap steps, and added a CI
-  dependency audit plus `make audit`.
-- Suppress the expected Brotli GIL compatibility warning during CLI commands on
-  free-threaded Python, preserving automatic GIL fallback and other warnings.
+
+- Suppressed the expected Brotli GIL warning in CLI commands.
 
 ## [2.3.0] - 2026-10-12
 
 ### Added
-- Added CMIP7, CMIP6Plus, and CORDEX-CMIP6 plugins alongside CMIP6, with
-  shared STAC processing and Handle record models.
-- Added `piddi top` for active-run and per-project monitoring from SQLite,
-  including heartbeats, stale-run detection, recent history, and JSON output.
-- Added per-project `force_dataset_pid` to regenerate dataset PIDs from versioned STAC
-  item IDs despite existing source PIDs, keeping file parent links consistent
-  and preserving file tracking IDs. Disabled by default.
-- Configuration explanations now show loaded files, per-setting file origins,
-  and resolved output/log/database paths. Validation checks SASL PLAIN credentials
-  and retry/monitoring ranges, and suggests corrections for likely key typos.
-- Added `plugins.<name>.handle_prefix` so plugins can share a Handle service
-  profile and credentials while publishing under different prefixes.
-- Added production logging configuration, repeatable `-v` verbosity, explicit
-  progress controls, watched log files, and a lightweight systemd/logrotate
-  deployment managed by a small Ansible playbook.
-- Added an Apple Silicon/Parallels Vagrant environment using the official
-  AlmaLinux 9 ARM64 box for local deployment testing.
-- Added layered configuration loading: packaged defaults, optional
-  `/etc/piddi/piddi.toml`, then `custom.toml` or the explicit `--config` file.
-- Added project-specific STAC overrides under `plugins.<name>.stac`, with
-  per-project collection defaults and global `[stac]` fallback values.
-- Added a small native Handle REST backend for single-record publication and retrieval.
-- Added `piddi publish` for idempotent, deferred publication of prepared Handle JSONL files without modifying the source files.
-- Added bounded concurrent Handle publication with per-PID update ordering and opt-in contract tests for real Handle services.
-- Added configurable Handle PUT latency to the Docker mock service, defaulting to 50 ms.
-- Added separate `harvest` and `map` commands for queue-to-raw-JSONL and
-  raw-JSONL-to-Handle-JSONL processing.
-- Added a run-scoped structured JSONL receipt containing every successful or
-  failed deferred Handle publication outcome.
-- Added optional project validation and per-project summaries to `publish`,
-  while retaining generic mixed-project publication when no project is given.
-- Added date-based input selection to `map` and project-aware `publish`,
-  including `YYYY-MM-DD`, `today`, `yesterday`, `today-N`, and the latest
-  available dated input via `last`. Both commands default to `last` when no
-  explicit path or date is supplied and retain generic file and directory
-  inputs.
+
+- CMIP7, CMIP6Plus, and CORDEX-CMIP6 plugins.
+- Separate `harvest`, `map`, and `publish` commands, with date selection.
+- Concurrent Handle REST publication, retries, and per-record receipts.
+- `piddi top` for live progress and recent history.
+- Shared Handle profiles, per-project prefixes, and optional dataset PID generation.
+- Configuration inspection and validation, with credentials hidden by default.
+- Ansible deployment, systemd services, log rotation, and an Apple Silicon test VM.
+- MkDocs guides and overview slides.
 
 ### Changed
-- Added inclusive `publish --from DATE --to DATE` selection for available daily
-  project Handle files, including relative boundaries such as `today-1`.
-- Separated Kafka lifecycle (`consumer.py`), shared iterable processing
-  (`core/pipeline.py`), and file runners (`runners/mapping.py`,
-  `runners/retry.py`, `runners/publish.py`). Removed `DirectConsumer` and replaced
-  the internal `ConsumerPipeline`/`feed_messages_direct` APIs with
-  `ProcessingPipeline`/`process_messages`. Preserved streaming, routing,
-  counters, stop policies, and retry safeguards; fixture replay helpers now
-  live in `testing/processing.py`.
-- CI and `make config-validate` validate the complete ESGF example and local
-  test configuration over packaged defaults, which intentionally omit SASL credentials.
-- Configuration inspection skips file logging, so it works with unwritable
-  production log paths without creating log files. Ansible validates candidate
-  settings before replacing the installed configuration.
-- `config show` redacts recognized credential fields and URL credentials by
-  default in TOML and JSON, including filtered views. Use `--show-secrets`
-  to explicitly include the original values.
-- Configuration commands load command and plugin metadata without importing
-  HTTP clients or Brotli; processing implementations load only when needed.
-- Load the native Kafka client only when consuming Kafka, so configuration
-  commands do not trigger its GIL warning on free-threaded Python.
-- Explicit `--config` paths must exist. Demo Handle credentials and landing-page
-  warnings now focus on selected projects and profiles.
-- Manual runs and Ansible now share `custom.toml` for all application settings.
-  Ansible adds omitted production path defaults; its optional YAML contains
-  deployment controls only. Old YAML application variables require migration
-  to TOML and are rejected with guidance rather than silently ignored.
-- Consolidated configuration examples into `etc/esgf-example.toml`, with ESGF
-  credential mappings and optional custom CA guidance. Production configuration
-  is generated by Ansible from the shared `custom.toml` and inherits packaged
-  Kafka authentication defaults.
-- Kafka defaults now use `SASL_SSL` with `PLAIN` for ESGF production.
-  Local unauthenticated brokers require `security.protocol = "PLAINTEXT"`;
-  `tests/config.toml` supplies this override for Docker test Kafka.
-- Failure and skipped records now store their canonical project, use
-  project-scoped paths, and retry through the persisted project. Unresolved and
-  legacy records retain the global recovery path and configured selection.
-- `piddi retry` now defers Handle publication by default and writes each retry
-  invocation to distinct `retry_handles_<timestamp>.jsonl` files; immediate
-  publication requires `--publish`.
-- REST Handle publication always writes the JSONL audit record first.
-- `consume` now always dumps raw messages before plugin filtering and defers
-  Handle publication by default; `consume --publish` runs all three stages.
-- REST publication suppresses repeated urllib3 insecure-request warnings when
-  `handle.verify_https = false` was explicitly configured.
-- Deferred Handle publication supports bounded batches, offsets, and transient retries with exponential backoff.
-- Successful deferred publications now log created/updated Handle REST URLs and
-  project, dataset, and asset context.
-- Direct REST publication now always writes the project-scoped JSONL audit record before contacting the Handle service.
-- Tests now use temporary folders and leave local output files untouched.
-- Cleaned up dependencies, development tools, CI, and packaging.
+
+- Shared processing code across plugins and commands.
+- Bounded JSONL streaming with ordered updates to each Handle.
+- Manual runs and deployment share `custom.toml`.
+- Kafka defaults to `SASL_SSL` with `PLAIN`; local brokers need `PLAINTEXT`.
+- Failure files are grouped by project. Publication writes JSONL audit records first.
+- Consume and retry defer publication unless `--publish` is set.
+- Configuration commands avoid unnecessary client imports and file logging.
 
 ### Fixed
-- Stream `retry` through the shared JSONL reader in bounded batches, preserving
-  source order and persisted project routing. Ignore records appended after the
-  source is opened, retain changed or unsuccessful inputs, report malformed
-  records individually, and cap retained input-error summaries at 100 messages.
-- Stream `map` JSONL inputs end to end, removing whole-file lists and the direct
-  consumer's eager copy. Share a single-pass JSONL reader with `publish` for
-  source locations, offsets, limits, error handling, and cleanup. Mapping stops
-  on malformed selected records while retaining output already written.
-- Stream `publish` input in a single pass using batches of at most 256 records,
-  preserving per-Handle update order without a staging database. Validate each
-  record independently and continue after invalid records; earlier writes remain
-  published. Stream receipts, cap error summaries at 100 messages, and report
-  progress without a precomputed total (`batch_total` is now `null`). Parent
-  metadata is no longer inferred from other input records.
-- Made retries safer and fixed retry counts and skipped records.
-- Fixed configured output folders, statistics, HTTPS defaults, and Docker builds.
-- Fixed a few small code issues.
+
+- Safer retries, failure handling, output paths, statistics, and Docker builds.
+- Tests keep local runtime files untouched.
 
 ### Removed
-- Removed the obsolete `retry --dry-run` option. Internal processing now uses
-  explicit `publish=False` semantics; Handle JSONL is always written.
-- Removed the legacy list loaders `helpers.read_jsonl` and
-  `persist.retry.load_failed_messages`. Use `jsonl_stream.iter_jsonl_records`
-  and `runners.retry.iter_failed_messages` instead.
 
-### Documentation
-- Added short configuration and operations guides.
-- Added a MkDocs documentation site with configuration, architecture,
-  deployment, and recovery guides, plus HTML presentation slides.
+- `retry --dry-run` and legacy list-based JSONL loaders.
 
 ## [2.2.1] - 2026-08-25
-### Changed
-- Transferred the canonical repository from `cehbrecht/piddiplatsch` to `ESGF/piddiplatsch` and updated package metadata, repository links, and contributor instructions.
-- Renamed the notebook environment from `piddiplatsch2` to `piddiplatsch`.
+
+- Moved the repository to `ESGF/piddiplatsch` and updated links.
+- Renamed the notebook environment to `piddiplatsch`.
 
 ## [2.2.0] - 2026-03-03
-### Changed
-- Plugins: Namespace CMIP6 configuration under `[plugins.cmip6]` and switch to a static plugin registry (single active plugin selected via `consumer.processor`).
-- Progress bar now displays processor name (e.g., `cmip6`) instead of object representation.
-### Documentation
-- Streamlined README: concise Testing section, compact Recovery/Retry, removed duplicates.
-- Added explicit smoke test note: run `make test-smoke` for local end-to-end.
-- Added status bar documentation explaining metrics in verbose mode.
-### Fixed
-- Code style: Modernized type annotations (`X | None` instead of `Optional[X]`).
-- CI workflow: Use consistent linting via `make lint` (removed duplicate pre-commit step).
-- Black formatter version alignment: Updated to black 26.x across all environments.
+
+- Moved CMIP6 settings to `[plugins.cmip6]` and added a static plugin registry.
+- Improved progress labels and simplified the documentation.
+- Updated type annotations, CI checks, and Black configuration.
 
 ## [2.1.0] - 2026-01-22
-### Added
-- Run retry via `RetryRunner` class with `run_file` and `run_batch`.
-- Common result module at `piddiplatsch.result` consolidating dataclasses.
-- Common helpers at `piddiplatsch.helpers`: `DailyJsonlWriter`, `read_jsonl`, `find_jsonl`, `utc_now`.
-- JSONL handle backend now uses shared helpers (daily rotation, UTC timestamps).
-- Retry CLI supports files/dirs/globs, skipped items, `--dry-run`, `--delete-after`, and `-v`.
-- New `--force` option to continue despite transient external failures (records skipped items).
 
-### Changed
-- Unified persistence API: `RecorderBase.record()` handles infos and writes to JSONL files.
-- Retry logic migrated to class-based `persist/retry`.
-- Standardized timestamps to UTC via `utc_now()`.
-- Simplified logging and persistence flows.
-
+- Added class-based retries with file selection, skipped records, and cleanup options.
+- Added `--force` to continue after temporary external failures.
+- Shared result models, JSONL helpers, and persistence code.
+- Standardized timestamps to UTC.
 
 ## [2.0.0] - 2026-01-13
-- Initial project setup.
-- Add bump-my-version configuration and Makefile targets for patch/minor/major bumps.
-- Update README with concise tagline and brief versioning usage.
-- Establish Kafka consumer, CLI entry point, and basic tooling.
+
+- Initial Kafka consumer, CLI, and project tooling.
+- Added version management and release targets.
