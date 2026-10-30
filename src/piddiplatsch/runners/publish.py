@@ -88,9 +88,8 @@ class HandlePublisher:
         *,
         sleep: Callable[[float], None] = time.sleep,
     ) -> None:
-        # Publication always uses REST, independently of the selected profile's
-        # legacy backend setting. Configured clients are resolved lazily after
-        # the input project is known.
+        # Configured REST clients are resolved lazily after the input project
+        # is known.
         self.backend = backend
         self._uses_config = backend is None
         self.sleep = sleep

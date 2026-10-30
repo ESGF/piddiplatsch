@@ -61,13 +61,10 @@ class TopCommand(Command):
             ("State", "left"),
             ("Cmd", "left"),
             ("Project", "left"),
-            ("Msg", "right"),
-            ("Route", "right"),
-            ("Filter", "right"),
-            ("OK", "right"),
-            ("Skip", "right"),
+            ("Input", "left"),
+            ("Writes", "right"),
             ("Fail", "right"),
-            ("Hdl", "right"),
+            ("Handles", "right"),
             ("Beat", "right"),
         ):
             table.add_column(
@@ -91,6 +88,8 @@ class TopCommand(Command):
                     "skipped": 0,
                     "failed": 0,
                     "handles": 0,
+                    "catalog_writes": 0,
+                    "catalog_refreshes": 0,
                 }
             ]
             for index, project in enumerate(projects):
@@ -98,23 +97,19 @@ class TopCommand(Command):
                     f"[{color}]{run['state']}[/{color}]" if index == 0 else "",
                     run["command"] if index == 0 else "",
                     project["project"],
-                    *(
-                        str(project[key])
-                        for key in (
-                            "consumed",
-                            "routed",
-                            "filtered",
-                            "succeeded",
-                            "skipped",
-                            "failed",
-                            "handles",
-                        )
+                    f"{project['consumed']} {_input_unit(run['command'])}",
+                    (
+                        str(project.get("catalog_writes", 0))
+                        if run["command"] == "harvest"
+                        else "—"
                     ),
+                    str(project["failed"]),
+                    str(project["handles"]) if run["command"] != "harvest" else "—",
                     f"{run['heartbeat_age_seconds']:.1f}s" if index == 0 else "",
                 )
         if not active_runs:
             table.add_row(
-                "—", "—", "no active runs", *("—" for _ in range(8)), style="dim"
+                "—", "—", "no active runs", *("—" for _ in range(5)), style="dim"
             )
         return table
 
@@ -124,19 +119,21 @@ class TopCommand(Command):
         active_runs = [run for run in status["runs"] if run["status"] == "running"]
         displayed_runs = active_runs or status["runs"][:1]
         scope = "Current run history" if active_runs else "Latest run history"
-        table = Table(title=f"{scope} · last {minutes:g} minutes")
+        table = Table(title=f"{scope} · last {minutes:g} minutes", padding=(0, 0))
         for heading, justify in (
             ("Cmd", "left"),
             ("Project", "left"),
-            ("Samples", "right"),
-            ("ΔMsg", "right"),
-            ("Msg/s", "right"),
-            ("ΔOK", "right"),
+            ("ΔInput", "right"),
+            ("Input/s", "right"),
+            ("ΔWrites", "right"),
             ("ΔFail", "right"),
-            ("ΔHdl", "right"),
+            ("ΔHandles", "right"),
+            ("Handles/s", "right"),
             ("Trend", "left"),
         ):
-            table.add_column(heading, justify=justify)
+            table.add_column(
+                heading, justify=justify, no_wrap=heading in {"Cmd", "Project"}
+            )
 
         for run in displayed_runs:
             for history in run["history"]:
@@ -144,17 +141,29 @@ class TopCommand(Command):
                 table.add_row(
                     run["command"],
                     history["project"],
-                    str(history["sample_count"]),
-                    str(deltas["consumed"]),
+                    f"{deltas['consumed']} {_input_unit(run['command'])}",
                     f"{history['message_rate']:.2f}",
-                    str(deltas["succeeded"]),
+                    (
+                        str(deltas.get("catalog_writes", 0))
+                        if run["command"] == "harvest"
+                        else "—"
+                    ),
                     str(deltas["failed"]),
-                    str(deltas["handles"]),
+                    str(deltas["handles"]) if run["command"] != "harvest" else "—",
+                    (
+                        f"{history['handle_rate']:.2f}"
+                        if run["command"] != "harvest"
+                        else "—"
+                    ),
                     _sparkline(history["message_rate_series"]),
                 )
         if not any(run["history"] for run in displayed_runs):
             table.add_row("—", "no samples in window", *("—" for _ in range(7)))
         return table
+
+
+def _input_unit(command: str) -> str:
+    return "events" if command in {"harvest", "consume"} else "items"
 
 
 def _sparkline(values: list[float]) -> str:

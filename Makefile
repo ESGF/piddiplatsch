@@ -48,7 +48,8 @@ docs-check: ## check required pages and relative links/assets in the built site
 
 install: ## install application
 	@echo "Installing application ..."
-	@bash -c 'pip install -e .'
+	@python -m pip install --upgrade "pip>=26.2.2" "setuptools>=84.1.0"
+	@python -m pip install -e .
 	@echo "\nInspect commands with \`piddi --help\`."
 
 conda: ## create or update the project Conda environment
@@ -68,6 +69,7 @@ deploy: conda play ## prepare the Conda environment and deploy piddi locally
 
 develop: ## install application with development and documentation libraries
 	@echo "Installing development requirements ..."
+	@python -m pip install --upgrade "pip>=26.2.2" "setuptools>=84.1.0"
 	@python -m pip install -e ".[dev,docs]"
 
 clean: clean-build clean-pyc clean-test ## remove all build, test, coverage and Python artifacts
@@ -132,6 +134,9 @@ pre-commit: ## run all pre-commit hooks
 
 test: test-unit test-integration ## run all fast tests (unit + integration, no Docker required)
 
+audit: ## check installed Python dependencies against current security advisories
+	@python -m pip_audit --local
+
 config-validate: ## validate ESGF and test overrides with packaged defaults
 	@echo "Validating etc/esgf-example.toml with packaged defaults ..."
 	@bash -c 'python -m piddiplatsch.cli --config etc/esgf-example.toml config validate'
@@ -151,13 +156,8 @@ test-smoke: config-validate start-docker ## run smoke tests only (requires Docke
 	# Ensure Kafka topic exists before starting consumer
 	@echo "Ensuring Kafka topic exists (from config) ..."
 	@python scripts/ensure_kafka_topic.py || true
-	# Start production consumer in background
-	@echo "Starting piddi consumer (background) ..."
-	@bash -c 'python -m piddiplatsch.cli --config tests/config.toml consume --publish & echo $$! > .consumer.pid && echo "Consumer PID: $$(cat .consumer.pid)"'
-	# Run smoke tests; on failure, ensure consumer and docker are stopped
-	@bash -c 'python -m pytest -v -s -m "smoke" tests/' || ($(MAKE) stop-consumer; $(MAKE) stop-docker; exit 1)
-	# Stop consumer and docker after tests
-	@$(MAKE) stop-consumer
+	# Smoke tests explicitly run harvest then a forced sync tick.
+	@bash -c 'python -m pytest -v -s -m "smoke" tests/' || ($(MAKE) stop-docker; exit 1)
 	@$(MAKE) stop-docker
 
 test-all: test-unit test-integration test-smoke ## run all tests including smoke tests
@@ -209,16 +209,16 @@ stop-docker: ## stop Docker test services
 	@echo "✅ Docker services stopped!"
 	@echo ""
 
-# Local consumer management
+# Local Kafka harvest management
 start-consumer:
-	@echo "Starting piddi consumer ..."
+	@echo "Starting piddi catalog harvest ..."
 	# Ensure Kafka topic exists before starting consumer
 	@echo "Ensuring Kafka topic exists (from config) ..."
 	@bash -c 'python -c "from piddiplatsch.config import config; config.load_user_config(\"tests/config.toml\"); from piddiplatsch.testing.kafka_client import ensure_topic_exists_from_config; ensure_topic_exists_from_config()"'
-	@bash -c 'python -m piddiplatsch.cli --config tests/config.toml consume --publish & echo $$! > .consumer.pid && echo "Consumer PID: $$(cat .consumer.pid)"'
+	@bash -c 'python -m piddiplatsch.cli --config tests/config.toml harvest --idle-timeout 0 & echo $$! > .consumer.pid && echo "Consumer PID: $$(cat .consumer.pid)"'
 
 stop-consumer:
-	@echo "Stopping piddi consumer ..."
+	@echo "Stopping piddi catalog harvest ..."
 	@bash -c 'if [ -f .consumer.pid ]; then kill $$(cat .consumer.pid) >/dev/null 2>&1 || true; rm -f .consumer.pid; else echo "No consumer PID file"; fi'
 
 docker-build: ## build Docker images for test services

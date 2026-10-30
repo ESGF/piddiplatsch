@@ -21,6 +21,10 @@ class ProcessingResult:
     # Detailed timings
     handle_processing_time: float = 0.0
 
+    # Durable catalog outcomes; independent of prepared Handle counts.
+    catalog_written: bool = False
+    catalog_refreshed: bool = False
+
 
 @dataclass
 class FeedResult:

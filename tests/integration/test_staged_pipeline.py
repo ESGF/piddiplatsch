@@ -1,13 +1,16 @@
 import json
+from contextlib import closing
 from pathlib import Path
 
 import pytest
 
+from piddiplatsch.catalog.harvest import CatalogHarvester
 from piddiplatsch.config import config
 from piddiplatsch.consumer import HarvestProcessor
+from piddiplatsch.core.messages import KafkaSource
 from piddiplatsch.core.pipeline import ProcessingPipeline
 from piddiplatsch.core.routing import ProjectRouter
-from piddiplatsch.runners.mapping import map_dump_files
+from piddiplatsch.runners.mapping import map_catalog
 
 pytestmark = pytest.mark.integration
 
@@ -62,7 +65,7 @@ def test_harvest_limit_stops_after_dumping_requested_messages(tmp_path: Path):
     assert dumped == [{"index": 0}, {"index": 1}]
 
 
-def test_map_replays_dump_without_kafka_or_handle_service(
+def test_map_reads_catalog_without_kafka_or_handle_service(
     tmp_path: Path, testdata_path: Path
 ):
     output_dir = tmp_path / "outputs"
@@ -75,8 +78,12 @@ def test_map_replays_dump_without_kafka_or_handle_service(
     ]
     original = "".join(json.dumps(record) + "\n" for record in records)
     source.write_text(original, encoding="utf-8")
-
-    result = map_dump_files([source], projects=["cmip6"], offset=1, limit=1)
+    with closing(CatalogHarvester(output_dir / "catalog")) as harvester:
+        for offset, record in enumerate(records):
+            harvester.process_with_source(
+                "harvest", record, KafkaSource("topic", 0, offset)
+            )
+    result = map_catalog(projects=["cmip6"], limit=1)
 
     assert result.total == 1
     assert result.succeeded == 1
@@ -99,8 +106,9 @@ def test_map_force_dataset_pid_corrects_dataset_and_file_parent(
     source = tmp_path / "raw.jsonl"
     original = json.dumps(message) + "\n"
     source.write_text(original)
-
-    result = map_dump_files([source], projects=["cmip7"])
+    with closing(CatalogHarvester(tmp_path / "outputs/catalog")) as harvester:
+        harvester.process_with_source("harvest", message, KafkaSource("topic", 0, 0))
+    result = map_catalog(projects=["cmip7"])
 
     assert result.succeeded == 1
     assert result.failed == 0

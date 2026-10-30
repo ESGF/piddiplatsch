@@ -4,6 +4,20 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+### Added
+- Added repeatable `sync --project` to restrict mapping and publication to selected
+  configured projects, plus `--workers` and `--retries` publication overrides.
+
+### Fixed
+- Require setuptools 84.1.0 or newer in development, Conda, and installation
+  bootstrap steps so preinstalled vulnerable versions are upgraded before audits.
+- Raised security minimums for Certifi, Brotli, Requests, urllib3, and pip;
+  updated Black to 26.10.1 across pip, Conda, and pre-commit;
+  refreshed Conda CA requirements and pip bootstrap steps, and added a CI
+  dependency audit plus `make audit`.
+- Suppress the expected Brotli GIL compatibility warning during CLI commands on
+  free-threaded Python, preserving automatic GIL fallback and other warnings.
+
 ## [2.3.0] - 2026-10-12
 
 ### Added
@@ -28,7 +42,7 @@ All notable changes to this project are documented here.
   `/etc/piddi/piddi.toml`, then `custom.toml` or the explicit `--config` file.
 - Added project-specific STAC overrides under `plugins.<name>.stac`, with
   per-project collection defaults and global `[stac]` fallback values.
-- Added a small native Handle REST backend for single-record publication and retrieval; the pyhandle backend remains available as a legacy option.
+- Added a small native Handle REST backend for single-record publication and retrieval.
 - Added `piddi publish` for idempotent, deferred publication of prepared Handle JSONL files without modifying the source files.
 - Added bounded concurrent Handle publication with per-PID update ordering and opt-in contract tests for real Handle services.
 - Added configurable Handle PUT latency to the Docker mock service, defaulting to 50 ms.
@@ -85,8 +99,7 @@ All notable changes to this project are documented here.
 - `piddi retry` now defers Handle publication by default and writes each retry
   invocation to distinct `retry_handles_<timestamp>.jsonl` files; immediate
   publication requires `--publish`.
-- Handle publication selects `rest` or legacy `pyhandle`; both always write the
-  JSONL audit record first.
+- REST Handle publication always writes the JSONL audit record first.
 - `consume` now always dumps raw messages before plugin filtering and defers
   Handle publication by default; `consume --publish` runs all three stages.
 - REST publication suppresses repeated urllib3 insecure-request warnings when
@@ -94,7 +107,7 @@ All notable changes to this project are documented here.
 - Deferred Handle publication supports bounded batches, offsets, and transient retries with exponential backoff.
 - Successful deferred publications now log created/updated Handle REST URLs and
   project, dataset, and asset context.
-- Direct REST and pyhandle publication now always writes the project-scoped JSONL audit record before contacting the Handle service.
+- Direct REST publication now always writes the project-scoped JSONL audit record before contacting the Handle service.
 - Tests now use temporary folders and leave local output files untouched.
 - Cleaned up dependencies, development tools, CI, and packaging.
 

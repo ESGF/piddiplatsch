@@ -1,75 +1,79 @@
 # Piddiplatsch
 
-[Documentation](https://esgf.github.io/piddiplatsch/) ·
-[Overview slides](https://esgf.github.io/piddiplatsch/talks/overview.html)
+Piddiplatsch reads ESGF STAC publications from Kafka and registers persistent
+identifiers with the Handle System for CMIP6, CMIP6Plus, CMIP7, and CORDEX-CMIP6.
 
-[![Build Status](https://github.com/ESGF/piddiplatsch/actions/workflows/ci.yml/badge.svg)](https://github.com/ESGF/piddiplatsch/actions)
-[![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](https://github.com/ESGF/piddiplatsch/blob/main/LICENSE)
-[![Python Version](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
-
-**Piddiplatsch** processes ESGF STAC publication records from Kafka and registers
-persistent identifiers (PIDs) with the Handle System. It supports **CMIP6,
-CMIP6Plus, CMIP7, and CORDEX-CMIP6**, with project-specific routing and mapping.
-
-*Curious by nature. Persistent by design.*
-
-## Quick start
-
-Install with Conda and the development tools:
+## Install and configure
 
 ```bash
 git clone https://github.com/ESGF/piddiplatsch.git
 cd piddiplatsch
 conda env create
 conda activate piddi
-make develop
-```
-
-Create your local configuration and replace the connection and credential
-placeholders before running:
-
-```bash
+make install
 cp etc/esgf-example.toml custom.toml
-# Edit custom.toml for your site; keep credentials out of Git.
+```
+
+Edit `custom.toml` with your projects, Kafka connection, and Handle service
+credentials. Then validate:
+
+```bash
 piddi config validate
+```
+
+## Harvest, map, and publish
+
+Fill or update the local catalogs:
+
+```bash
+piddi harvest
+```
+
+Prepare Handle files, inspect them, then publish:
+
+```bash
+piddi map --project cmip6 --date all
+# Inspect the files under outputs/cmip6/handles/ before publishing.
+piddi publish --project cmip6 --date all --workers 4 --retries 3
+```
+
+## Map and publish with sync
+
+As an alternative to separate `map` and `publish` commands, map and publish
+pending changes for the configured projects:
+
+```bash
+piddi sync --workers 4
+```
+
+To publish pending changes immediately, without waiting for batch thresholds:
+
+```bash
+piddi sync --force-map --workers 4
+```
+
+To run only one configured project:
+
+```bash
+piddi sync --project cmip6 --workers 4 --retries 3
+```
+
+## Check progress and options
+
+In another terminal:
+
+```bash
+piddi top
+```
+
+```bash
 piddi --help
+piddi sync --help
 ```
 
-Start harvesting and mapping Kafka messages into prepared Handle JSONL files:
-
-```bash
-piddi consume
-```
-
-By default, `consume` saves raw messages and prepares Handles **without
-publishing to a Handle service**. Kafka access is required; see
-[Configuration](https://esgf.github.io/piddiplatsch/configuration/) for site settings.
-
-## Run in stages
-
-You can also harvest a small sample, then map it separately:
-
-```bash
-piddi harvest --limit 100
-piddi map --project cmip6 --date last
-```
-
-Once your Handle service profile is configured, publish a completed daily file:
-
-```bash
-piddi publish --project cmip6 --date yesterday
-
-# Or publish an inclusive range of available daily files
-piddi publish --project cmip6 --from 2026-10-08 --to today-1
-```
-
-Use `piddi COMMAND --help` for options. The
-[Operations guide](https://esgf.github.io/piddiplatsch/operations/) explains date
-selection, publication, retries, logging, and monitoring.
-
-## Learn more
-
-- [Architecture and project plugins](https://esgf.github.io/piddiplatsch/architecture/)
-- [Recovery and retry](https://esgf.github.io/piddiplatsch/recovery/)
-- [Production deployment with Ansible](https://github.com/ESGF/piddiplatsch/blob/main/deploy/README.md)
-- [Contributing](https://github.com/ESGF/piddiplatsch/blob/main/CONTRIBUTING.md): development, testing, and local Docker services. Run `make test` for unit and integration tests.
+See the [configuration](https://esgf.github.io/piddiplatsch/configuration/),
+[operations](https://esgf.github.io/piddiplatsch/operations/),
+[recovery](https://esgf.github.io/piddiplatsch/recovery/), and
+[deployment](https://github.com/ESGF/piddiplatsch/blob/main/deploy/README.md)
+guides for advanced use. See [Contributing](https://github.com/ESGF/piddiplatsch/blob/main/CONTRIBUTING.md)
+for development and testing.

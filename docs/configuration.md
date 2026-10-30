@@ -37,7 +37,7 @@ piddi config explain --project cmip6
 piddi config explain --project cmip6 --handle-profile production
 ```
 
-`explain` shows the resolved Handle service, prefix, STAC collection, and lookup
+`explain` shows the resolved Handle service, prefix, STAC collection, and catalog
 settings, with the configuration keys and files supplying them. It lists loaded
 files in precedence order, listing full filenames once with short labels such
 as `defaults` and `custom.toml`. Settings use those labels; repeated filenames
@@ -79,18 +79,25 @@ not open the file during inspection.
 
 ## Routine operation
 
-Plain `piddi consume` prepares JSONL files. Use `piddi consume --publish` for
-immediate delivery or `piddi publish` for deferred delivery. Publication mode is
-a command choice rather than another site configuration setting.
+Production runs `piddi harvest --idle-timeout 0` continuously and schedules
+`piddi sync` to map pending catalog items and publish sealed batches. Manual
+`map` and `publish` remain available for selected dates/windows.
 
-Select projects with `[consumer].projects`, repeated `--project` flags, or
-`--all-projects`. Command-line selection takes precedence. Processes filtering
-different projects from the same topic must use different Kafka `group.id` values.
+`consume` has been removed. Use `harvest` for ingestion and `map`/`publish` for
+manual operation, or `sync` for the scheduled workflow.
+
+Set the default project selection with `[consumer].projects`. Map accepts repeated
+`--project` flags or `--all-projects` to override that selection. Sync accepts
+repeated `--project` flags to restrict both mapping and ready-batch publication
+to selected configured projects; unknown or unconfigured projects fail before
+publication. Its `--workers` and `--retries` flags override
+`[batch].publish_workers` and `[batch].publish_retries` for one run. Harvest caches
+all registered projects and uses a separate Kafka group.
 
 Use `-v` for INFO logging, `-vv` for DEBUG, and `--log PATH` to select a log file.
 For permanent changes, set `[logging].level` and `[logging].file`.
 
-Direct `rest` and `pyhandle` publication always appends the prepared record to
+Direct REST publication always appends the prepared record to
 the project-scoped Handle JSONL file before contacting the service. This audit
 output is not optional; `[consumer].output_dir` controls its root directory.
 
@@ -117,7 +124,7 @@ written as `-`.
 Each named profile inherits `[handles.defaults]` and overrides those values
 with its own table. All projects inherit `[handles].default`. A project may select another named
 profile with `plugins.<name>.handle`, and `--handle-profile NAME` temporarily
-overrides both settings for `consume`, `map`, `publish`, or `retry`. Existing
+overrides both settings for `map` or `publish`. Existing
 Handle files retain their mapped prefix, so publication still rejects an
 override whose prefix does not match the records.
 
@@ -181,7 +188,7 @@ protocols and mechanisms can still be selected there.
 
 The Docker test cluster uses unauthenticated Kafka. Its `tests/config.toml`
 explicitly overrides the protocol, so run it with
-`piddi --config tests/config.toml consume`. For another local configuration, add:
+`piddi --config tests/config.toml harvest`. For another local configuration, add:
 
 ```toml
 [kafka]
@@ -222,8 +229,81 @@ collection = "CMIP7"
 
 Project settings inherit unspecified values from `[stac]`. A project-specific
 `base_url` or `timeout` can therefore be added later if that collection moves to
-another service. PATCH events continue to use their own `collection_id`; the
-configured collection is used by STAC version lookups.
+another service. Harvest PATCH recovery uses the event
+`collection_id`. Catalog mapping uses stored collections and does not contact
+this endpoint. Harvest uses the same project endpoint and timeout for missing-base
+recovery and persistent per-item remote refresh. This is independent of the legacy
+`[lookup].enabled` setting; an absent endpoint stops recovery instead of creating
+a placeholder. Its predecessor queries are controlled by `[catalog].version_history`.
+
+Elasticsearch version lookup has been removed. Remove the old `[elasticsearch]`
+section and any `[lookup].backend = "es"` setting from site configuration.
+Dataset predecessor links use `[catalog].version_history`. Remote harvest recovery
+continues to use the project STAC endpoint.
+
+## Dataset version lookup
+
+The `lookup` module handles dataset versions only. It provides `CatalogLookup`
+(default) and the retained `STACLookup` implementation:
+
+```toml
+[lookup]
+backend = "catalog"  # explicit remote alternative: "stac"
+enabled = false
+```
+
+`get_lookup(project)` uses this configuration. Catalog lookup opens the project's
+local database read-only for each query, or reuses a caller-owned injected reader.
+It lists version IDs and finds the nearest predecessor through metadata indexes,
+without decompressing STAC payloads. Missing catalogs are errors, not empty results.
+
+Map always uses `CatalogLookup` with its existing item snapshot, regardless of
+`[lookup].backend`; `[catalog].version_history` or the map CLI option controls
+whether it adds predecessor links. This preserves offline mapping. STAC remains
+an explicit adapter for separate version queries; it is independent of harvest's
+complete-item remote recovery.
+
+## Scheduled batches
+
+```toml
+[batch]
+trigger_items = 1000
+max_wait_seconds = 3600
+max_items = 1000
+publish_workers = 1
+publish_retries = 3
+# directory = "/var/lib/piddi/batches"
+```
+
+`piddi sync` maps when either the per-project distinct pending-item threshold or
+maximum wait is reached. The age is measured from the first pending change.
+`max_items` caps catalog items per output batch; an item's dataset/file Handles are
+never split. Ready batches publish immediately during the tick, independently of
+those mapping thresholds. `publish_retries` controls transient HTTP retries per
+Handle; failed batches remain ready for later ticks. Positive counts/wait and
+nonnegative retry counts are validated. The batch directory defaults to
+`<consumer.output_dir>/batches` and must be shared by every worker invocation.
+The deployment timer cadence is configured separately in Ansible.
+
+## Local catalog
+
+```toml
+[catalog]
+enabled = true
+backend = "sqlite"
+# Default: <consumer.output_dir>/catalog
+# directory = "/var/lib/piddi/catalog"
+version_history = false
+kafka_commit_batch_size = 100
+kafka_commit_interval_seconds = 1.0
+```
+
+`enabled` controls catalog maintenance during harvest. Map always reads the
+catalog; it uses read-only snapshots and can use existing catalogs even when
+harvest maintenance is disabled. `version_history` enables local predecessor
+links for every built-in project; map's `--version-history`/`--no-version-history`
+overrides it for one run. No remote lookup backend is involved. See
+[staged operations](operations.md#staged-commands) for cleaning and migration.
 
 ## Settings reference
 
@@ -239,7 +319,7 @@ All existing settings remain supported. Only override values your site needs.
 | `consumer` | `max_errors` | Stop after this many processing errors; `-1` disables the limit. |
 | `handles` | `default` | Handle profile used when a project does not select one explicitly. |
 | `handles.defaults` | `backend`, `verify_https`, `timeout` | Common values inherited by every named Handle profile. |
-| `handles.profiles.<name>` | `backend` | `rest` for publication or legacy `pyhandle`; both always write JSONL first. |
+| `handles.profiles.<name>` | `backend` | `rest` for publication; always writes JSONL first. |
 | `handles.profiles.<name>` | `server_url`, `prefix`, `username`, `password` | Connection and credentials for one Handle service. |
 | `handles.profiles.<name>` | `verify_https`, `timeout` | TLS verification and per-request timeout for one Handle service. |
 | `stac` | `base_url`, `timeout`, `collection` | Global STAC defaults; the shared endpoint is `https://discovery.east.esgf.io`. |
@@ -265,27 +345,30 @@ enable the override only for affected projects in your configuration:
 force_dataset_pid = true
 ```
 
-This applies to mapping, consumption, and retries. Piddi uses its deterministic
+This applies to manual and scheduled catalog mapping. Piddi uses its deterministic
 UUIDv3 generator with the complete STAC item `id` (the versioned `instance_id`).
 Source dataset PID fields are ignored, including conflicting compatibility fields.
 File `IS_PART_OF` links point to the generated dataset PID, while file tracking
 IDs and dataset `HAS_PARTS` links retain their existing behavior. The input STAC
 JSON is not modified. This does not create redirects for previously published
 PIDs; existing mapped Handle JSONL must be regenerated to use the new policy.
-The CLI `--force` option remains separate and controls transient failure handling.
+`batch --force-map` skips mapping thresholds for pending items; harvest remains
+fail-fast and has no force option.
 
 ### Advanced tuning and optional services
 
 | Section | Key | Purpose |
 | --- | --- | --- |
-| `consumer.transient` | `stop_on_skip` | Stop after a transient external failure unless `--force` is used. |
+| `consumer.transient` | `stop_on_skip` | Legacy library setting; catalog harvest always stops on failed recovery. |
 | `consumer.transient` | `retries` | Number of retries for transient STAC patch retrieval. |
 | `consumer.transient` | `backoff_initial`, `backoff_max` | Exponential retry delay bounds in seconds. |
 | `consumer.transient` | `preflight_stac` | Probe the configured STAC service before consuming; disabled by default. |
-| `lookup` | `enabled`, `backend` | Enable version lookup using `stac` or `es`; disabled by default. |
-| `elasticsearch` | `base_url`, `index` | Elasticsearch lookup settings when `lookup.backend = "es"`. |
+| `catalog` | `enabled`, `backend`, `directory` | Harvest maintenance and per-project local catalog storage. |
+| `catalog` | `version_history` | Optional local predecessor linking during map; disabled by default. |
+| `catalog` | `kafka_commit_batch_size`, `kafka_commit_interval_seconds` | Broker acknowledgement batching after durable local writes. |
+| `lookup` | `enabled`, `backend` | Version lookup adapter: `catalog` (default) or explicit `stac`; map uses its catalog snapshot and separate history switch. |
 | `stats` | `interval_seconds`, `summary_interval` | Statistics reporting intervals. |
-| `stats` | `enable_db`, `db_path`, heartbeat/sample/history intervals | Local SQLite state and history for `piddi consume` and `piddi map`. |
+| `stats` | `enable_db`, `db_path`, heartbeat/sample/history intervals | Local SQLite state and history for mapping and batch mapping runs. |
 
 ## Compatibility with older configuration
 

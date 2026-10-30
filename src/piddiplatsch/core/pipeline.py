@@ -5,6 +5,7 @@ from collections.abc import Iterable
 from pathlib import Path
 
 from piddiplatsch.config import config
+from piddiplatsch.core.messages import SourceMessage
 from piddiplatsch.core.routing import ProjectRouter
 from piddiplatsch.exceptions import MaxErrorsExceededError, StopOnTransientSkipError
 from piddiplatsch.monitoring.progress import BaseProgress, get_progress
@@ -33,6 +34,9 @@ def build_processing_target(
     publish: bool = False,
     handle_profile: str | None = None,
     handle_output_filename: str | None = None,
+    catalogs=None,
+    version_history: bool = False,
+    require_all_assets: bool = False,
 ):
     """Build a project router or use an explicitly supplied processing object."""
     if processor is not None and projects is not None:
@@ -48,7 +52,12 @@ def build_processing_target(
         selection,
         publish=publish,
         handle_profile=handle_profile,
-        processor_kwargs={"handle_output_filename": handle_output_filename},
+        processor_kwargs={
+            "handle_output_filename": handle_output_filename,
+            **({"require_all_assets": True} if require_all_assets else {}),
+        },
+        catalogs=catalogs,
+        version_history=version_history,
     )
 
 
@@ -57,7 +66,7 @@ class ProcessingPipeline:
 
     def __init__(
         self,
-        messages: Iterable[tuple[str | None, dict]],
+        messages: Iterable[tuple[str | None, dict] | SourceMessage],
         processor,
         *,
         dump_messages=False,
@@ -105,8 +114,15 @@ class ProcessingPipeline:
         skipped_before = self.stats.skipped_messages
         filtered_before = self.stats.filtered_messages
         processed = 0
-        for key, value in self.messages:
-            result = self._safe_process_message(key, value)
+        for message in self.messages:
+            source_message = message if isinstance(message, SourceMessage) else None
+            key, value = (message.key, message.value) if source_message else message
+            result = self._safe_process_message(
+                key, value, source_message=source_message
+            )
+
+            if source_message and source_message.acknowledge and result.success:
+                source_message.acknowledge()
 
             self.stats.record_result(result)
 
@@ -153,28 +169,42 @@ class ProcessingPipeline:
                 f"Max error limit reached ({self.stats.errors}/{self.max_errors})"
             )
 
-    def _safe_process_message(self, key, value):
+    def _safe_process_message(self, key, value, *, source_message=None):
         try:
             logger.debug(f"Processing message: {key}")
             if self.dump_messages:
                 DumpRecorder().record(key, value)
+            if source_message is not None:
+                process = getattr(self.processor, "process_with_source", None)
+                if callable(process):
+                    return process(key, value, source_message.source)
             return self.processor.process(key, value)
         except Exception as e:
             logger.exception(f"Error processing message {key}")
-            infos = value.get("__infos__", {}) or {}
-            retries = infos.get("retries", value.get("retries", 0))
+            failure_value = (
+                value if isinstance(value, dict) else {"invalid_message": value}
+            )
+            infos = failure_value.get("__infos__", {}) or {}
+            if not isinstance(infos, dict):
+                infos = {}
+            retries = infos.get("retries", failure_value.get("retries", 0))
+            source_options = {"source": source_message.source} if source_message else {}
             reason = str(e)
             project = self._project_for_message(value)
-            FailureRecorder(root_dir=self.failure_dir, project=project).record(
-                key, value, retries=retries, reason=reason
-            )
-            return ProcessingResult(
+            FailureRecorder(
+                root_dir=self.failure_dir, project=project, **source_options
+            ).record(key, failure_value, retries=retries, reason=reason)
+            result = ProcessingResult(
                 key=key,
                 success=False,
                 error=reason,
                 project=project,
                 plugin=project,
             )
+            if getattr(self.processor, "stop_on_error", False):
+                self.stats.record_result(result)
+                raise
+            return result
 
     def _project_for_message(self, value: dict) -> str | None:
         resolver = getattr(self.processor, "plugin_name_for", None)
@@ -203,6 +233,7 @@ def process_messages(
     progress: BaseProgress | None = None,
     handle_profile: str | None = None,
     handle_output_filename: str | None = None,
+    max_errors: int = -1,
 ) -> FeedResult:
     target = build_processing_target(
         processor=processor,
@@ -219,6 +250,7 @@ def process_messages(
         force=force,
         verbose=verbose,
         progress=progress,
+        max_errors=max_errors,
     )
 
     try:

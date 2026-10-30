@@ -16,6 +16,47 @@ from piddiplatsch.monitoring.status import read_status
 from piddiplatsch.result import ProcessingResult
 
 
+def test_schema_two_history_is_readable_and_migrated_without_loss(tmp_path):
+    db_path = tmp_path / "monitor.db"
+    stats = Stats(enable_db=False)
+    stats.configure_for_run(
+        enable_db=True,
+        db_path=str(db_path),
+        command="map",
+        selected_projects=("cmip6",),
+        heartbeat_interval_seconds=60,
+    )
+    stats.record_result(
+        ProcessingResult(key="one", success=True, plugin="cmip6", num_handles=3)
+    )
+    stats.close(status="completed")
+    original = read_status(db_path)["runs"]
+    original[0].pop("heartbeat_age_seconds")
+    with sqlite3.connect(db_path) as connection:
+        for table in ("monitor_project_stats", "monitor_samples"):
+            for column in ("catalog_writes", "catalog_refreshes"):
+                connection.execute(f"ALTER TABLE {table} DROP COLUMN {column}")
+        connection.execute(
+            "UPDATE monitor_meta SET value = '2' WHERE key = 'schema_version'"
+        )
+    legacy = read_status(db_path)
+    legacy["runs"][0].pop("heartbeat_age_seconds")
+    assert legacy["schema_version"] == 2
+    assert legacy["runs"] == original
+    with sqlite3.connect(db_path) as connection:
+        assert (
+            connection.execute(
+                "SELECT value FROM monitor_meta WHERE key = 'schema_version'"
+            ).fetchone()[0]
+            == "2"
+        )
+    SQLiteReporter(str(db_path)).close()
+    migrated = read_status(db_path)
+    migrated["runs"][0].pop("heartbeat_age_seconds")
+    assert migrated["schema_version"] == 3
+    assert migrated["runs"] == original
+
+
 class _MappingProcessor:
     def preflight_check(self, **_kwargs):
         return None
@@ -140,7 +181,7 @@ def test_project_status_is_persisted_with_run_heartbeat(tmp_path):
     s.close(status="completed")
 
     status = read_status(db_path)
-    assert status["schema_version"] == 2
+    assert status["schema_version"] == 3
     assert status["runs"][0]["state"] == "completed"
     assert status["runs"][0]["selected_projects"] == ["cmip6", "cmip7"]
     projects = {row["project"]: row for row in status["runs"][0]["projects"]}

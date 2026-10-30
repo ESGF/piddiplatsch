@@ -1,5 +1,6 @@
 """Complete Click interface for piddiplatsch."""
 
+import warnings
 from datetime import datetime
 from pathlib import Path
 
@@ -29,7 +30,7 @@ def _parse_range_date(
 ) -> datetime | None:
     selected = _parse_date_selector(ctx, param, value)
     if isinstance(selected, str):
-        raise click.BadParameter("last cannot be used as a range boundary")
+        raise click.BadParameter(f"{selected} cannot be used as a range boundary")
     return selected
 
 
@@ -78,6 +79,18 @@ def cli(
     log: str | None,
 ) -> None:
     """CLI to interact with Kafka and Handle Service."""
+    # HTTP clients can load Brotli on free-threaded Python. Let the interpreter
+    # enable its compatibility GIL, but omit this expected diagnostic from CLI
+    # output. Scope the filter to this invocation and leave other warnings alone.
+    ctx.with_resource(warnings.catch_warnings())
+    warnings.filterwarnings(
+        "ignore",
+        message=(
+            r"The global interpreter lock \(GIL\) has been enabled to load module "
+            r"'_brotli', which has not declared that it can run safely without the GIL\."
+        ),
+        category=RuntimeWarning,
+    )
     ctx.ensure_object(dict)
     ctx.obj["verbose"] = progress and not silent
     if (
@@ -99,52 +112,45 @@ def cli(
         raise click.ClickException(str(exc)) from exc
 
 
-# command consume
-
-
-@cli.command()
-@click.option(
-    "--publish",
-    is_flag=True,
-    help="Also publish mapped Handles immediately; JSONL is always written first.",
-)
+@cli.command("sync")
 @click.option(
     "--project",
     "projects",
     multiple=True,
-    help="Project plugin to run; repeat to select several (overrides config).",
+    help="Restrict mapping and publication to this configured project; repeat to select several.",
 )
 @click.option(
-    "--all-projects",
+    "--workers",
+    type=click.IntRange(min=1),
+    default=None,
+    help="Concurrent Handle publication workers (default: [batch].publish_workers).",
+)
+@click.option(
+    "--retries",
+    type=click.IntRange(min=0),
+    default=None,
+    help="Retries per transient Handle request (default: [batch].publish_retries).",
+)
+@click.option(
+    "--force-map",
     is_flag=True,
-    help="Run all registered project plugins (overrides config).",
-)
-@click.option(
-    "--handle-profile",
-    help="Override the configured Handle profile for this command.",
-)
-@click.option(
-    "--force",
-    is_flag=True,
-    help="Continue on transient external failures (e.g., STAC down).",
+    help="Map pending items without waiting for the count/time threshold; publishes ready batches.",
 )
 @click.pass_context
-def consume(
+def sync(
     ctx: click.Context,
-    publish: bool,
-    force: bool,
     projects: tuple[str, ...],
-    all_projects: bool,
-    handle_profile: str | None,
+    workers: int | None,
+    retries: int | None,
+    force_map: bool,
 ) -> None:
-    """Harvest and map Kafka messages, deferring publication by default."""
-    commands.ConsumeCommand(
+    """Map due catalog changes and publish ready Handle batches."""
+    commands.SyncCommand(
         verbose=ctx.obj["verbose"],
-        publish=publish,
-        force=force,
         projects=projects,
-        all_projects=all_projects,
-        handle_profile=handle_profile,
+        workers=workers,
+        retries=retries,
+        force_map=force_map,
     ).execute()
 
 
@@ -154,21 +160,49 @@ def consume(
 @cli.command("harvest")
 @click.option(
     "--idle-timeout",
-    type=click.FloatRange(min=0.1),
+    type=click.FloatRange(min=0),
     default=5.0,
     show_default=True,
-    help="Stop after this many seconds without a Kafka message.",
+    help="Stop after this many seconds without a Kafka message; 0 keeps harvesting continuously.",
 )
 @click.option(
     "--limit",
     type=click.IntRange(min=1),
     help="Stop after harvesting this many Kafka messages.",
 )
+@click.option(
+    "--catalog/--no-catalog",
+    default=None,
+    help="Maintain project catalogs alongside raw dumps (default: [catalog].enabled).",
+)
+@click.option(
+    "--clean-catalog",
+    is_flag=True,
+    help="Clear all registered project catalogs and rebuild from retained Kafka history.",
+)
+@click.option(
+    "--clean-project",
+    "clean_projects",
+    multiple=True,
+    help="Clear and rebuild one project's catalog; repeat for several projects.",
+)
 @click.pass_context
-def harvest(ctx: click.Context, idle_timeout: float, limit: int | None) -> None:
-    """Harvest Kafka messages into raw JSONL without mapping."""
+def harvest(
+    ctx: click.Context,
+    idle_timeout: float,
+    limit: int | None,
+    catalog: bool | None,
+    clean_catalog: bool,
+    clean_projects: tuple[str, ...],
+) -> None:
+    """Harvest Kafka messages into raw JSONL and local catalogs without mapping."""
     commands.HarvestCommand(
-        verbose=ctx.obj["verbose"], idle_timeout=idle_timeout, limit=limit
+        verbose=ctx.obj["verbose"],
+        idle_timeout=idle_timeout,
+        limit=limit,
+        catalog=catalog,
+        clean_catalog=clean_catalog,
+        clean_projects=clean_projects,
     ).execute()
 
 
@@ -176,15 +210,32 @@ def harvest(ctx: click.Context, idle_timeout: float, limit: int | None) -> None:
 
 
 @cli.command("map")
-@click.argument(
-    "path", type=click.Path(exists=True, path_type=Path), nargs=-1, required=False
-)
 @click.option(
     "--date",
     "input_date",
     metavar="DATE",
     callback=_parse_date_selector,
-    help=f"Select a dated raw dump ({DATE_FORMATS}; default: last).",
+    help=f"Select a catalog event day ({DATE_FORMATS}; default: last).",
+)
+@click.option(
+    "--from",
+    "from_date",
+    metavar="DATE",
+    callback=_parse_range_date,
+    help="First date to map, inclusive (YYYY-MM-DD, today, yesterday, today-N). Requires --to.",
+)
+@click.option(
+    "--to",
+    "to_date",
+    metavar="DATE",
+    callback=_parse_range_date,
+    help="Last date to map, inclusive (YYYY-MM-DD, today, yesterday, today-N). Requires --from.",
+)
+@click.option(
+    "--catalog-dir",
+    "directory",
+    type=click.Path(file_okay=False, path_type=Path),
+    help="Read project catalogs from this directory (overrides [catalog].directory).",
 )
 @click.option(
     "--project",
@@ -204,42 +255,46 @@ def harvest(ctx: click.Context, idle_timeout: float, limit: int | None) -> None:
 @click.option(
     "--limit",
     type=click.IntRange(min=1),
-    help="Stop after mapping this many dumped messages in total.",
+    help="Stop after mapping this many catalog items in total.",
 )
 @click.option(
     "--offset",
     type=click.IntRange(min=0),
     default=0,
     show_default=True,
-    help="Skip this many dumped messages before mapping.",
+    help="Skip this many catalog items before mapping.",
 )
 @click.option(
-    "--force",
-    is_flag=True,
-    help="Continue on transient external failures (e.g., STAC down).",
+    "--version-history/--no-version-history",
+    default=None,
+    help="Link to the nearest older catalog version (default: [catalog].version_history).",
 )
 @click.pass_context
 def map_messages(
     ctx: click.Context,
-    path: tuple[Path, ...],
+    directory: Path | None,
     input_date: datetime | str | None,
+    from_date: datetime | None,
+    to_date: datetime | None,
     projects: tuple[str, ...],
     all_projects: bool,
     limit: int | None,
     offset: int,
-    force: bool,
+    version_history: bool | None,
     handle_profile: str | None,
 ) -> None:
-    """Map raw message JSONL through plugins into Handle JSONL."""
+    """Map complete local catalog items through plugins into Handle JSONL."""
     commands.MapCommand(
         verbose=ctx.obj["verbose"],
-        paths=path,
+        directory=directory,
         input_date=input_date,
+        from_date=from_date,
+        to_date=to_date,
         projects=projects,
         all_projects=all_projects,
         limit=limit,
         offset=offset,
-        force=force,
+        version_history=version_history,
         handle_profile=handle_profile,
     ).execute()
 
@@ -344,55 +399,6 @@ def publish(
         retry_delay=retry_delay,
         workers=workers,
         project=project,
-        handle_profile=handle_profile,
-    ).execute()
-
-
-# command retry
-
-
-@cli.command("retry")
-@click.argument(
-    "path", type=click.Path(exists=True, path_type=Path), nargs=-1, required=True
-)
-@click.option(
-    "--delete-after", is_flag=True, help="Delete files after successful retry."
-)
-@click.option(
-    "--publish",
-    is_flag=True,
-    help="Publish successfully remapped Handles immediately.",
-)
-@click.option(
-    "--handle-profile",
-    help="Override the configured Handle profile for this command.",
-)
-@click.pass_context
-def retry(
-    ctx: click.Context,
-    path: tuple[Path, ...],
-    delete_after: bool,
-    publish: bool,
-    handle_profile: str | None,
-) -> None:
-    """Retry failed items from failure .jsonl file(s) or directory.
-
-    Accepts multiple arguments:
-
-    \b
-      Individual files: retry file1.jsonl file2.jsonl
-      Directories: retry outputs/failures/r0/
-      Glob patterns: retry outputs/failures/r0/*.jsonl
-
-    Internals: This command uses `RetryRunner` to aggregate results across
-    inputs, invoke the processing pipeline, and optionally remove source files
-    when `--delete-after` is set and all items succeed.
-    """
-    commands.RetryCommand(
-        verbose=ctx.obj["verbose"],
-        paths=path,
-        delete_after=delete_after,
-        publish=publish,
         handle_profile=handle_profile,
     ).execute()
 

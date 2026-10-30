@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+from datetime import date
 from pathlib import Path
 from typing import Any
 
@@ -28,6 +29,7 @@ class JsonlHandleBackend(HandleBackend):
         base_dir = config.get("consumer", {}).get("output_dir", "outputs")
         self.project = project
         self.output_filename = output_filename
+        self._output_date: date | None = None
         self.prefix = config.get_handle(project=project, profile=handle_profile).get(
             "prefix", ""
         )
@@ -37,6 +39,10 @@ class JsonlHandleBackend(HandleBackend):
         dump_dir /= "handles"
         # Use shared JSONL writer for daily rotation and append semantics
         self.writer = DailyJsonlWriter(Path(dump_dir))
+
+    def set_output_date(self, day: date | None) -> None:
+        """Route catalog mapping to its source event day; named batches take precedence."""
+        self._output_date = day
 
     def _store(self, handle: str, handle_data: dict[str, Any]) -> None:
         # Include timestamp for traceability; let writer choose the dated filename
@@ -48,7 +54,12 @@ class JsonlHandleBackend(HandleBackend):
         }
         if self.project:
             record["project"] = self.project
-        path = self.writer.write("handles", record, filename=self.output_filename)
+        filename = self.output_filename or (
+            f"handles_{self._output_date.isoformat()}.jsonl"
+            if self._output_date
+            else None
+        )
+        path = self.writer.write("handles", record, filename=filename)
         logging.debug(f"Wrote handle {handle} to {path}")
 
     def _retrieve(self, handle: str) -> dict[str, Any] | None:

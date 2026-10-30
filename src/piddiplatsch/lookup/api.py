@@ -1,20 +1,36 @@
+from piddiplatsch.catalog.base import BaseCatalogReader
 from piddiplatsch.config import config
 from piddiplatsch.lookup.base import AbstractLookup, DummyLookup
-from piddiplatsch.lookup.es import ElasticsearchLookup
+from piddiplatsch.lookup.catalog import CatalogLookup
 from piddiplatsch.lookup.stac import STACLookup
 
 
-def get_lookup(project: str | None = None) -> AbstractLookup:
+def get_lookup(
+    project: str | None = None,
+    *,
+    catalog_reader: BaseCatalogReader | None = None,
+    enabled: bool | None = None,
+) -> AbstractLookup:
     """
     Factory function that returns the configured lookup instance
-    based on the TOML config [lookup] section.
+    based on [lookup], defaulting to catalog. An injected snapshot always uses
+    local lookup; mapping controls enablement through its version-history option.
     """
 
     # Check for config-based disable flag
-    if not config.get("lookup", "enabled", False):
+    if not (config.get("lookup", "enabled", False) if enabled is None else enabled):
         return DummyLookup()
 
-    backend = config.get("lookup", "backend", "stac").lower()
+    backend = (
+        "catalog"
+        if catalog_reader is not None
+        else config.get("lookup", "backend", "catalog").lower()
+    )
+
+    if backend == "catalog":
+        if project is None:
+            raise ValueError("Catalog version lookup requires an explicit project")
+        return CatalogLookup(project, reader=catalog_reader)
 
     if backend == "stac":
         stac_cfg = config.get_stac(project)
@@ -23,15 +39,6 @@ def get_lookup(project: str | None = None) -> AbstractLookup:
         if not stac_url:
             raise ValueError("STAC backend requires 'stac.base_url' in config")
         return STACLookup(stac_url=stac_url, collection=collection)
-
-    elif backend in ("elasticsearch", "es"):
-        es_url = config.get("elasticsearch", "base_url")
-        index = config.get("elasticsearch", "index", "handle_21t14995")
-        if not es_url:
-            raise ValueError(
-                "Elasticsearch backend requires 'elasticsearch.base_url' in config"
-            )
-        return ElasticsearchLookup(es_url=es_url, index=index)
 
     else:
         raise ValueError(f"Unknown lookup backend configured: {backend}")

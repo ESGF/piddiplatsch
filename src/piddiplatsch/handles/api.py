@@ -1,14 +1,13 @@
 from __future__ import annotations
 
 import logging
+from datetime import date
 from typing import Any, Literal, Protocol
 
 from piddiplatsch.config import config
 from piddiplatsch.handles.base import HandleBackend
 from piddiplatsch.handles.jsonl_backend import JsonlHandleBackend
-from piddiplatsch.handles.pyhandle_backend import HandleClient
 from piddiplatsch.handles.recording_backend import RecordingHandleBackend
-from piddiplatsch.handles.rest_backend import RestHandleClient
 
 
 class HandleAPIProtocol(Protocol):
@@ -43,6 +42,12 @@ class HandleAPI(HandleAPIProtocol):
     def get(self, pid: str) -> dict[str, Any] | None:
         return self.backend.get(pid)
 
+    def set_output_date(self, day: date | None) -> None:
+        """Set the logical day of a prepared JSONL batch when supported."""
+        setter = getattr(self.backend, "set_output_date", None)
+        if callable(setter):
+            setter(day)
+
 
 # --- Factory Function ---
 def get_handle_backend(
@@ -55,9 +60,9 @@ def get_handle_backend(
     Return a HandleBackend based on configuration.
 
     Config keys expected in the project's ``[handles.profiles.*]`` section:
-      backend = "rest" | "pyhandle"
+      backend = "rest"
 
-    Both publication backends are wrapped by the immutable JSONL audit
+    The publication backend is wrapped by the immutable JSONL audit
     recorder. When publication is disabled, only that JSONL output is written.
     """
     if not publish:
@@ -69,7 +74,7 @@ def get_handle_backend(
         )
 
     handle_config = config.get_handle(project=project, profile=handle_profile)
-    backend_type: Literal["rest", "pyhandle"] = handle_config.get("backend", "rest")
+    backend_type: Literal["rest"] = handle_config.get("backend", "rest")
     profile = handle_profile or config.get_handle_profile(project)
     logging.warning(
         "Using Handle backend: %s (project=%s profile=%s)",
@@ -79,16 +84,10 @@ def get_handle_backend(
     )
 
     if backend_type == "rest":
+        from piddiplatsch.handles.rest_backend import RestHandleClient
+
         return RecordingHandleBackend(
             RestHandleClient.from_config(project=project, profile=handle_profile),
-            project=project,
-            handle_profile=handle_profile,
-            output_filename=output_filename,
-        )
-
-    if backend_type == "pyhandle":
-        return RecordingHandleBackend(
-            HandleClient.from_config(project=project, profile=handle_profile),
             project=project,
             handle_profile=handle_profile,
             output_filename=output_filename,

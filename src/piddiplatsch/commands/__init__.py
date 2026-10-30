@@ -4,16 +4,16 @@ from importlib import import_module
 
 _EXPORTS = {  # noqa: RUF067 - lazy public re-exports avoid loading network clients
     "Command": "base",
+    "SyncCommand": "sync",
+    "DatedBatchCommand": "base",
     "FileBatchCommand": "base",
     "KafkaCommand": "base",
     "ConfigExplainCommand": "config",
     "ConfigShowCommand": "config",
     "ConfigValidateCommand": "config",
-    "ConsumeCommand": "consume",
     "HarvestCommand": "harvest",
     "MapCommand": "map",
     "PublishCommand": "publish",
-    "RetryCommand": "retry",
     "TopCommand": "top",
 }
 

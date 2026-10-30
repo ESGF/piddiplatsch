@@ -1,19 +1,17 @@
 # Architecture
 
-Piddiplatsch consumes one shared ESGF Kafka publication topic and routes each
-decoded event to zero or one selected project plugin.
+Piddiplatsch harvests the shared ESGF Kafka publication topic into per-project
+catalogs. Mapping reads complete local items and writes prepared Handles.
 
 ```text
-Kafka message
-  -> JSON decode
-  -> mandatory raw dump
-  -> extract project identity
-  -> selected project plugin
-  -> project record mapping
-  -> project-scoped Handle JSONL
-  -> optional Handle backend
-  -> result persistence and statistics
+Kafka -> raw JSONL + project catalogs (harvest)
+project catalogs -> daily or sealed batch Handle JSONL (map/batch)
+prepared Handle JSONL -> Handle Service + receipts (publish/batch)
 ```
+
+Harvest is the only continuous service. The scheduled sync worker maps due
+projects, seals immutable batches, and publishes ready batches sequentially.
+Manual map/publish commands remain available; the old consume command is removed.
 
 ## Command execution
 
@@ -21,19 +19,31 @@ CLI command classes handle arguments, progress display, and summaries. Execution
 is separated by input source:
 
 - `consumer.py` owns Kafka polling, preflight, signals, and run shutdown for
-  `consume` and `harvest`. It feeds decoded keyed records into the shared
+  `harvest`. It feeds decoded keyed records into the shared
   processing pipeline and closes the Kafka input on completion or early exit.
-- `runners/mapping.py` opens raw JSONL through `jsonl_stream.py`, applies the
-  selected offset and limit, and sends a lazy iterable to the pipeline.
-- `runners/retry.py` streams recovery records in bounded batches and owns
-  persisted project routing, retry counts, and input-retention/deletion rules.
+- `catalog/harvest.py` reconstructs complete STAC items in per-project catalogs.
+  Harvest source messages carry topic/partition/offset and an acknowledgement
+  callback separately from their raw payload. The pipeline acknowledges successful
+  catalog writes only after their local transaction commits; unresolved events
+  stop harvesting. SQLite provides compressed storage, indexed version queries,
+  and atomic item/checkpoint writes through the shared catalog contracts.
+  Missing PATCH bases fetch current remote state without applying the patch.
+  Persistent per-item remote-refresh mode also covers later POST/PATCH events
+  and startup refreshes. A partial index selects only marked entries; mapping
+  remains offline.
+  Broker acknowledgements batch explicit durable offsets by count/time and flush
+  on shutdown or revocation, avoiding a network round trip for every record.
+- `runners/mapping.py` opens read-only per-project catalog snapshots, applies the
+  indexed event-day selection followed by item offset and limit, and sends complete items lazily to the pipeline.
+  Processors use the same snapshots for optional predecessor queries and do not
+  fetch or reapply patches. `catalog.api` owns backend and path selection.
 - `core/pipeline.py` owns processor selection, record execution, counters,
   failure/skipped-record persistence, progress updates, and stop policies. Its
   `ProcessingPipeline` accepts an iterable directly and returns per-run results;
-  `process_messages` also manages progress created for a mapping or retry call.
+  `process_messages` also manages progress created for a mapping call.
   It does not import Kafka or file-input readers.
 - `runners/publish.py` publishes already prepared Handles independently of the
-  mapping pipeline, using the same `jsonl_stream.py` reader.
+  mapping pipeline, using the bounded `jsonl_stream.py` reader.
 
 Input lifetimes belong to the runners: they close file/Kafka streams on limits,
 errors, or interruption. A caller that injects a progress display retains
@@ -74,7 +84,11 @@ publication records are not validated against a complete STAC schema. Core
 checks only the envelope and the object/field shapes consumed by mapping;
 Pydantic validates the Handle records produced by each plugin. Thin plugin
 classes declare project PID fields and retain genuine differences, such as
-CMIP6 version lookup.
+version index metadata. Predecessor lookup during catalog mapping is shared by
+all built-in project processors and uses `lookup/catalog.py` on the local catalog
+index. The version lookup factory defaults to `catalog`, retains explicit `stac`
+queries, and can reuse caller-owned snapshots. Remote full-item recovery remains
+a separate harvest concern.
 
 Canonical PID fields currently are `cmip6:pid` / `cmip6:tracking_id` and
 `cmip7:pid` / `cmip7:tracking_id`, plus `cordex-cmip6:pid` /
@@ -86,11 +100,15 @@ independently generated identifiers.
 ## Selection
 
 `consumer.projects` selects a list of plugin names or `all`. Repeated
-`--project NAME` options and `--all-projects` on `consume` or `map` override
-config for a run. `harvest` intentionally has no project selection: it retains
-every raw queue message so a different mapping selection can be applied later.
+`--project NAME` options and `--all-projects` on `map` override
+config for a run. The sync worker uses the configured selection. `harvest` intentionally has no project selection: it retains
+every raw queue message and caches each registered project encountered, so a
+different mapping selection can be applied later. Unknown or malformed events
+stop catalog harvesting and remain unacknowledged; `--no-catalog` keeps the previous
+raw-only behavior. Harvest uses plugin metadata without constructing processors.
 
-Only selected plugins are constructed and preflighted.
+Only selected plugins are constructed. Catalog mapping skips remote preflight;
+direct consumption retains its existing preflight behavior.
 
 ## Output and dump scope
 
@@ -98,7 +116,10 @@ Generated JSONL Handle records are plugin-scoped at
 `outputs/<plugin>/handles/handles_<date>.jsonl`; every outbox line also carries
 the canonical plugin name in `project`. This prevents records from concurrent
 project mappings being mixed and gives downstream publishers an explicit
-routing hint.
+routing hint. Catalog mapping names daily files using the UTC event day, so
+map and publish can use matching date selectors. Failure files are diagnostic
+artifacts; recovery repeats normal commands against their original inputs.
+Legacy retry library helpers remain for compatibility, without a CLI command.
 
 The raw dump remains a single pre-routing stream under `outputs/dump` and is
 mandatory for queue-consuming commands.
@@ -109,16 +130,11 @@ individual filter decisions at DEBUG.
 
 ## Kafka consumer groups
 
-Kafka distributes each partition among members of one consumer group before
-piddi performs project filtering. Therefore:
-
-- one process may select several projects under one group;
-- separate project-specific processes must use distinct `group.id` values;
-- changing the projects associated with an existing group changes which records
-  are considered complete and requires an explicit offset/replay decision.
-
-Sharing a group between separate CMIP6 and CMIP7 processes is unsafe: either
-process may receive and filter records intended for the other.
+Harvest uses `<kafka.group.id>.harvest`; clean rebuilds persist a new group
+generation. Keep one harvest writer for a local catalog directory. Kafka shares
+partitions among members of a group, so multiple harvest instances require
+coordinated storage and update ownership rather than independent local caches.
+Map and batch project selection never changes Kafka group membership or offsets.
 
 ## Current scope
 

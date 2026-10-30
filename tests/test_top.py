@@ -8,7 +8,7 @@ from piddiplatsch.cli import cli
 from piddiplatsch.config import config
 from piddiplatsch.monitoring.stats import Stats
 from piddiplatsch.monitoring.status import read_status
-from piddiplatsch.result import FeedResult
+from piddiplatsch.result import FeedResult, ProcessingResult
 
 
 def _monitoring_db(path):
@@ -96,6 +96,41 @@ def test_top_missing_database_is_clear(tmp_path):
     assert "does not exist" in result.output
 
 
+def test_top_harvest_reports_durable_writes_and_duplicate_events(tmp_path):
+    db_path = tmp_path / "piddi.db"
+    stats = Stats(enable_db=False)
+    stats.configure_for_run(
+        enable_db=True,
+        db_path=str(db_path),
+        command="harvest",
+        selected_projects=("cmip6",),
+        heartbeat_interval_seconds=60,
+    )
+    stats.record_result(
+        ProcessingResult(
+            key="write",
+            success=True,
+            plugin="cmip6",
+            catalog_written=True,
+            catalog_refreshed=True,
+        )
+    )
+    stats.record_result(
+        ProcessingResult(key="duplicate", success=True, plugin="cmip6", filtered=True)
+    )
+    stats.close(status="completed")
+    status = read_status(db_path)
+    project = status["runs"][0]["projects"][0]
+    assert project["consumed"] == 2
+    assert project["catalog_writes"] == project["catalog_refreshes"] == 1
+    history = status["runs"][0]["history"][0]
+    assert history["deltas"]["catalog_writes"] == 1
+    result = CliRunner().invoke(cli, ["top", "--db", str(db_path), "--once"])
+    assert result.exit_code == 0, result.output
+    assert "events" in result.output
+    assert "ΔWrites" in result.output
+
+
 def test_top_once_shows_history(tmp_path):
     db_path = tmp_path / "piddi.db"
     _monitoring_db(db_path)
@@ -119,7 +154,7 @@ def test_top_once_shows_history(tmp_path):
     assert "no active runs" in result.output
     assert "stopped" not in result.output
     assert "Latest run history · last 30 minutes" in result.output
-    assert "ΔMsg" in result.output
+    assert "ΔInput" in result.output
 
 
 def test_top_history_excludes_previous_stopped_run(tmp_path):
@@ -154,18 +189,18 @@ def test_top_history_excludes_previous_stopped_run(tmp_path):
     assert result.output.count("cmip7") == 2
 
 
-@patch("piddiplatsch.commands.map.map_dump_files")
-def test_map_command_owns_monitoring_database(mock_map_dump_files, tmp_path):
+@patch("piddiplatsch.commands.map.map_catalog")
+def test_map_command_owns_monitoring_database(mock_map_catalog, tmp_path):
     source = tmp_path / "dump.jsonl"
     source.write_text("{}\n")
     db_path = tmp_path / "piddi.db"
     config._set("stats", "enable_db", True)
     config._set("stats", "db_path", str(db_path))
-    mock_map_dump_files.return_value = FeedResult(total=1, succeeded=1)
+    mock_map_catalog.return_value = FeedResult(total=1, succeeded=1)
 
     result = CliRunner().invoke(
         cli,
-        ["--log", str(tmp_path / "test.log"), "map", str(source), "--project", "cmip6"],
+        ["--log", str(tmp_path / "test.log"), "map", "--project", "cmip6"],
     )
 
     assert result.exit_code == 0
@@ -174,18 +209,18 @@ def test_map_command_owns_monitoring_database(mock_map_dump_files, tmp_path):
     assert status["runs"][0]["state"] == "completed"
 
 
-@patch("piddiplatsch.commands.map.map_dump_files")
-def test_map_failures_close_monitoring_run_as_failed(mock_map_dump_files, tmp_path):
+@patch("piddiplatsch.commands.map.map_catalog")
+def test_map_failures_close_monitoring_run_as_failed(mock_map_catalog, tmp_path):
     source = tmp_path / "dump.jsonl"
     source.write_text("{}\n")
     db_path = tmp_path / "piddi.db"
     config._set("stats", "enable_db", True)
     config._set("stats", "db_path", str(db_path))
-    mock_map_dump_files.return_value = FeedResult(total=2, succeeded=1, failed=1)
+    mock_map_catalog.return_value = FeedResult(total=2, succeeded=1, failed=1)
 
     result = CliRunner().invoke(
         cli,
-        ["--log", str(tmp_path / "test.log"), "map", str(source), "--project", "cmip6"],
+        ["--log", str(tmp_path / "test.log"), "map", "--project", "cmip6"],
     )
 
     assert result.exit_code == 1

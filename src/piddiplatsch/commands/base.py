@@ -9,10 +9,9 @@ from typing import Literal, overload
 
 import click
 
-from piddiplatsch.commands.helper import resolve_dated_input
+from piddiplatsch.commands.helper import resolve_dated_input, validate_date_selection
 from piddiplatsch.config import config
 from piddiplatsch.monitoring.progress import (
-    STREAM_PROGRESS_LEGEND,
     BaseProgress,
     BoundedProgress,
     get_progress,
@@ -38,6 +37,7 @@ class Command(ABC):
         stream: Literal[False] = False,
         unit: str = "item",
         start: int = 0,
+        mode: str | None = None,
     ) -> BoundedProgress: ...
 
     @overload
@@ -48,6 +48,7 @@ class Command(ABC):
         stream: Literal[True],
         unit: str = "item",
         start: int = 0,
+        mode: str | None = None,
     ) -> BaseProgress: ...
 
     def progress(
@@ -57,16 +58,16 @@ class Command(ABC):
         stream: bool = False,
         unit: str = "item",
         start: int = 0,
+        mode: str | None = None,
     ) -> BaseProgress:
         """Create the requested progress style using this command's verbosity."""
-        if stream and self.verbose:
-            click.echo(STREAM_PROGRESS_LEGEND)
         return get_progress(
             title=title,
             use_tqdm=self.verbose,
             stream=stream,
             unit=unit,
             start=start,
+            mode=mode,
         )
 
     @abstractmethod
@@ -91,9 +92,18 @@ class KafkaCommand(Command, ABC):
         monitor_db: bool = False,
         handle_profile: str | None = None,
     ) -> None:
-        from piddiplatsch.consumer import start_consumer
+        from piddiplatsch.consumer import prepare_kafka_runtime, start_consumer
 
-        progress = self.progress(title=title, stream=True)
+        # Native import warnings must appear before the live progress line.
+        prepare_kafka_runtime()
+        mode = None
+        if title == "harvest":
+            mode = (
+                "harvest"
+                if getattr(processor, "requires_kafka_source", False)
+                else "harvest_raw"
+            )
+        progress = self.progress(title=title, stream=True, mode=mode)
         with progress:
             start_consumer(
                 config.get("consumer", "topic"),
@@ -113,18 +123,32 @@ class KafkaCommand(Command, ABC):
 
 
 @dataclass(kw_only=True)
-class FileBatchCommand(Command, ABC):
-    """Common inputs and path resolution for dated file batches."""
+class DatedBatchCommand(Command, ABC):
+    """Common day/range and position selections for map and publish."""
 
-    paths: tuple[Path, ...] = ()
     input_date: datetime | str | None = None
+    from_date: datetime | None = None
+    to_date: datetime | None = None
     limit: int | None = None
     offset: int = 0
 
     def validate_input(self) -> None:
-        """Validate the mutually exclusive explicit-path and date inputs."""
-        if self.paths and self.input_date is not None:
-            raise click.UsageError("PATH cannot be combined with --date")
+        try:
+            validate_date_selection(
+                self.input_date,
+                self.from_date,
+                self.to_date,
+                has_paths=bool(getattr(self, "paths", ())),
+            )
+        except ValueError as exc:
+            raise click.UsageError(str(exc)) from exc
+
+
+@dataclass(kw_only=True)
+class FileBatchCommand(DatedBatchCommand, ABC):
+    """Common path resolution for dated file batches."""
+
+    paths: tuple[Path, ...] = ()
 
     def resolve_paths(
         self,

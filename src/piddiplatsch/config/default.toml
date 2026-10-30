@@ -5,12 +5,13 @@
 # - consumer: message processing pipeline defaults
 # - kafka: Kafka client settings (librdkafka options supported)
 # - handles: named Handle server profiles (use overrides for secrets)
-# - stac: STAC client and collection
-# - elasticsearch: ES endpoint and index (if using ES lookups)
+# - stac: harvest recovery endpoint and explicit remote version lookup
 # - schema: validation strictness
 # - logging: log level and destination
 # - plugins.*: project-specific mapping options
-# - lookup: choose STAC or ES backend
+# - lookup: dataset version lookup adapters (map uses its catalog snapshot)
+# - catalog: local project catalogs maintained by harvest
+# - batch: scheduled mapping thresholds and ready-batch publication
 # - stats: logging/SQLite reporter settings
 #
 # Full reference defaults; for site setup, start with etc/esgf-example.toml.
@@ -24,8 +25,39 @@ projects = ["cmip6"]
 topic = "CMIP6"
 output_dir = "outputs"
 # Maximum number of errors before stopping; -1 = unlimited.
-# Conservative default: stop on first error.
+# Map/sync stop on first error. Catalog harvest always stops on any error.
 max_errors = 1
+
+[catalog]
+# Harvest maintains one SQLite database per registered project encountered.
+# Missing PATCH bases fetch current remote STAC state without reapplying the patch.
+# Recovered items stay marked for remote refresh on later events and harvest startup.
+# --no-catalog retains the previous raw-dump-only behavior.
+enabled = true
+backend = "sqlite"
+# Batch broker acknowledgements after durable local writes. Flush pending offsets
+# on idle, shutdown, limits, and partition revocation. Set batch size 1 for
+# per-message commits (slower on remote brokers).
+kafka_commit_batch_size = 100
+kafka_commit_interval_seconds = 1.0
+# Link each dataset version to its nearest strictly older catalog item in map.
+# Keep disabled during initial filling; override with map --version-history.
+version_history = false
+# Default directory: <consumer.output_dir>/catalog. Override if needed:
+# directory = "/var/lib/piddi/catalog"
+
+[batch]
+# Per project: map when this many distinct items are pending OR the oldest has
+# waited max_wait_seconds. Harvest changes arriving during mapping stay pending.
+trigger_items = 1000
+max_wait_seconds = 3600
+# Maximum catalog items per immutable output batch; never split an item's Handles.
+max_items = 1000
+# Ready batches publish immediately during the sync tick, in project order.
+publish_workers = 1
+publish_retries = 3
+# Default: <consumer.output_dir>/batches. Must be shared by all worker invocations.
+# directory = "/var/lib/piddi/batches"
 
 [logging]
 # WARNING keeps normal runs compact. Use -v for INFO or -vv/--debug for DEBUG.
@@ -36,7 +68,8 @@ file = "pid.log"
 [consumer.transient]
 # --- Transient External Failures (STAC/network) ---
 # Stop consumption on transient failures after bounded retries.
-# Override at runtime with the CLI flag --force to continue.
+# These options remain for legacy processor library compatibility only.
+# Catalog harvest recovery is fail-fast; there is no consume or --force command.
 stop_on_skip = true
 # Retry attempts for transient STAC fetch/patch failures.
 retries = 3
@@ -50,6 +83,8 @@ preflight_stac = false
 # Set site-specific brokers, group, and credentials in an override file.
 "bootstrap.servers" = "localhost:39092"
 "group.id" = "piddiplatsch-001"
+# Harvest uses a separate .harvest group and overrides automatic commits/storage
+# to acknowledge only durable catalog writes. Raw-only harvest inherits these settings.
 # ESGF production authentication. Local test Kafka overrides the protocol to PLAINTEXT.
 "security.protocol" = "SASL_SSL"
 "sasl.mechanisms" = "PLAIN"
@@ -75,9 +110,9 @@ preflight_stac = false
 default = "mock"
 
 [handles.defaults]
-# Handle publication backend: use "rest" or "pyhandle" for the legacy client.
-# Both backends always write the immutable JSONL audit record first. Plain
-# `consume` defers publication; use `consume --publish` for immediate delivery.
+# Handle publication backend.
+# Map prepares JSONL without publication. Publish/sync send prepared Handles
+# through REST.
 backend = "rest"
 # Keep certificate verification enabled in production. Disable only for a
 # deliberately trusted service using a self-signed certificate. When disabled,
@@ -101,15 +136,9 @@ password = "testpass"
 # [plugins.<name>.stac] when their collection is hosted elsewhere.
 base_url = "https://discovery.east.esgf.io"
 timeout = 10  # seconds
-# Fallback for callers that do not select a project. Project defaults below
-# override this value for project-aware STAC version lookups.
+# Default collection for explicit STAC version queries. Project overrides follow.
+# Harvest recovery uses the incoming collection/item identity; map stays local.
 collection = "cmip6"
-
-[elasticsearch]
-# Elasticsearch endpoint (used when lookup.backend = "es").
-base_url = "http://elastic-hippo.cloud.dkrz.de:9200"
-# Target index for lookups/writes (backend-specific usage).
-index = "handle_21t14995"
 
 [schema]
 # Enforce strict schema validation; set false to be permissive.
@@ -167,8 +196,10 @@ excluded_asset_keys = ["reference_file", "globus", "thumbnail", "quicklook"]
 collection = "CMIP6Plus"
 
 [lookup]
-# Lookup backend: "stac" (requires stac.base_url) or "es" (requires elasticsearch.base_url).
-backend = "stac"
+# Dataset version lookup: local catalog by default; "stac" is an explicit alternative.
+# This switch controls standalone lookup adapter calls only.
+# Map uses its catalog snapshot; linking is enabled by [catalog].version_history.
+backend = "catalog"
 enabled = false
 
 [stats]
@@ -178,7 +209,7 @@ interval_seconds = 10
 # Message count threshold before logging a stats snapshot.
 summary_interval = 1000
 
-# Enable SQLite monitoring for `piddi consume` and `piddi map` runs.
+# Enable SQLite monitoring for map and the mapping phase of sync runs.
 enable_db = true
 
 # Path to SQLite database file (used only if enable_db = true).

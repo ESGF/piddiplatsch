@@ -40,18 +40,19 @@ explicit publication (or use the local Docker stack for smoke tests).
 - Harvest queue messages only: `piddi harvest`
 - Map a dated raw dump: `piddi map --date YYYY-MM-DD`
 - Map explicit saved JSONL: `piddi map <path...>`
-- Harvest and map: `piddi consume`
-- Harvest, map, and publish: `piddi consume --publish`
+- Harvest catalogs: `piddi harvest`
+- Map catalogs: `piddi map --project cmip6 --date all`
+- Map pending items and publish ready batches: `piddi sync --force-map`
 - Common flags:
   - `--config <path>`: point to your TOML config
   - `--silent`: hide the default progress display
   - `-v`: INFO logging; `-vv` or `--debug`: DEBUG logging
   - `--log my.log`: override the configured log destination
-  - `--force`: continue on transient external failures (e.g., STAC outages)
+  - `batch --force-map`: map pending changes without waiting for thresholds
 
-`harvest` and `consume` always write raw queue messages to `outputs/dump/`
-before plugin routing. Plain `consume` writes Handle JSONL without contacting a
-Handle Service.
+`harvest` always writes raw queue messages to `outputs/dump/` before catalog
+routing. `map` prepares daily Handle JSONL without contacting a Handle Service;
+`sync` seals and publishes completed batches. The consume command is removed.
 
 ### Config Validation
 
@@ -326,8 +327,9 @@ def test_full_workflow(handle_client, testfile):
 
 ## 🔌 Project plugins
 
-- One consumer routes to one, several, or all plugins selected via
-  `consumer.projects` or the `consume --project/--all-projects` options.
+- Map selects one, several, or all plugins via `consumer.projects` or its
+  `--project/--all-projects` options. Batch uses the configured selection; harvest
+  caches every registered project.
 - Config for each plugin lives under `[plugins.<name>]` in the TOML.
 - Example (CMIP6):
 

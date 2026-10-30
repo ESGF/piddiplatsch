@@ -13,10 +13,47 @@
 projects = ["cmip6", "cmip6plus", "cmip7", "cordex-cmip6"]
 topic = "ESGF-PUBLICATIONS"
 
+[catalog]
+# One compressed SQLite catalog per harvested project under <output_dir>/catalog.
+# Harvest caches all registered projects; consumer.projects selects what map reads.
+enabled = true
+backend = "sqlite"
+kafka_commit_batch_size = 100
+kafka_commit_interval_seconds = 1.0
+# Keep predecessor links disabled during initial filling. Enable once ready,
+# or use map --version-history and remap the selected date/window.
+version_history = false
+# Optional storage location; deployment otherwise uses /var/lib/piddi/catalog:
+# directory = "/data/piddi/catalog"
+
+[batch]
+# Enable the Ansible sync timer when automatic Handle publication is intended.
+# Map per project at 1,000 distinct pending items or a one-hour maximum wait.
+trigger_items = 1000
+max_wait_seconds = 3600
+max_items = 1000
+publish_workers = 1
+publish_retries = 3
+# directory = "/data/piddi/batches"
+
+[lookup]
+# Version lookup adapters: local catalog by default; explicit alternative "stac".
+# Map linking is controlled by catalog.version_history, not this enabled switch.
+backend = "catalog"
+enabled = false
+
+[stac]
+# Missing PATCH bases recover this service's current item, without applying the patch.
+# Recovered items refresh on later events and harvest startup; failures stop harvest.
+# Override base_url/timeout under [plugins.<name>.stac] for a different project host.
+base_url = "https://discovery.east.esgf.io"
+timeout = 10
+
 [kafka]
 # Copy the broker endpoint(s) supplied for your ESGF Kafka access.
 "bootstrap.servers" = "broker1.example.org:9093"
-# Copy your assigned consumer group; keep it stable and unique per workflow.
+# Copy your assigned base consumer group; keep it stable and unique per workflow.
+# Catalog harvest uses <group.id>.harvest; clean rebuilds add a persisted generation.
 "group.id" = "de.dkrz.test.20260907-01"
 # ESGF Resource -> client.id
 "client.id" = "YOUR_ESGF_RESOURCE"
@@ -40,7 +77,7 @@ prefix = "21.YOUR_PREFIX"
 username = "300:21.YOUR_PREFIX/YOUR_HANDLE_USERNAME"
 password = "YOUR_HANDLE_PASSWORD"
 
-# Match the Ansible example: do not add file links to dataset Handle records.
+# Do not add file links to dataset Handle records in this site example.
 # Set max_parts = -1 for unlimited links, or a positive limit if needed.
 [plugins.cmip6]
 max_parts = 0
@@ -57,4 +94,15 @@ max_parts = 0
 # generated from dataset_id instead of versioned instance_id. Defaults to false.
 force_dataset_pid = false
 
-# Plain consume writes JSONL. Use consume --publish for immediate delivery.
+# Staged workflow (map/publish both default to --date last):
+# piddi harvest                         # fill/update catalogs, exit after idle
+# piddi harvest --idle-timeout 0        # continuously maintain catalogs (systemd)
+# piddi map --all-projects --date all   # full initial filling, using available catalogs
+# piddi map --project cmip6 --date today-1
+# piddi publish --project cmip6 --date today-1
+# piddi sync                          # one scheduled tick: map due, publish ready
+# piddi sync --force-map              # map nonempty pending sets immediately
+# Both map/publish support inclusive --from/--to and --offset/--limit.
+# Map counts catalog items; publish counts Handle records. Failure files are for
+# inspection only; fix the cause and repeat the normal command. No retry command.
+# The old consume command is removed; harvest owns queue ingestion.

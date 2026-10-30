@@ -1,11 +1,14 @@
+from __future__ import annotations
+
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import Any
-
-import requests
-from pystac import Item
+from typing import TYPE_CHECKING, Any
+from urllib.parse import quote
 
 from piddiplatsch.config import config  # your TOML config loader
+
+if TYPE_CHECKING:
+    from pystac import Item
 
 
 @dataclass
@@ -63,7 +66,9 @@ class RemoteStacClient(BaseStacClient):
         self.timeout = timeout
 
     def get_item(self, collection_id: str, item_id: str) -> dict[str, Any]:
-        url = f"{self.base_url}/collections/{collection_id}/items/{item_id}"
+        import requests
+
+        url = f"{self.base_url}/collections/{quote(collection_id, safe='')}/items/{quote(item_id, safe='')}"
         resp = requests.get(url, timeout=self.timeout)
         resp.raise_for_status()
         return resp.json()

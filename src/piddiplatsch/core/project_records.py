@@ -250,7 +250,7 @@ class ProjectDatasetRecord(BaseProjectRecord):
 
     @cached_property
     def previous_version(self) -> str | None:
-        return None
+        return self.additional_attributes.get("previous_version")
 
     def as_handle_model(self) -> DatasetHandleModel:
         model = self.dataset_model(

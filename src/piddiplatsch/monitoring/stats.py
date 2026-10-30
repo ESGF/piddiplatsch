@@ -53,6 +53,8 @@ class CounterKey(StrEnum):
     ERRORS = "errors"
     RETRIES = "retries"
     HANDLES = "handles"
+    CATALOG_WRITES = "catalog_writes"
+    CATALOG_REFRESHES = "catalog_refreshes"
     RETRACTED = "retracted_messages"
     REPLICAS = "replicas"
     WARNINGS = "warnings"
@@ -100,9 +102,6 @@ class SQLiteReporter(StatsReporter):
                 key TEXT PRIMARY KEY,
                 value TEXT NOT NULL
             );
-            INSERT OR REPLACE INTO monitor_meta (key, value)
-            VALUES ('schema_version', '2');
-
             CREATE TABLE IF NOT EXISTS monitor_runs (
                 run_id TEXT PRIMARY KEY,
                 command TEXT NOT NULL,
@@ -157,6 +156,21 @@ class SQLiteReporter(StatsReporter):
             CREATE INDEX IF NOT EXISTS idx_monitor_samples_project_time
                 ON monitor_samples(project, sampled_at);
             """)
+        # Additive migration preserves historical counters and samples.
+        # Serialize concurrent harvest/map startup before inspecting columns.
+        self._conn.execute("BEGIN IMMEDIATE")
+        for table in ("monitor_project_stats", "monitor_samples"):
+            columns = {
+                row[1] for row in self._conn.execute(f"PRAGMA table_info({table})")
+            }
+            for name in ("catalog_writes", "catalog_refreshes"):
+                if name not in columns:
+                    self._conn.execute(
+                        f"ALTER TABLE {table} ADD COLUMN {name} INTEGER NOT NULL DEFAULT 0"
+                    )
+        self._conn.execute(
+            "INSERT OR REPLACE INTO monitor_meta (key, value) VALUES ('schema_version', '3')"
+        )
         self._conn.commit()
         self._closed = False
 
@@ -232,13 +246,15 @@ class SQLiteReporter(StatsReporter):
                 """
                 INSERT INTO monitor_project_stats (
                     run_id, project, consumed, routed, filtered, succeeded,
-                    skipped, failed, handles, updated_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    skipped, failed, handles, updated_at, catalog_writes, catalog_refreshes
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(run_id, project) DO UPDATE SET
                     consumed=excluded.consumed, routed=excluded.routed,
                     filtered=excluded.filtered, succeeded=excluded.succeeded,
                     skipped=excluded.skipped, failed=excluded.failed,
-                    handles=excluded.handles, updated_at=excluded.updated_at
+                    handles=excluded.handles, updated_at=excluded.updated_at,
+                    catalog_writes=excluded.catalog_writes,
+                    catalog_refreshes=excluded.catalog_refreshes
                 """,
                 (
                     run["run_id"],
@@ -251,6 +267,8 @@ class SQLiteReporter(StatsReporter):
                     counters["failed"],
                     counters["handles"],
                     timestamp,
+                    counters.get("catalog_writes", 0),
+                    counters.get("catalog_refreshes", 0),
                 ),
             )
 
@@ -264,8 +282,8 @@ class SQLiteReporter(StatsReporter):
                 """
                 INSERT INTO monitor_samples (
                     run_id, project, sampled_at, consumed, routed, filtered,
-                    succeeded, skipped, failed, handles
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    succeeded, skipped, failed, handles, catalog_writes, catalog_refreshes
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     run["run_id"],
@@ -278,6 +296,8 @@ class SQLiteReporter(StatsReporter):
                     counters["skipped"],
                     counters["failed"],
                     counters["handles"],
+                    counters.get("catalog_writes", 0),
+                    counters.get("catalog_refreshes", 0),
                 ),
             )
 
@@ -350,6 +370,8 @@ class Stats:
                     "skipped",
                     "failed",
                     "handles",
+                    "catalog_writes",
+                    "catalog_refreshes",
                 ),
                 0,
             )
@@ -397,6 +419,8 @@ class Stats:
                     "skipped",
                     "failed",
                     "handles",
+                    "catalog_writes",
+                    "catalog_refreshes",
                 ),
                 0,
             )
@@ -521,6 +545,18 @@ class Stats:
                 counters["routed"] += 1
                 counters["succeeded"] += 1
                 counters["handles"] += result.num_handles
+                self._counters[CounterKey.CATALOG_WRITES] += int(
+                    getattr(result, "catalog_written", False)
+                )
+                self._counters[CounterKey.CATALOG_REFRESHES] += int(
+                    getattr(result, "catalog_refreshed", False)
+                )
+                counters["catalog_writes"] += int(
+                    getattr(result, "catalog_written", False)
+                )
+                counters["catalog_refreshes"] += int(
+                    getattr(result, "catalog_refreshed", False)
+                )
                 self._last_success_time = datetime.datetime.now(datetime.UTC)
                 self.tick()
                 self.handle(
@@ -662,6 +698,14 @@ class Stats:
     @property
     def retries(self) -> int:
         return self._counters[CounterKey.RETRIES]
+
+    @property
+    def catalog_writes(self) -> int:
+        return self._counters[CounterKey.CATALOG_WRITES]
+
+    @property
+    def catalog_refreshes(self) -> int:
+        return self._counters[CounterKey.CATALOG_REFRESHES]
 
     @property
     def handles(self) -> int:

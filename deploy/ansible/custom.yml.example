@@ -6,8 +6,13 @@
 # Use another application file instead of the checkout's custom.toml:
 # piddi_config_source: /path/to/site.toml
 
-# Uncomment after the foreground test succeeds.
+# Uncomment after the foreground harvest test succeeds.
+# piddi.service maintains catalogs continuously; it does not map or publish Handles.
 # piddi_enable_service: true
+
+# Enable scheduled mapping AND real Handle publication after validating outputs.
+# piddi_enable_sync_timer: true
+# piddi_sync_check_interval: 1min
 
 # Override only when the Conda environment uses another location.
 # piddi_conda_env: /opt/piddiplatsch/.conda

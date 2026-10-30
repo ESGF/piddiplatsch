@@ -1,5 +1,5 @@
 [Unit]
-Description=Piddiplatsch Kafka consumer
+Description=Piddiplatsch Kafka catalog harvest
 Documentation=https://github.com/ESGF/piddiplatsch
 Wants=network-online.target
 After=network-online.target
@@ -10,7 +10,7 @@ Type=simple
 User={{ piddi_user }}
 Group={{ piddi_group }}
 WorkingDirectory=/var/lib/piddi
-ExecStart={{ piddi_executable }} --config /etc/piddi/piddi.toml --silent consume
+ExecStart={{ piddi_executable }} --config /etc/piddi/piddi.toml --silent harvest --idle-timeout 0
 Restart=on-failure
 RestartSec=10s
 KillSignal=SIGINT
