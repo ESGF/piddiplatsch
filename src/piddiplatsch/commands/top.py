@@ -208,9 +208,10 @@ class TopCommand(Command):
             )
         backlog = status.get("backlog_estimate", {})
         if backlog.get("eta_seconds") is not None:
+            end = datetime.fromisoformat(backlog["estimated_end"]).astimezone(UTC)
             alerts.append(
                 Text(
-                    f"Known backlog: ~{_eta_duration(backlog['eta_seconds'])} to publish (excludes future arrivals)."
+                    f"Overall publish ETA: ~{_eta_duration(backlog['eta_seconds'])} ({end:%Y-%m-%d %H:%M} UTC) · current backlog only"
                 )
             )
         return Group(

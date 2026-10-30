@@ -433,7 +433,8 @@ up to sixty seconds of monitoring samples with a five-second warmup. Old runs
 and manual publications with no known total show an unavailable batch ETA.
 Errors, stale heartbeats, or no recent progress suppress the end-time estimate.
 
-The separate **Known backlog ~** estimate combines remaining ready Handles with
+The **Overall publish ETA** shows an approximate duration and finish time in UTC.
+It combines remaining ready Handles with
 pending catalog items multiplied by the Handles-per-item ratio from up to five
 recent mapping runs for each project. It deducts confirmed progress in the active
 batch, so that batch is not counted twice. This is a snapshot of known local

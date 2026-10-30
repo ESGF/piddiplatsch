@@ -124,6 +124,7 @@ def test_top_renders_speed_batch_completion_and_known_backlog():
     console = Console(file=stream, width=200)
     console.print(TopCommand._overview(status))
     text = stream.getvalue()
-    assert "Known backlog: ~6m 16s" in text
+    assert "Overall publish ETA: ~6m 16s (2026-10-30 21:07 UTC)" in text
+    assert "current backlog only" in text
     assert "250.0" in text
     assert "5m 36s (21:06 UTC)" in text
