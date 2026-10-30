@@ -53,6 +53,7 @@ class CounterKey(StrEnum):
     ERRORS = "errors"
     RETRIES = "retries"
     HANDLES = "handles"
+    ALIAS_HANDLES = "alias_handles"
     CATALOG_WRITES = "catalog_writes"
     CATALOG_REFRESHES = "catalog_refreshes"
     RETRACTED = "retracted_messages"
@@ -79,7 +80,7 @@ class StatsReporter:
 class ConsoleReporter(StatsReporter):
     def log(self, summary: dict):
         run = summary.get("run") or {}
-        command = run.get("command", "stats")
+        command = run.get("command", summary.get("command") or "stats")
         operation = "sync/map" if command == "sync" else command
         parts = [run.get("status", "running")]
         unit = "messages" if command in {"harvest", "consume"} else "items"
@@ -88,6 +89,10 @@ class ConsoleReporter(StatsReporter):
             parts.append(f"{summary.get('catalog_writes', 0):,} catalog writes")
         else:
             parts.append(f"{summary.get('handles', 0):,} Handles prepared")
+            if summary.get("alias_handles"):
+                aliases = summary["alias_handles"]
+                label = "alias" if aliases == 1 else "aliases"
+                parts[-1] += f" ({aliases:,} {label})"
         parts.append(f"{summary.get('errors', 0):,} errors")
         for key, label in (
             ("catalog_refreshes", "refreshed"),
@@ -407,6 +412,7 @@ class Stats:
             )
         )
         self._run: dict | None = None
+        self._command: str | None = None
         self._heartbeat_thread: threading.Thread | None = None
         self._heartbeat_stop = threading.Event()
         self._lock = threading.RLock()
@@ -456,6 +462,7 @@ class Stats:
             )
         )
         self._run = None
+        self._command = None
 
         # Reset logging control
         self._last_log_time = time.time()
@@ -493,6 +500,7 @@ class Stats:
         if self._run and not self._closed:
             self.close(status="stopped")
         self.reset()
+        self._command = command
         if log_interval_seconds is not None:
             self.log_interval_seconds = log_interval_seconds
         if log_interval_messages is not None:
@@ -588,11 +596,14 @@ class Stats:
                     getattr(result, "catalog_refreshed", False)
                 )
                 self._last_success_time = datetime.datetime.now(datetime.UTC)
-                self.tick()
+                self.increment(
+                    CounterKey.ALIAS_HANDLES, getattr(result, "num_alias_handles", 0)
+                )
                 self.handle(
                     n=result.num_handles,
                     handle_time_sec=result.handle_processing_time,
                 )
+                self.tick()
             else:
                 counters["routed"] += 1
                 counters["failed"] += 1
@@ -794,6 +805,7 @@ class Stats:
                 "start_time": to_iso(self.start_time),
                 "projects": projects,
                 "run": dict(self._run) if self._run else None,
+                "command": self._command,
             }
         )
         return summary
@@ -809,6 +821,11 @@ class Stats:
             if error_summary is not None:
                 self._run["error_summary"] = concise_error(error_summary)
             self._heartbeat_once(force_sample=True)
+        if self._command == "map":
+            summary = self.summary()
+            if summary["run"] is None:
+                summary["run"] = {"command": "map", "status": status}
+            ConsoleReporter().log(summary)
         for reporter in list(self.reporters):
             try:
                 reporter.close()

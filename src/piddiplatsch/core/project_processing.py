@@ -175,6 +175,7 @@ class StacProjectProcessor(BaseProcessor):
         result.num_handles, result.handle_processing_time = self._add_records_from_item(
             record, item
         )
+        result.num_alias_handles = int(record.alias_record is not None)
         return result
 
     def _apply_patch_to_stac_item(self, payload: dict[str, Any]) -> dict[str, Any]:
@@ -256,6 +257,11 @@ class StacProjectProcessor(BaseProcessor):
             count = 1
             if alias is not None:
                 self._safe_add_record(alias)
+                self.logger.debug(
+                    "Prepared dataset alias Handle: pid=%s target=%s",
+                    alias.pid,
+                    alias.url,
+                )
                 count += 1
             excluded = set(self.excluded_asset_keys)
             assets = item.get("assets") or {}

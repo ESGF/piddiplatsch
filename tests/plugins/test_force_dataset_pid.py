@@ -163,6 +163,7 @@ def test_project_processors_publish_dataset_aliases_only(record_type, testdata_p
 
     assert result.success
     assert result.num_handles == 3
+    assert result.num_alias_handles == 1
     assert backend.add.call_count == 3
     backend.add.assert_any_call(
         source_pid, {"URL": f"https://hdl.handle.net/21.TEST/{generated_pid}"}

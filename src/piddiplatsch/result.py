@@ -25,6 +25,9 @@ class ProcessingResult:
     catalog_written: bool = False
     catalog_refreshed: bool = False
 
+    # Alias Handles are included in num_handles.
+    num_alias_handles: int = 0
+
 
 @dataclass
 class FeedResult:

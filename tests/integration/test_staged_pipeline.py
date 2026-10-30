@@ -93,7 +93,7 @@ def test_map_reads_catalog_without_kafka_or_handle_service(
 
 
 def test_map_force_dataset_pid_corrects_dataset_and_file_parent(
-    tmp_path, testdata_path
+    tmp_path, testdata_path, caplog
 ):
     from piddiplatsch.utils.models import item_pid, parse_pid
 
@@ -108,7 +108,11 @@ def test_map_force_dataset_pid_corrects_dataset_and_file_parent(
     source.write_text(original)
     with closing(CatalogHarvester(tmp_path / "outputs/catalog")) as harvester:
         harvester.process_with_source("harvest", message, KafkaSource("topic", 0, 0))
-    result = map_catalog(projects=["cmip7"])
+    with caplog.at_level("INFO"):
+        result = map_catalog(projects=["cmip7"])
+
+    assert "[map] project=cmip7 force_dataset_pid=True" in caplog.text
+    assert "Prepared dataset alias Handle" not in caplog.text
 
     assert result.succeeded == 1
     assert result.failed == 0
