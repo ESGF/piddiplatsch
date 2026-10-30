@@ -1,4 +1,5 @@
 import json
+import sqlite3
 from types import SimpleNamespace
 from unittest.mock import patch
 
@@ -6,7 +7,7 @@ from click.testing import CliRunner
 
 from piddiplatsch.cli import cli
 from piddiplatsch.config import config
-from piddiplatsch.monitoring.stats import Stats
+from piddiplatsch.monitoring.stats import Stats, publication_monitor
 from piddiplatsch.monitoring.status import read_status
 from piddiplatsch.result import FeedResult, ProcessingResult
 
@@ -55,6 +56,56 @@ def test_top_json_is_project_aware(tmp_path):
     assert projects["cmip7"]["consumed"] == 0
     history = {row["project"]: row for row in status["runs"][0]["history"]}
     assert history["cmip6"]["deltas"]["consumed"] == 1
+
+
+def test_top_shows_prepared_and_published_totals_alongside_active_harvest(tmp_path):
+    db = tmp_path / "monitor.db"
+    config._set("stats", "enable_db", True)
+    config._set("stats", "db_path", str(db))
+    config._set("consumer", "projects", ["cmip6"])
+    _monitoring_db(db)
+    # Model harvest running in another process while sync changes phases.
+    with sqlite3.connect(db) as connection:
+        connection.execute(
+            "UPDATE monitor_runs SET command='harvest', status='running'"
+        )
+    stats = Stats()
+    stats.configure_for_run(
+        enable_db=True, db_path=str(db), command="sync", selected_projects=("cmip6",)
+    )
+    stats.record_result(
+        ProcessingResult(key="item", plugin="cmip6", success=True, num_handles=42)
+    )
+    stats.close(status="completed")
+
+    with publication_monitor("cmip6") as monitor:
+        for _ in range(7):
+            monitor.record_publication("cmip6", success=True)
+        monitor._heartbeat_once(force_sample=True)
+        result = CliRunner().invoke(
+            cli, ["--log", str(tmp_path / "top.log"), "top", "--db", str(db), "--json"]
+        )
+        assert result.exit_code == 0, result.output
+        status = json.loads(result.output)
+        assert status["handle_totals"][0] == {
+            "project": "cmip6",
+            "prepared": 42,
+            "published": 7,
+        }
+        active = {
+            run["command"] for run in status["runs"] if run["status"] == "running"
+        }
+        assert active == {"harvest", "publish"}
+
+    result = CliRunner().invoke(
+        cli, ["--log", str(tmp_path / "top.log"), "top", "--db", str(db), "--once"]
+    )
+    assert result.exit_code == 0, result.output
+    assert "Prepared" in result.output
+    assert "Published" in result.output
+    assert "42" in result.output
+    assert "7" in result.output
+    assert read_status(db)["handle_totals"][0]["published"] == 7
 
 
 def test_top_once_filters_project(tmp_path):

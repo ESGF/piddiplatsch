@@ -22,6 +22,7 @@ from piddiplatsch.handles.rest_backend import RestHandleClient
 from piddiplatsch.helpers import find_jsonl, utc_now
 from piddiplatsch.jsonl_stream import JsonlRecord, iter_jsonl_records
 from piddiplatsch.monitoring.disk import get_disk_guard
+from piddiplatsch.monitoring.stats import publication_monitor
 from piddiplatsch.result import ProjectPublishResult, PublishResult
 
 
@@ -147,7 +148,7 @@ class HandlePublisher:
         result.project = selected_project
         completed = 0
         started_at = last_report_at = time.monotonic()
-        with ExitStack() as stack:
+        with publication_monitor(selected_project) as monitoring, ExitStack() as stack:
             records = stack.enter_context(
                 closing(
                     iter_jsonl_records(
@@ -199,6 +200,7 @@ class HandlePublisher:
                         outcome,
                         offset=offset,
                         log_operation=log_operation,
+                        monitoring=monitoring,
                     )
                     now = time.monotonic()
                     if now - last_report_at >= PUBLICATION_LOG_INTERVAL_SECONDS:
@@ -266,6 +268,7 @@ class HandlePublisher:
         *,
         offset: int,
         log_operation: str,
+        monitoring=None,
     ) -> None:
         writer.write(
             self._result_record(
@@ -273,6 +276,12 @@ class HandlePublisher:
             )
         )
         result.total += 1
+        if monitoring is not None:
+            monitoring.record_publication(
+                outcome.project or "unknown",
+                success=outcome.error is None,
+                error=str(outcome.error) if outcome.error is not None else None,
+            )
         result.retry_attempts += outcome.retry_attempts
         project_result = result.projects.setdefault(
             outcome.project or "unknown", ProjectPublishResult()

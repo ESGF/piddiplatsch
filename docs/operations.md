@@ -394,6 +394,15 @@ the catalog and does not need the raw dump files.
 `piddi top` and `piddi top --json` also show disk headroom, pending catalog items,
 ready and failed batch counts, and the latest successful sync publication.
 Failed publication batches remain ready and also count as failed.
+The project table keeps prepared and published Handle totals visible while
+harvest is active and after mapping or publication finishes. These totals sum
+recorded outcomes in the monitoring database, including alias Handles. Repeated
+mapping or publication runs count again; these are not counts of unique PIDs.
+Publication now records its own live run, counters, heartbeat, and history, with
+the same monitoring intervals as harvest. Existing publication receipts are not
+backfilled: a dash means no publication counters have been recorded yet, and
+publication totals start with runs using this monitoring support. Monitoring
+must be enabled with `stats.enable_db = true`.
 The checks are read-only and report unavailable or older catalogs without
 migrating them. Publication status uses a small `last-publication.json` marker
 per project, written by successful sync runs; old archives are not scanned. A

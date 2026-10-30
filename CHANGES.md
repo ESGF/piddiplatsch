@@ -25,6 +25,8 @@
 
 ### Fixed
 
+- Keep prepared/published Handle totals visible in `piddi top` alongside harvest,
+  and persist live publication progress and heartbeats.
 - Explain malformed asset checksums, including duplicated SHA-256 multihash
   prefixes; standalone map rejects invalid assets and processing defaults to
   stopping at the first error when no error limit is configured.

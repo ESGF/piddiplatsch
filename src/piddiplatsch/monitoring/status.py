@@ -39,6 +39,18 @@ def read_status(
                 f"{path} uses unsupported monitoring schema version {version}"
             )
 
+        handle_totals = connection.execute(
+            """
+            SELECT p.project,
+                   SUM(CASE WHEN r.command IN ('map', 'sync')
+                            THEN p.handles ELSE NULL END) AS prepared,
+                   SUM(CASE WHEN r.command = 'publish' THEN p.handles ELSE NULL END) AS published
+            FROM monitor_project_stats p JOIN monitor_runs r USING (run_id)
+            WHERE (? IS NULL OR lower(p.project) = lower(?))
+            GROUP BY p.project ORDER BY p.project
+            """,
+            (project, project),
+        ).fetchall()
         result_runs = []
         catalog_columns = (
             "catalog_writes, catalog_refreshes"
@@ -96,6 +108,7 @@ def read_status(
         "stale_after_seconds": stale_after_seconds,
         "history_seconds": history_seconds,
         "runs": result_runs,
+        "handle_totals": [dict(row) for row in handle_totals],
     }
 
 

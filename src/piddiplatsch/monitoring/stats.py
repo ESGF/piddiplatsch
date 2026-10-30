@@ -9,6 +9,7 @@ import threading
 import time
 import uuid
 from collections import defaultdict
+from contextlib import contextmanager
 from enum import StrEnum
 
 from piddiplatsch.config import config
@@ -609,6 +610,27 @@ class Stats:
                 counters["failed"] += 1
                 self.error(message=result.error)
 
+    def record_publication(
+        self, project: str, *, success: bool, error: str | None = None
+    ):
+        """Count completed writes without adding per-Handle log messages."""
+        with self._lock:
+            counters = self._project_counters[project]
+            counters["consumed"] += 1
+            counters["routed"] += 1
+            if success:
+                counters["succeeded"] += 1
+                counters["handles"] += 1
+                self.handle()
+                self._last_success_time = datetime.datetime.now(datetime.UTC)
+            else:
+                counters["failed"] += 1
+                self.increment(CounterKey.ERRORS)
+                self._last_error_time = datetime.datetime.now(datetime.UTC)
+                if self._run and error:
+                    self._run["error_summary"] = concise_error(error)
+            self.tick()
+
     # --- Core increment ---
     def increment(self, key: CounterKey, n=1):
         if key == CounterKey.HANDLE_TIME:
@@ -846,3 +868,34 @@ stats = Stats(
     # importing the read-only top command must never create a database.
     enable_db=False,
 )
+
+
+@contextmanager
+def publication_monitor(project: str | None):
+    """Give publication its own heartbeat and persistent counters."""
+    settings = config.get("stats", {})
+    if not settings.get("enable_db", False):
+        yield None
+        return
+    stats.configure_for_run(
+        enable_db=True,
+        db_path=settings.get("db_path"),
+        command="publish",
+        selected_projects=(project,) if project else (),
+        heartbeat_interval_seconds=settings.get("heartbeat_interval_seconds", 5),
+        sample_interval_seconds=settings.get("sample_interval_seconds", 15),
+        sample_retention_days=settings.get("sample_retention_days", 30),
+    )
+    # HandlePublisher already owns the INFO summaries and detailed error logs.
+    stats.reporters = [
+        reporter
+        for reporter in stats.reporters
+        if not isinstance(reporter, ConsoleReporter)
+    ]
+    try:
+        yield stats
+    except BaseException as exc:
+        stats.close(status="failed", error_summary=str(exc))
+        raise
+    else:
+        stats.close(status="failed" if stats.errors else "completed")

@@ -79,27 +79,48 @@ class TopCommand(Command):
 
     @staticmethod
     def _health_table(status: dict) -> Table:
-        table = Table(title="Project health")
+        table = Table(title="Project health · Recorded Handle totals")
         for heading in (
             "Project",
             "Pending items",
+            "Prepared",
+            "Published",
             "Ready",
             "Failed",
             "Last publication",
         ):
             table.add_column(heading)
+        totals = {row["project"]: row for row in status.get("handle_totals", [])}
         for row in status["health"]["projects"]:
             last = row["last_publication"] or {}
+            counts = totals.get(row["project"], {})
             table.add_row(
                 row["project"],
                 str(row["pending_items"]) if row["pending_items"] is not None else "—",
+                (
+                    f"{counts['prepared']:,}"
+                    if counts.get("prepared") is not None
+                    else "—"
+                ),
+                (
+                    f"{counts['published']:,}"
+                    if counts.get("published") is not None
+                    else "—"
+                ),
                 str(row["ready_batches"]),
                 str(row["failed_batches"]),
                 last.get("published_at") or "—",
             )
             for error in row["errors"]:
                 table.add_row(
-                    row["project"], "status unavailable", "", "", error, style="yellow"
+                    row["project"],
+                    "status unavailable",
+                    "",
+                    "",
+                    "",
+                    "",
+                    error,
+                    style="yellow",
                 )
         return table
 
@@ -212,6 +233,8 @@ class TopCommand(Command):
 
 
 def _input_unit(command: str) -> str:
+    if command == "publish":
+        return "handles"
     return "events" if command in {"harvest", "consume"} else "items"
 
 

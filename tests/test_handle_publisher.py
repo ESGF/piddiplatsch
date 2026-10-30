@@ -12,6 +12,8 @@ import requests
 from piddiplatsch.config import config
 from piddiplatsch.handles.jsonl_backend import JsonlHandleBackend
 from piddiplatsch.handles.rest_backend import HandleWriteResult
+from piddiplatsch.monitoring.stats import Stats
+from piddiplatsch.monitoring.status import read_status
 from piddiplatsch.runners.publish import HandlePublisher
 
 
@@ -26,6 +28,38 @@ class FakeBackend:
         if pid == self.failing_pid:
             raise RuntimeError("server unavailable")
         self.published.append((pid, record))
+
+
+def test_publication_monitor_records_live_counts_and_preserves_partial_success(
+    tmp_path,
+):
+    db = tmp_path / "monitor.db"
+    config._set("stats", "enable_db", True)
+    config._set("stats", "db_path", str(db))
+    source = tmp_path / "handles.jsonl"
+    write_jsonl(
+        source, [handle_record("good"), handle_record("bad"), handle_record("good2")]
+    )
+    snapshots = []
+
+    def progress(*_args):
+        Stats()._heartbeat_once(force_sample=True)
+        snapshots.append(read_status(db))
+
+    result = HandlePublisher(FakeBackend(failing_pid="bad")).run(
+        [source], project="cmip6", workers=1, progress_callback=progress
+    )
+
+    assert snapshots[0]["runs"][0]["command"] == "publish"
+    assert snapshots[0]["runs"][0]["state"] == "healthy"
+    assert snapshots[0]["handle_totals"] == [
+        {"project": "cmip6", "prepared": None, "published": 1}
+    ]
+    assert result.succeeded == 2 and result.failed == 1
+    status = read_status(db)
+    assert status["runs"][0]["state"] == "failed"
+    assert status["handle_totals"][0]["published"] == 2
+    assert status["runs"][0]["projects"][0]["failed"] == 1
 
 
 class TransientBackend(FakeBackend):
