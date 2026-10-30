@@ -31,8 +31,8 @@ class TransientConfig(BaseModel):
 
 class StatsConfig(BaseModel):
     model_config = ConfigDict(extra="allow", allow_inf_nan=False)
-    interval_seconds: float = Field(default=10, gt=0)
-    summary_interval: int = Field(default=1000, gt=0)
+    interval_seconds: float = Field(default=30, gt=0)
+    summary_interval: int = Field(default=10000, gt=0)
     enable_db: bool = True
     db_path: str = "piddi.db"
     heartbeat_interval_seconds: float = Field(default=5, gt=0)

@@ -386,7 +386,7 @@ fail-fast and has no force option.
 | `catalog` | `version_history` | Optional local predecessor linking during map; disabled by default. |
 | `catalog` | `kafka_commit_batch_size`, `kafka_commit_interval_seconds` | Broker acknowledgement batching after durable local writes. |
 | `lookup` | `enabled`, `backend` | Version lookup adapter: `catalog` (default) or explicit `stac`; map uses its catalog snapshot and separate history switch. |
-| `stats` | `interval_seconds`, `summary_interval` | Statistics reporting intervals. |
+| `stats` | `interval_seconds`, `summary_interval` | Statistics reporting thresholds: 30 seconds or 10,000 messages by default, whichever is reached first as messages arrive. |
 | `stats` | `enable_db`, `db_path`, heartbeat/sample/history intervals | Local SQLite state and history for mapping and batch mapping runs. |
 
 ## Compatibility with older configuration

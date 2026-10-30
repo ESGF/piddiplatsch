@@ -412,8 +412,8 @@ class Stats:
         self._lock = threading.RLock()
 
         # Logging control
-        self.log_interval_seconds = log_interval_seconds or 10
-        self.log_interval_messages = log_interval_messages or 100
+        self.log_interval_seconds = log_interval_seconds or 30
+        self.log_interval_messages = log_interval_messages or 10000
         self._last_log_time = time.time()
         self._last_logged_messages = 0
 

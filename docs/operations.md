@@ -432,6 +432,11 @@ INFO summaries have short operation labels: `[harvest]`, `[map]`, `[publish]`,
 `[sync]`, `[sync/map]`, or `[sync/publish]`. They use grouped counts and rates with
 units; harvest omits Handle counts. Full statistics dictionaries are logged at
 DEBUG instead of INFO. SQLite reporting and publication receipts keep full detail.
+Routine dataset/file PID reuse and deterministic generation also log at DEBUG.
+Statistics summaries default to every 30 seconds or 10,000 messages, whichever
+threshold is reached first as messages arrive. Override `[stats].interval_seconds`
+and `[stats].summary_interval` to change the frequency. Restart harvest after
+applying changes. Explicit site settings take precedence over these defaults.
 
 The `[logging]` configuration provides the service defaults:
 

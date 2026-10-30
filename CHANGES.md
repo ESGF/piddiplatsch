@@ -9,6 +9,10 @@ All notable changes to this project are documented here.
   configured projects, plus `--workers` and `--retries` publication overrides.
 
 ### Changed
+- Statistics summaries now default to 30 seconds or 10,000 messages, whichever
+  threshold is reached first as messages arrive.
+- Routine dataset/file PID reuse and generation messages now log at DEBUG,
+  keeping mapping output at INFO focused on progress summaries.
 - Use compact operation-labelled INFO summaries for harvest, map, and publication;
   sync distinguishes mapping from publication and logs tick start/completion.
   Full statistics snapshots are available at DEBUG.
