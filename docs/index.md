@@ -1,31 +1,35 @@
 # Piddiplatsch
 
-Piddiplatsch consumes ESGF STAC publication records from Kafka and registers
-persistent identifiers with the Handle System. Its staged workflow is
-`harvest → map + validation → publish`, using local STAC catalogs for mapping
-and JSONL Handle files for publication. Harvest also retains raw JSONL dumps.
+Piddiplatsch, or Piddi, reads ESGF STAC publication events from Kafka and registers
+persistent identifiers with the Handle System. It supports CMIP6, CMIP6Plus,
+CMIP7, and CORDEX-CMIP6.
 
-- [Installation and quick start](quick-guide.md)
-- [Architecture](architecture.md): routing, project plugins, and processing stages.
-- [Configuration](configuration.md): site settings and supported options.
-- [Operations](operations.md): output, publication, retries, and monitoring.
-- [Recovery](recovery.md): advanced recovery procedures.
-- [Deployment](https://github.com/ESGF/piddiplatsch/blob/main/deploy/README.md):
-  Linux service setup with Ansible.
+The workflow has three steps:
 
-Visit [Talks](talks.md) for an introduction to Piddi and its
-ESGF-NG workflow. The deck includes an operational appendix and speaker notes.
+1. **Harvest** stores events and builds local STAC catalogs.
+2. **Map** turns catalog items into validated Handle records.
+3. **Publish** sends those records to the Handle service.
 
-See [Building the documentation](building.md) to preview or publish this site
-and the slides.
+The `sync` command maps and publishes pending changes. A timer can run it
+regularly while harvest runs continuously.
+
+## Guides
+
+- [Quick guide](quick-guide.md): install Piddi and run the main commands.
+- [Configuration](configuration.md): set connections, projects, and profiles.
+- [Operations](operations.md): select records, publish, and check progress.
+- [Deployment](deployment.md):
+  install on Linux, run updates, and monitor services.
+- [Recovery](recovery.md): inspect failures and restart work.
+- [Architecture](architecture.md): understand the stages, plugins, and code.
+- [Talks](talks.md): view the overview slides.
+- [Building the documentation](building.md): preview and publish these guides.
 
 ## About the project
 
-Piddiplatsch is developed for the ESGF community and used in production at
-DKRZ. It supports sites managing CMIP dataset and file records, with built-in
-plugins for CMIP6, CMIP6Plus, CMIP7, and CORDEX-CMIP6. Contributions from other
-ESGF sites and organizations with similar workflows are welcome.
+Piddi is developed for the ESGF community and used at DKRZ. Contributions from
+other sites are welcome.
 
-The name is inspired by the TV puppet
-[Pittiplatsch](https://en.wikipedia.org/wiki/Pittiplatsch), with a phonetic PID
-pun and the short CLI name `piddi`: *curious by nature, persistent by design*.
+The name comes from the TV puppet
+[Pittiplatsch](https://en.wikipedia.org/wiki/Pittiplatsch) and the abbreviation
+PID: *curious by nature, persistent by design*.

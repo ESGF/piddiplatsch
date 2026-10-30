@@ -403,7 +403,7 @@ piddi top
 ```
 
 ::: notes
-Source: deploy/README.md, Makefile, and
+Source: docs/deployment.md, Makefile, and
  deploy/ansible/templates/piddi.service.j2.
 Prerequisites: Linux with systemd, Conda installed, a checkout under
 /opt/piddiplatsch, and ansible-core available. Run deployment as root or with

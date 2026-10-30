@@ -1,30 +1,17 @@
 # Building the documentation
 
-MkDocs builds the documentation from `docs/`. Quarto builds the overview slides
-separately from `talks/overview.qmd`. Both are published as one GitHub Pages
-site:
+MkDocs builds the guides in `docs/`. Quarto builds the slides in
+`talks/overview.qmd`. GitHub Pages publishes both:
 
-- Documentation: <https://esgf.github.io/piddiplatsch/>
-- Slides: <https://esgf.github.io/piddiplatsch/talks/overview.html>
+- [Documentation](https://esgf.github.io/piddiplatsch/)
+- [Overview slides](https://esgf.github.io/piddiplatsch/talks/overview.html)
 
-The top-level `talks/` directory owns the slide sources, assets, Quarto settings,
-and its own Makefile. Build slides independently with `make -C talks slides-html`.
-The root Makefile delegates to that build and combines its output with MkDocs;
-`docs/talks.md` is the normal documentation page linking to the published deck.
+The [Quick guide](quick-guide.md) uses the root README through a symlink.
+Edit `README.md` to update both copies.
 
-The [Quick guide](quick-guide.md) renders the repository README through the
-`docs/quick-guide.md` symlink to `../README.md`. Edit the root README to update
-both versions, and keep its links valid on GitHub and the published site.
-Advanced recovery instructions live separately in [Recovery](recovery.md).
+## Preview the guides
 
-## Local documentation
-
-`make develop` installs both the development tools and MkDocs. If you already
-ran it before MkDocs was included, rerun it in your active environment, then
-run `make docs-html`.
-
-From the repository root, create an isolated Python environment and install the
-optional documentation dependencies from `pyproject.toml`, as in Woodpecker:
+From the repository root, install the documentation tools:
 
 ```sh
 python3 -m venv .venv-docs
@@ -33,21 +20,31 @@ python -m pip install -e ".[docs]"
 make docs-html
 ```
 
-The `docs` extra adds MkDocs to the normal package installation. Quarto and
-Chrome/Chromium are separate, non-Python tools; they are installed as described
-below and explicitly by the Pages workflow. No Kafka or Handle services are
-contacted during builds.
+`make develop` also installs these tools. `make docs-html` runs a strict MkDocs
+build into `site/`. It builds the guides without the slide deck.
 
-`make docs-html` runs a strict MkDocs-only build into `site/`. For live reload
-while editing Markdown, run `python -m mkdocs serve` and use its printed URL.
-The Talks page is included, but its HTML deck is available only in the complete
-build.
+For live reload while editing:
 
-## Combined site and slides
+```sh
+python -m mkdocs serve
+```
 
-Install Quarto and Chrome/Chromium using the
-[slide tooling instructions](https://github.com/ESGF/piddiplatsch/blob/main/talks/README.md).
-With the documentation environment still active, run:
+Open the URL printed by MkDocs. Builds do not contact Kafka or Handle services.
+
+## Build the guides and slides
+
+Install the slide tools in the existing `piddi` Conda environment:
+
+```sh
+conda activate piddi
+make -C talks install
+```
+
+This installs Quarto, Node/npm, DeckTape, and its browser. See the
+[slide guide](https://github.com/ESGF/piddiplatsch/blob/main/talks/README.md)
+for requirements and options.
+
+With MkDocs available in your active environment, run:
 
 ```sh
 make docs
@@ -55,35 +52,32 @@ make docs-check
 make docs-serve
 ```
 
-Open <http://localhost:8000/> and select **Talks**. `make docs` builds MkDocs first, renders the
-standalone Reveal.js HTML, and copies it to `site/talks/overview.html`. Quarto
-embeds the images, diagrams, scripts, and styles. Source files, tool environments,
-and caches are excluded from the site. `make docs-serve` rebuilds and serves the
-complete site; rerun it after edits. `make pages` remains an alias for `make docs`.
-`make docs-check` checks the required pages and relative links/assets in the
-assembled site, including the HTML slide link. CI runs this before uploading.
-Running `make docs-html` or `mkdocs serve` builds only the Markdown documentation;
-use `make docs` to restore the complete output in `site/`.
+`make docs` builds the guides, renders the HTML deck, and copies it to
+`site/talks/overview.html`. `make docs-check` checks required pages and local
+links. `make docs-serve` rebuilds and serves the full site at
+[localhost:8000](http://localhost:8000/). Run it again after edits.
+`make pages` is another name for `make docs`.
 
-After `conda activate piddi`, `make -C talks install` adds all slide tools to the existing `piddi`
-Conda environment: Quarto and Node/npm, then DeckTape and its Puppeteer browser. Export locally with
-`make -C talks slides-pdf`; the Pages workflow publishes the HTML deck only.
-Like Woodpecker, CI installs Node 22 and DeckTape 3.16.1 and uses its
-`chrome-headless-shell` for Quarto's Mermaid rendering. It checks the browser
-version and actual headless startup before building. The build logs Quarto
-debug output and limits each attempt to two minutes, with one retry after a
-timeout to recover from intermittent Mermaid browser stalls. Other build
-errors fail immediately. The overall build step retains its five-minute limit.
+The HTML deck embeds its images, diagrams, scripts, and styles. To export a
+local PDF, run `make -C talks slides-pdf`. GitHub Pages publishes the HTML only.
 
-## GitHub Pages
+Running `make docs-html` or `mkdocs serve` replaces the full site with the
+guides-only build. Run `make docs` again to include the deck.
 
-In the repository's **Settings → Pages → Build and deployment**, select
-**GitHub Actions** as the source. The `Documentation and slides` workflow in
-`.github/workflows/pages.yml` builds both outputs on pull requests and pushes to
-`main`. A successful build on `main` uploads one Pages artifact and deploys it
-using the `github-pages` environment. You can also run the workflow manually on
-`main`. Pull requests and manual runs on other branches never deploy.
+## Publish with GitHub Pages
 
-The workflow uses the repository's `GITHUB_TOKEN`; no personal access token or
-`gh-pages` branch is needed. Any environment protection rules for `github-pages`
-must allow deployments from `main`.
+In repository **Settings → Pages → Build and deployment**, select
+**GitHub Actions**.
+
+The `Documentation and slides` workflow builds pull requests and pushes to
+`main`. It checks the combined site before uploading. Successful builds on
+`main` deploy through the `github-pages` environment. Pull requests and manual
+runs on other branches do not deploy.
+
+You can also run the workflow manually on `main`. It uses `GITHUB_TOKEN`;
+no personal access token or `gh-pages` branch is needed. Environment protection
+rules must allow deployments from `main`.
+
+CI installs the slide tools and checks that the headless browser starts.
+Slide rendering has a two-minute timeout and one retry after a timeout.
+Other render errors fail immediately.

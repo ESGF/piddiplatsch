@@ -1,19 +1,12 @@
-# Development Notebooks
+# Development notebooks
 
-Note: These notebooks are for manual testing only and are not part of production or CI workflows.
+These notebooks are for manual experiments. Production and CI do not use them.
 
-Use the project `piddi` environment and update it with the notebook dependencies, then start Jupyter.
-
-## Update Environment
+Add the notebook tools to the existing `piddi` environment from the repository
+root, then start Jupyter:
 
 ```bash
-# From repo root
 conda env update -n piddi -f notebooks/environment.yml
 conda activate piddi
-```
-
-## Start Jupyter
-
-```bash
 jupyter lab
 ```

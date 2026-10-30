@@ -46,7 +46,7 @@
           - piddi_config_extra is not defined
         fail_msg: >-
           Move application settings from custom.yml into the shared custom.toml.
-          See deploy/README.md for the migration mapping. custom.yml now contains
+          See docs/deployment-reference.md for the migration mapping. custom.yml now contains
           deployment controls only.
 
   tasks:
