@@ -657,7 +657,7 @@ class Stats:
     def patch(self, message: str | None = None, n=1):
         self.increment(CounterKey.PATCHED, n)
         if message:
-            logger.info(f"PATCHED: {message}")
+            logger.debug("PATCHED: %s", message)
 
     def external_fail(self, message: str | None = None, n=1):
         self.increment(CounterKey.EXTERNAL_FAILS, n)
