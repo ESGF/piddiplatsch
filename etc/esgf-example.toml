@@ -36,6 +36,12 @@ publish_workers = 4
 publish_retries = 3
 # directory = "/data/piddi/batches"
 
+[disk]
+enabled = true
+warn_free_gib = 40
+stop_free_gib = 20
+check_interval_seconds = 10
+
 [lookup]
 # Version lookup adapters: local catalog by default; explicit alternative "stac".
 # Map linking is controlled by catalog.version_history, not this enabled switch.

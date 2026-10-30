@@ -4,6 +4,8 @@
 
 ### Added
 
+- Configurable disk-space warning/stop guards, daily maintenance for closed raw
+  dump compression, and storage/backlog/publication health in `piddi top`.
 - Shared alias Handle schema and dataset redirects for all projects when
   `force_dataset_pid` is enabled, including CMIP7.
 - Service controls: `make start`, `make stop`, and `make restart`.

@@ -11,6 +11,7 @@ import click
 from rich.console import Console, Group
 from rich.table import Table
 
+from piddiplatsch.monitoring.health import read_health
 from piddiplatsch.monitoring.status import read_status
 
 from .base import Command
@@ -38,6 +39,7 @@ class TopCommand(Command):
                     stale_after_seconds=self.stale_after_seconds,
                     history_seconds=self.history_minutes * 60,
                 )
+                status["health"] = read_health(self.project)
             except (FileNotFoundError, ValueError) as exc:
                 raise click.ClickException(str(exc)) from exc
 
@@ -46,13 +48,60 @@ class TopCommand(Command):
                 return
             if not self.once:
                 console.clear()
-            console.print(Group(self._table(status), self._history_table(status)))
+            console.print(
+                Group(
+                    self._disk_table(status),
+                    self._health_table(status),
+                    self._table(status),
+                    self._history_table(status),
+                )
+            )
             if self.once:
                 return
             try:
                 time.sleep(self.refresh_seconds)
             except KeyboardInterrupt:
                 return
+
+    @staticmethod
+    def _disk_table(status: dict) -> Table:
+        table = Table(title="Storage headroom")
+        for heading in ("Path", "State", "Free GiB", "Total GiB"):
+            table.add_column(heading)
+        for row in status["health"]["storage"]:
+            table.add_row(
+                row["path"],
+                row["state"],
+                f"{row['free_bytes'] / 1024**3:.1f}" if "free_bytes" in row else "—",
+                f"{row['total_bytes'] / 1024**3:.1f}" if "total_bytes" in row else "—",
+            )
+        return table
+
+    @staticmethod
+    def _health_table(status: dict) -> Table:
+        table = Table(title="Project health")
+        for heading in (
+            "Project",
+            "Pending items",
+            "Ready",
+            "Failed",
+            "Last publication",
+        ):
+            table.add_column(heading)
+        for row in status["health"]["projects"]:
+            last = row["last_publication"] or {}
+            table.add_row(
+                row["project"],
+                str(row["pending_items"]) if row["pending_items"] is not None else "—",
+                str(row["ready_batches"]),
+                str(row["failed_batches"]),
+                last.get("published_at") or "—",
+            )
+            for error in row["errors"]:
+                table.add_row(
+                    row["project"], "status unavailable", "", "", error, style="yellow"
+                )
+        return table
 
     @staticmethod
     def _table(status: dict) -> Table:

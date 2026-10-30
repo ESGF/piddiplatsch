@@ -276,6 +276,32 @@ changes pending. Malformed checksum errors identify the dataset and asset;
 verify the checksum against the source file, correct its STAC metadata, and
 reharvest before retrying. Other projects can continue in sync.
 
+## Disk headroom
+
+```toml
+[disk]
+enabled = true
+warn_free_gib = 40
+stop_free_gib = 20
+check_interval_seconds = 10
+```
+
+Piddi checks available space on the output, catalog, batch, and enabled monitoring
+database locations. Separate configured receipt output paths are checked too.
+Missing directories use their nearest existing parent without creating it.
+Thresholds are in GiB, and the warning threshold must exceed the stop threshold.
+Paths on the same filesystem share a check and a health row. The application
+logs a warning once per checked filesystem while it remains below the
+warning threshold, and logs recovery when space becomes healthy again.
+
+Checks run at startup and batch boundaries, and at most every ten seconds during
+processing. Below the stop threshold, harvest stops before processing or
+acknowledging the next message. Mapping and publication stop new work; sync keeps
+incomplete work unpublished or ready for retry. Completed server writes can be
+repeated on retry. This is a headroom guard rather than a disk reservation: other
+processes and large writes can consume space between checks. Free space before
+restarting a stopped job. Set `enabled = false` only for a deliberate override.
+
 ## Dataset version lookup
 
 The library's `[lookup]` section selects `catalog` or `stac` for separate version

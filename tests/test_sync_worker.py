@@ -601,6 +601,10 @@ def test_real_publisher_receipts_and_archiving_without_remote_service(setup):
     assert len(receipt.relative_to(root / "published").parts) == 4
     assert len(receipts) == manifest["handle_count"]
     assert all(receipt["status"] == "succeeded" for receipt in receipts)
+    latest = json.loads((root / "batches/cmip7/last-publication.json").read_text())
+    assert latest["published_at"] == manifest["published_at"]
+    assert latest["handle_count"] == manifest["handle_count"]
+    assert latest["receipt"] == manifest["receipt"]
 
 
 def test_crash_after_success_marker_archives_without_republishing(setup, monkeypatch):

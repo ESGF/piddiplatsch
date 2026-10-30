@@ -235,6 +235,21 @@ class BatchConfig(BaseModel):
     publish_retries: int = Field(default=3, ge=0, strict=True)
 
 
+class DiskConfig(BaseModel):
+    model_config = ConfigDict(extra="forbid", allow_inf_nan=False)
+
+    enabled: bool = True
+    warn_free_gib: float = Field(default=40, gt=0)
+    stop_free_gib: float = Field(default=20, ge=0)
+    check_interval_seconds: float = Field(default=10, gt=0)
+
+    @model_validator(mode="after")
+    def _check_thresholds(self):
+        if self.warn_free_gib <= self.stop_free_gib:
+            raise ValueError("warn_free_gib must exceed stop_free_gib")
+        return self
+
+
 class SchemaConfig(BaseModel):
     model_config = ConfigDict(extra="allow")
     strict_mode: bool = True
@@ -283,6 +298,7 @@ class AppConfig(BaseModel):
     lookup: LookupConfig | None = None
     catalog: CatalogConfig | None = None
     batch: BatchConfig | None = None
+    disk: DiskConfig | None = None
     schema_config: SchemaConfig | None = Field(None, alias="schema")
     logging_config: LoggingConfig | None = Field(None, alias="logging")
     plugins: PluginsConfig | None = None

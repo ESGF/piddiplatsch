@@ -26,6 +26,8 @@ def _isolate_runtime_state(tmp_path, monkeypatch):
     original_files = list(_config.loaded_files)
     _config._set("consumer", "output_dir", str(tmp_path / "outputs"))
     _config._set("stats", "enable_db", False)
+    # Disk headroom belongs to deployment, not the host running unit tests.
+    _config._set("disk", "enabled", False)
     _stats.reset()
     try:
         yield

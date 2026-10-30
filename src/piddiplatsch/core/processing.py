@@ -3,6 +3,7 @@ import time
 from typing import Any, Protocol
 
 from piddiplatsch.handles.api import HandleAPI, HandleAPIProtocol
+from piddiplatsch.monitoring.disk import get_disk_guard
 from piddiplatsch.result import ProcessingResult
 
 
@@ -25,12 +26,14 @@ class BaseProcessor:
         self.handle_profile = handle_profile
         self.retries = retries
         self.logger = logging.getLogger(__name__)
+        self.disk_guard = get_disk_guard()
 
     def __str__(self):
         """Return a friendly name for progress display."""
         return self.__class__.__name__.replace("Processor", "").lower()
 
     def _safe_add_record(self, record) -> None:
+        self.disk_guard.check()
         last_err = None
         for attempt in range(1, self.retries + 2):
             try:

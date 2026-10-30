@@ -21,6 +21,7 @@ from piddiplatsch.core.pipeline import (
 )
 from piddiplatsch.core.registry import get_plugins
 from piddiplatsch.exceptions import CatalogError
+from piddiplatsch.monitoring.disk import check_disk_space
 from piddiplatsch.monitoring.progress import BaseProgress
 from piddiplatsch.result import FeedResult
 
@@ -55,6 +56,7 @@ def map_catalog(
     validate_date_selection(input_date, from_date, to_date)
 
     directory = Path(directory) if directory is not None else get_catalog_directory()
+    check_disk_space(force=True)
     if HarvestState(directory).pending_clean:
         raise CatalogError("Catalog clean is incomplete; run harvest before mapping")
     selection = configured_projects() if projects is None else projects

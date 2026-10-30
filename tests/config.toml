@@ -6,6 +6,10 @@ topic = "CMIP6"
 output_dir = "outputs"
 max_errors = 10
 
+[disk]
+# Tests must not depend on the developer or CI runner's free storage.
+enabled = false
+
 [consumer.transient]
 preflight_stac = false
 

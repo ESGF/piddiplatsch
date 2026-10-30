@@ -308,6 +308,32 @@ def test_batch_deployment_installs_oneshot_and_configurable_timer():
     assert "Restart=" not in unit
 
 
+def test_maintenance_timer_is_deployed_with_the_harvest_service():
+    playbook = yaml.safe_load((PROJECT_ROOT / "deploy/ansible/piddi.yml").read_text())[
+        0
+    ]
+    assert (
+        playbook["vars"]["piddi_enable_maintenance_timer"]
+        == "{{ piddi_enable_service }}"
+    )
+    tasks = {task["name"]: task for task in playbook["tasks"]}
+    assert tasks["Install maintenance units"]["loop"] == [
+        "piddi-maintenance.service",
+        "piddi-maintenance.timer",
+    ]
+    timer = (
+        PROJECT_ROOT / "deploy/ansible/templates/piddi-maintenance.timer.j2"
+    ).read_text()
+    service = (
+        PROJECT_ROOT / "deploy/ansible/templates/piddi-maintenance.service.j2"
+    ).read_text()
+    assert "02:00:00 UTC" in timer
+    assert "Persistent=true" in timer
+    assert "Unit=piddi-maintenance.service" in timer
+    assert "--silent maintain" in service
+    assert "User={{ piddi_user }}" in service
+
+
 def test_sync_deployment_removes_old_units_before_starting_new_timer():
     playbook = yaml.safe_load((PROJECT_ROOT / "deploy/ansible/piddi.yml").read_text())[
         0

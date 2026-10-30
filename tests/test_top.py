@@ -49,6 +49,7 @@ def test_top_json_is_project_aware(tmp_path):
 
     assert result.exit_code == 0
     status = json.loads(result.output)
+    assert "storage" in status["health"]
     projects = {row["project"]: row for row in status["runs"][0]["projects"]}
     assert projects["cmip6"]["consumed"] == 1
     assert projects["cmip7"]["consumed"] == 0

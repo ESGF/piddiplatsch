@@ -17,6 +17,10 @@ class BatchError(PiddiplatschError):
     """A mapping batch could not be sealed or published completely."""
 
 
+class DiskSpaceError(PiddiplatschError, OSError):
+    """Stop new work before insufficient free storage prevents durable writes."""
+
+
 class ValidationError(PiddiplatschError):
     """Raised when input data or a record fails validation."""
 

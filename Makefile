@@ -70,12 +70,12 @@ deploy: conda play ## prepare the Conda environment and deploy piddi locally
 
 start: ## start deployed harvest, sync, and log rotation (publishes Handles)
 	$(SYSTEMCTL) start piddi.service
-	$(SYSTEMCTL) start piddi-logrotate.timer piddi-sync.timer
+	$(SYSTEMCTL) start piddi-logrotate.timer piddi-sync.timer piddi-maintenance.timer
 	$(SYSTEMCTL) --no-block start piddi-sync.service
 
 stop: ## stop deployed timers, sync, harvest, and log rotation
-	$(SYSTEMCTL) stop piddi-sync.timer piddi-logrotate.timer
-	$(SYSTEMCTL) stop piddi-sync.service piddi.service piddi-logrotate.service
+	$(SYSTEMCTL) stop piddi-sync.timer piddi-logrotate.timer piddi-maintenance.timer
+	$(SYSTEMCTL) stop piddi-sync.service piddi.service piddi-logrotate.service piddi-maintenance.service
 
 restart: ## stop and start all deployed Piddi services and timers
 	$(MAKE) stop

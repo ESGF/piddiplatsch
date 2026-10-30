@@ -21,6 +21,7 @@ from piddiplatsch.core.plugin import normalize_project_id
 from piddiplatsch.handles.rest_backend import RestHandleClient
 from piddiplatsch.helpers import find_jsonl, utc_now
 from piddiplatsch.jsonl_stream import JsonlRecord, iter_jsonl_records
+from piddiplatsch.monitoring.disk import get_disk_guard
 from piddiplatsch.result import ProjectPublishResult, PublishResult
 
 
@@ -122,6 +123,10 @@ class HandlePublisher:
         if workers < 1:
             raise ValueError("workers must be at least 1")
 
+        disk_guard = get_disk_guard(
+            extra_paths=(result_file.parent,) if result_file else ()
+        )
+        disk_guard.check(force=True)
         files = find_jsonl(paths)
         result = PublishResult()
         self.logger.info(
@@ -155,6 +160,7 @@ class HandlePublisher:
             )
             writer = None
             while batch := list(islice(records, BATCH_SIZE)):
+                disk_guard.check()
                 contexts = self._publication_contexts(batch)
                 if not backend_ready and any(
                     isinstance(record, dict) for _, _, record in batch

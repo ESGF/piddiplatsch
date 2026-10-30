@@ -24,6 +24,7 @@ from piddiplatsch.core.pipeline import (
 )
 from piddiplatsch.core.registry import get_plugins
 from piddiplatsch.exceptions import BatchError, CatalogError
+from piddiplatsch.monitoring.disk import check_disk_space
 from piddiplatsch.monitoring.progress import get_progress
 from piddiplatsch.monitoring.stats import stats
 from piddiplatsch.runners.publish import HandlePublisher
@@ -152,6 +153,7 @@ class SyncWorker:
         self.horizons = {}
 
     def run(self, *, force_map=False) -> list[Path]:
+        check_disk_space(force=True)
         completed = []
         self.errors = []
         self.horizons = {}
@@ -204,6 +206,7 @@ class SyncWorker:
         return completed
 
     def _map_due(self, project, project_root, force):
+        check_disk_space(force=True)
         with open_catalog(
             project, directory=self.catalog_directory, read_only=True
         ) as reader:
@@ -456,6 +459,16 @@ class SyncWorker:
 
     @classmethod
     def _archive(cls, batch):
+        manifest = json.loads((batch / "manifest.json").read_text())
+        # A small durable marker lets top show the latest success without
+        # walking the complete publication archive on every refresh.
+        _save_manifest(
+            batch.parent.parent / "last-publication.json",
+            {
+                key: manifest.get(key)
+                for key in ("batch_id", "published_at", "handle_count", "receipt")
+            },
+        )
         destination = cls._published_path(batch)
         published = batch.parent.parent / "published"
         # Persist every newly created level before the atomic move, including

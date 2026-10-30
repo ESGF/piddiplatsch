@@ -403,6 +403,15 @@ def publish(
     ).execute()
 
 
+@cli.command("maintain")
+@click.option(
+    "--dry-run", is_flag=True, help="List closed dumps without compressing them."
+)
+def maintain(dry_run: bool):
+    """Compress raw dumps dated before today in UTC; no retention deletion."""
+    commands.MaintainCommand(dry_run=dry_run).execute()
+
+
 # command config
 
 

@@ -97,6 +97,11 @@ directory (including `.harvest-state.json`), and batch directory together.
 Keep daily Handle files and receipts according to your site's audit policy.
 Output files and batches have no automatic retention policy.
 
+The maintenance timer compresses closed raw dumps daily; it does not delete old
+archives, receipts, or batches. Control it with `piddi_enable_maintenance_timer`
+in Ansible's `custom.yml` (defaults to `piddi_enable_service`). Its command,
+`piddi maintain`, can also be run manually with `--dry-run` for inspection.
+
 Do not delete catalogs to fix a stopped harvest. Clean options replay retained
 Kafka history and can invalidate ready batches. Read [Recovery](recovery.md)
 before rebuilding.

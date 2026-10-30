@@ -53,7 +53,7 @@ class PublishCommand(FileBatchCommand):
                     project=self.project,
                     handle_profile=self.handle_profile,
                 )
-            except ValueError as exc:
+            except (ValueError, OSError) as exc:
                 raise click.ClickException(str(exc)) from exc
 
         self._show_result(result, progress.position)

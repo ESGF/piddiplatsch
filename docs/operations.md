@@ -368,6 +368,37 @@ PIDDI_MOCK_HANDLE_PUT_DELAY_SECONDS=0.1 docker compose up -d
 
 ## Local cleanup
 
+### Closed raw dumps
+
+Run maintenance manually before enabling its daily schedule:
+
+```bash
+piddi maintain --dry-run
+piddi maintain
+```
+
+Maintenance compresses `dump/dump_messages_YYYY-MM-DD.jsonl` files dated before
+today in UTC, using gzip level 1. It skips today's file, future dates, symbolic
+links, and files with an existing `.jsonl.gz` archive. A lock prevents overlapping
+maintenance runs. The original remains until the gzip output is complete and
+durably stored; a dump that changes during compression is preserved with an
+error. Compression needs temporary free space and observes the disk guard.
+
+Only closed raw dumps are compressed. Batch payloads and receipts remain intact
+because manifests reference them. There is no age-based deletion or off-host
+archiving. Inspect compressed dumps with `gzip -cd <file.jsonl.gz>`; mapping uses
+the catalog and does not need the raw dump files.
+
+### Disk and project health
+
+`piddi top` and `piddi top --json` also show disk headroom, pending catalog items,
+ready and failed batch counts, and the latest successful sync publication.
+Failed publication batches remain ready and also count as failed.
+The checks are read-only and report unavailable or older catalogs without
+migrating them. Publication status uses a small `last-publication.json` marker
+per project, written by successful sync runs; old archives are not scanned. A
+project has no last-publication value until a new sync run records a success.
+
 Monitor disk use and choose a retention policy for dumps, Handle files, batches,
 and receipts. Piddi does not remove old runtime output automatically.
 

@@ -1,0 +1,15 @@
+[Unit]
+Description=Compress closed Piddiplatsch raw dumps
+RequiresMountsFor=/var/lib/piddi
+
+[Service]
+Type=oneshot
+User={{ piddi_user }}
+Group={{ piddi_group }}
+WorkingDirectory=/var/lib/piddi
+ExecStart={{ piddi_executable }} --config /etc/piddi/piddi.toml --silent maintain
+TimeoutStartSec=infinity
+Nice=19
+IOSchedulingClass=idle
+UMask=0027
+Environment=PYTHONUNBUFFERED=1
