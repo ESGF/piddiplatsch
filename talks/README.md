@@ -49,14 +49,14 @@ Quarto prefers the installed Puppeteer browser, with Chrome on macOS as a fallba
 rendering never runs `piddi` or contacts Kafka or Handle services.
 
 The overview emphasizes the built-in project plugins and the
-`harvest → map + validation → publish` workflow with JSONL between stages.
+`harvest → map + validation → publish` workflow with local catalogs and Handle JSONL between stages.
 The ESGF-NG Mermaid diagram is a simplified logical architecture, with sources
 and the scope of mapping validation documented in the slide notes.
 The outlook slide illustrates a proposed Rook plugin maintaining a local
 PostgreSQL STAC lookup database for the Rook/WPS broker. It distinguishes this
 future extension from the existing PID workflow.
 A summary closes the overview before the operational appendix, which covers
-configuration, consumer groups, output, retry, and service deployment with Ansible.
+configuration, consumer groups, output, recovery, and service deployment with Ansible.
 
 ## Build and present
 

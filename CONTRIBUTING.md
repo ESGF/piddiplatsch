@@ -37,18 +37,15 @@ make develop
 Kafka is required for queue commands. Handle services are required only for
 explicit publication (or use the local Docker stack for smoke tests).
 
-- Harvest queue messages only: `piddi harvest`
-- Map a dated raw dump: `piddi map --date YYYY-MM-DD`
-- Map explicit saved JSONL: `piddi map <path...>`
 - Harvest catalogs: `piddi harvest`
 - Map catalogs: `piddi map --project cmip6 --date all`
 - Map pending items and publish ready batches: `piddi sync --force-map`
 - Common flags:
   - `--config <path>`: point to your TOML config
   - `--silent`: hide the default progress display
-  - `-v`: INFO logging; `-vv` or `--debug`: DEBUG logging
+  - `-v`: select INFO logging (the default); `-vv` or `--debug`: DEBUG logging
   - `--log my.log`: override the configured log destination
-  - `batch --force-map`: map pending changes without waiting for thresholds
+  - `sync --force-map`: map pending changes without waiting for thresholds
 
 `harvest` always writes raw queue messages to `outputs/dump/` before catalog
 routing. `map` prepares daily Handle JSONL without contacting a Handle Service;
@@ -328,7 +325,7 @@ def test_full_workflow(handle_client, testfile):
 ## 🔌 Project plugins
 
 - Map selects one, several, or all plugins via `consumer.projects` or its
-  `--project/--all-projects` options. Batch uses the configured selection; harvest
+  `--project/--all-projects` options. Sync uses the configured selection; harvest
   caches every registered project.
 - Config for each plugin lives under `[plugins.<name>]` in the TOML.
 - Example (CMIP6):

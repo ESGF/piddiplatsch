@@ -5,8 +5,8 @@ catalogs. Mapping reads complete local items and writes prepared Handles.
 
 ```text
 Kafka -> raw JSONL + project catalogs (harvest)
-project catalogs -> daily or sealed batch Handle JSONL (map/batch)
-prepared Handle JSONL -> Handle Service + receipts (publish/batch)
+project catalogs -> daily or sealed batch Handle JSONL (map/sync)
+prepared Handle JSONL -> Handle Service + receipts (publish/sync)
 ```
 
 Harvest is the only continuous service. The scheduled sync worker maps due
@@ -107,8 +107,7 @@ different mapping selection can be applied later. Unknown or malformed events
 stop catalog harvesting and remain unacknowledged; `--no-catalog` keeps the previous
 raw-only behavior. Harvest uses plugin metadata without constructing processors.
 
-Only selected plugins are constructed. Catalog mapping skips remote preflight;
-direct consumption retains its existing preflight behavior.
+Only selected plugins are constructed. Catalog mapping skips remote preflight.
 
 ## Output and dump scope
 
@@ -134,7 +133,7 @@ Harvest uses `<kafka.group.id>.harvest`; clean rebuilds persist a new group
 generation. Keep one harvest writer for a local catalog directory. Kafka shares
 partitions among members of a group, so multiple harvest instances require
 coordinated storage and update ownership rather than independent local caches.
-Map and batch project selection never changes Kafka group membership or offsets.
+Map and sync project selection never changes Kafka group membership or offsets.
 
 ## Current scope
 

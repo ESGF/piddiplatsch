@@ -8,7 +8,7 @@ Piddiplatsch writes daily JSONL files beneath `consumer.output_dir`:
 | --- | --- |
 | `dump/` | Original Kafka messages written by every `harvest` run. |
 | `catalog/` | One SQLite STAC catalog per registered project encountered by `harvest`, unless disabled. |
-| `<plugin>/handles/` | Handle records produced by that plugin. Direct REST publication writes the JSONL record before contacting the server; each line also includes `project`. |
+| `<plugin>/handles/` | Handle records prepared by mapping; each line also includes `project`. |
 | `published/` | One run-scoped JSONL receipt per `publish` run, containing every successful or failed Handle outcome. |
 | `<plugin>/skipped/` | Records deferred after transient external failures. |
 | `<plugin>/failures/r<N>/` | Failed records with diagnostic metadata; the historical `r0` layout is retained. |
@@ -18,10 +18,8 @@ The raw dump is intentionally global and always written before routing. It prese
 the consumed Kafka order and remains suitable for replay or investigation;
 creating filtered per-plugin dumps would lose that simple ordering guarantee.
 
-JSONL Handle output is always enabled, including direct publication. If the
-audit record cannot be appended, that Handle is not sent to the server. A
-server-side failure leaves the JSONL record available for inspection or later
-publication.
+Mapping prepares Handle JSONL before publication. Publication preserves its
+input files, including after a server-side failure, for inspection or repetition.
 
 Deferred publication writes each outcome immediately to a readable, unique
 `published/published_<project>_handles_YYYY-MM-DD_HH-MM-SS.jsonl` file using UTC
@@ -367,11 +365,6 @@ The delay occurs outside the mock store lock, so concurrent publisher workers
 can overlap requests as they would with a real service connection/database
 pool. GET requests and requests rejected before storage are not delayed.
 
-These files, `pid.log`, and `piddi.db` are ignored by Git and preserved by the
-project's cleanup targets. There is no automatic retention policy. Dump and
-Handle JSONL files can grow quickly, so monitor disk usage and archive or remove
-old files according to the site's operational policy.
-
 ## Inspection and repetition
 
 See [Recovery](recovery.md) for diagnostic file locations and restart behavior.
@@ -418,9 +411,8 @@ progress line. The existing logging level/destination controls their visibility;
 console logging uses tqdm-safe writes. Healthy harvest defers remote HTTP imports
 until a missing/recovered item needs a fetch. Local catalog mapping also leaves
 HTTP clients and codecs unloaded; publication imports its selected remote backend.
-Optional HTTP codecs can still issue
-native-extension GIL warnings when actually loaded; Piddi does not suppress them
-or force the GIL off.
+The CLI suppresses the expected Brotli compatibility GIL warning on
+free-threaded Python; automatic GIL fallback and other warnings remain enabled.
 
 ## Logging and statistics
 
@@ -505,6 +497,10 @@ and statistics reporters. Processing stops with a non-zero status after the
 configured error limit or a fail-fast transient external failure.
 
 ## Local cleanup
+
+Runtime outputs, `pid.log`, and `piddi.db` are ignored by Git and preserved by
+the cleanup targets. There is no automatic retention policy. Monitor disk usage
+and archive or remove old output according to the site's operational policy.
 
 `make clean` removes build, bytecode, and test artifacts only. `make clean-dist`
 also removes other ignored development artifacts, but explicitly preserves

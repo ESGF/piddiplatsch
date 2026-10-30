@@ -206,8 +206,9 @@ The outlook follows; the appendix supports operational questions.
 Configuration, architecture, and deployment guides live in the repository.
 Examples assume Piddi is installed. Configuration validation is offline;
 harvest requires Kafka and publish performs real Handle writes. Inspect the
-Handle JSONL path produced by map before publication. last refers to the latest
-dated input file, so use explicit paths when selecting a particular batch.
+Handle JSONL path produced by map before publication. For map, last selects the
+latest catalog event day; for publish, it selects the latest dated Handle file.
+Use explicit publication paths when selecting a particular file.
 :::
 
 ## Outlook: a STAC lookup DB for Rook {.outlook-slide}
@@ -313,20 +314,21 @@ Source: docs/configuration.md.
 
 ## Appendix: consumer groups
 
-**Kafka assigns partitions before Piddi filters projects.**
+**One harvest writer maintains each local catalog directory.**
 
-| Process arrangement | Consumer group choice |
+| Operation | Kafka group behavior |
 | --- | --- |
-| One process, several projects | One group |
-| Separate processes for different projects | Distinct groups |
+| Harvest | Uses `<kafka.group.id>.harvest` |
+| Clean rebuild | Persists a new group generation |
+| Map and sync | Read catalogs; do not consume Kafka |
 
-Sharing a group between separate CMIP6 and CMIP7 consumers can send an event to
-the process that filters it out.
-
-Changing project selection requires an explicit offset or replay decision.
+Harvest caches every registered project it encounters.
+Changing mapping project selection leaves Kafka offsets unchanged.
 
 ::: notes
-This follows Kafka partition assignment and Piddi's downstream filtering.
+Multiple harvest instances require coordinated storage and update ownership.
+Kafka shares partitions among members of a group; separate local catalogs do
+not each receive the complete topic history when they share that group.
 Source: docs/architecture.md, Kafka consumer groups.
 :::
 

@@ -94,12 +94,12 @@ publication. Its `--workers` and `--retries` flags override
 `[batch].publish_workers` and `[batch].publish_retries` for one run. Harvest caches
 all registered projects and uses a separate Kafka group.
 
-Use `-v` for INFO logging, `-vv` for DEBUG, and `--log PATH` to select a log file.
+INFO logging is the default. Use `-v` to select INFO, `-vv` for DEBUG, and
+`--log PATH` to select a log file.
 For permanent changes, set `[logging].level` and `[logging].file`.
 
-Direct REST publication always appends the prepared record to
-the project-scoped Handle JSONL file before contacting the service. This audit
-output is not optional; `[consumer].output_dir` controls its root directory.
+Mapping writes prepared records to project-scoped Handle JSONL files.
+`[consumer].output_dir` controls their root directory.
 
 `piddi publish` always uses the REST Handle client, independently of the
 profile's configured `backend`. The deferred command
@@ -115,8 +115,9 @@ plus a final summary, for both `sync` and `publish`. Summaries include successfu
 failed, and retry counts, project, elapsed time, and average processing rate.
 The receipt path is logged once when the file opens. These are cumulative counts for the current publication attempt;
 they do not count unique Handles across retries or runs. No progress summary is
-emitted while waiting for a result. Pass `-v` to enable INFO logging and `--log PATH`
-to override the configured destination (`pid.log` by default).
+emitted while waiting for a result. INFO logging is enabled by default; use `-v`
+to select it explicitly and `--log PATH` to override the configured destination
+(`pid.log` by default).
 
 INFO summaries use operation labels and grouped numbers, for example:
 
@@ -133,10 +134,9 @@ are available at DEBUG; SQLite monitoring and JSONL receipts retain their detail
 
 Every successful Handle write logs its details at DEBUG (`-vv`). The entry identifies whether the server
 created or updated the Handle and includes its directly resolvable REST URL, project,
-dataset ID, file name, and source position. For file assets, the publisher joins
-`IS_PART_OF` to a dataset record in the selected batch so the asset log entry
-also includes `DATASET_ID`. Context that is unavailable in older JSONL input is
-written as `-`.
+dataset ID, file name, and source position. Context unavailable in the prepared
+JSONL record is written as `-`; the publisher does not infer dataset metadata
+from other input records.
 
 ## Multiple Handle servers
 
@@ -172,10 +172,8 @@ service with `handle = "another-profile"`. Prefix precedence is the plugin's
 `[handles.defaults].prefix`. Profiles must still provide a fallback prefix,
 either directly or through defaults, for callers without a project override.
 The plugin prefix also applies when `--handle-profile` selects a different
-service. Mapping,
-JSONL output, immediate publication, and deferred publication all use this
-effective prefix. The shared credentials must have permission to write each
-plugin's prefix.
+service. Mapping and publication use this effective prefix. The shared
+credentials must have permission to write each plugin's prefix.
 
 Keep real credentials in an ignored local override. Configuration examples can
 live under `etc/`.
@@ -371,23 +369,19 @@ File `IS_PART_OF` links point to the generated dataset PID, while file tracking
 IDs and dataset `HAS_PARTS` links retain their existing behavior. The input STAC
 JSON is not modified. This does not create redirects for previously published
 PIDs; existing mapped Handle JSONL must be regenerated to use the new policy.
-`batch --force-map` skips mapping thresholds for pending items; harvest remains
+`sync --force-map` skips mapping thresholds for pending items; harvest remains
 fail-fast and has no force option.
 
 ### Advanced tuning and optional services
 
 | Section | Key | Purpose |
 | --- | --- | --- |
-| `consumer.transient` | `stop_on_skip` | Legacy library setting; catalog harvest always stops on failed recovery. |
-| `consumer.transient` | `retries` | Number of retries for transient STAC patch retrieval. |
-| `consumer.transient` | `backoff_initial`, `backoff_max` | Exponential retry delay bounds in seconds. |
-| `consumer.transient` | `preflight_stac` | Probe the configured STAC service before consuming; disabled by default. |
 | `catalog` | `enabled`, `backend`, `directory` | Harvest maintenance and per-project local catalog storage. |
 | `catalog` | `version_history` | Optional local predecessor linking during map; disabled by default. |
 | `catalog` | `kafka_commit_batch_size`, `kafka_commit_interval_seconds` | Broker acknowledgement batching after durable local writes. |
 | `lookup` | `enabled`, `backend` | Version lookup adapter: `catalog` (default) or explicit `stac`; map uses its catalog snapshot and separate history switch. |
 | `stats` | `interval_seconds`, `summary_interval` | Statistics reporting thresholds: 30 seconds or 10,000 messages by default, whichever is reached first as messages arrive. |
-| `stats` | `enable_db`, `db_path`, heartbeat/sample/history intervals | Local SQLite state and history for mapping and batch mapping runs. |
+| `stats` | `enable_db`, `db_path`, heartbeat/sample/history intervals | Local SQLite state and history for harvest, map, and sync mapping runs. |
 
 ## Compatibility with older configuration
 
@@ -399,3 +393,6 @@ Legacy top-level project tables such as `[cmip6]` also remain supported. Their
 keys override `[plugins.cmip6]`; nested values such as `stac` are replaced at
 that level rather than recursively merged by project resolution. Prefer
 `[plugins.<name>]` for new setups and avoid mixing both forms.
+
+The retained `[consumer.transient]` settings apply to legacy library processing
+paths. Catalog harvest stops on failed remote recovery; mapping uses local items.

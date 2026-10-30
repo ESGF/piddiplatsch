@@ -9,7 +9,7 @@ and JSONL Handle files for publication. Harvest also retains raw JSONL dumps.
 - [Architecture](architecture.md): routing, project plugins, and processing stages.
 - [Configuration](configuration.md): site settings and supported options.
 - [Operations](operations.md): output, publication, retries, and monitoring.
-- [Recovery & retry](recovery.md): advanced recovery procedures.
+- [Recovery](recovery.md): advanced recovery procedures.
 - [Deployment](https://github.com/ESGF/piddiplatsch/blob/main/deploy/README.md):
   Linux service setup with Ansible.
 

@@ -170,7 +170,7 @@ Check that Piddi is working:
 
 ```console
 systemctl status piddi
-# Mapping status; harvest does not populate the monitoring database
+# Harvest and mapping status from the monitoring database
 piddi --config /etc/piddi/piddi.toml top
 tail -f /var/log/piddi/piddi.log
 ```

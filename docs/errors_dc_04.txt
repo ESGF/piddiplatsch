@@ -1,9 +1,0 @@
-# errors in data challenges 04
-
-## 2025.08.05 - 16:45
-
-INFO     Processing message: CMIP6.ScenarioMIP.DKRZ.MPI-ESM1-2-HR.ssp126.r1i1p1f1.Eyr.baresoilFrac.gn.v20190710                                                                    consumer.py:65
-           ERROR    {"event": "failure", "timestamp": "2025-08-05T14:45:52.863441Z", "key": "CMIP6.ScenarioMIP.DKRZ.MPI-ESM1-2-HR.ssp126.r1i1p1f1.Eyr.baresoilFrac.gn.v20190710", "error":       stats.py:25
-                    "argument of type 'float' is not iterable"}                                                                                                                                             
-           ERROR    Error processing message CMIP6.ScenarioMIP.DKRZ.MPI-ESM1-2-HR.ssp126.r1i1p1f1.Eyr.baresoilFrac.gn.v20190710: argument of type 'float' is not iterable                     consumer.py:80
-           WARNING  Recorded failed item CMIP6.ScenarioMIP.DKRZ.MPI-ESM1-2-HR.ssp126.r1i1p1f1.Eyr.baresoilFrac.gn.v20190710 (retries=0) to outputs/failures/r0/failed_items_2025-08-05.jsonl 

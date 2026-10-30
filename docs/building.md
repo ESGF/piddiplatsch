@@ -15,7 +15,7 @@ The root Makefile delegates to that build and combines its output with MkDocs;
 The [Quick guide](quick-guide.md) renders the repository README through the
 `docs/quick-guide.md` symlink to `../README.md`. Edit the root README to update
 both versions, and keep its links valid on GitHub and the published site.
-Advanced recovery instructions live separately in [Recovery & retry](recovery.md).
+Advanced recovery instructions live separately in [Recovery](recovery.md).
 
 ## Local documentation
 
