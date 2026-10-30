@@ -325,9 +325,7 @@ Read the database with:
 piddi top
 piddi top --once
 piddi top --project cmip7 --once
-piddi top --history all
 piddi top --json
-piddi top --json --history 360
 ```
 
 `top` is read-only and needs no Kafka or Handle connection. It reports an error
@@ -339,16 +337,14 @@ activity, publication speed and estimated batch completion. Unknown estimates
 appear as a dash. Errors and stale heartbeats appear below the table. Stale run
 records superseded by newer runs are hidden from the display; JSON retains them.
 Use `--json` for batch health, last publication times, individual runs and history.
-The header shows when cumulative Handle totals began and the rate windows.
-`Harvest/s` shows events per second per project, averaged over available samples
-within `--history` (one hour by default); publication speed uses up to 60 seconds.
-Use `--history all` for harvest speed since each active run began, calculated
-from its cumulative event counter even after old history samples expire. The
-harvest header always includes the total events in active harvest runs. These
-harvest totals restart with a new run; Handle totals cover all recorded runs.
-`Harvest trend →` shows up to twelve bars, oldest to newest, across the selected
-history window. Bar heights are relative to that project's peak. With
-`--history all`, the average covers the run and the trend shows the last hour.
+The header shows when cumulative Handle totals began.
+`Harvest/s` shows recent events per second per project, averaged over available
+samples from the last five minutes; publication speed uses up to 60 seconds.
+The harvest header includes total events in active harvest runs. These harvest
+counts restart with a new run; Handle totals cover all recorded runs.
+`Harvest trend →` shows up to twelve bars across the last five minutes, oldest to
+newest. Bar heights are relative to that project's peak. There is no selectable
+harvest window.
 `Batch progress` shows successful Handle writes in the active publication run
 against its total, for example `12,345 / 50,000`. An unknown total appears as `?`;
 projects without a single active publisher show a dash.
@@ -359,7 +355,7 @@ to the selected project with `--project`). Generated Handles are recorded mappin
 outputs, including repeat runs, rather than unique PIDs.
 
 History samples are saved every 15 seconds and at startup and shutdown. The
-history window covers one hour; `--json --history 360` includes six hours. Samples are kept
+display uses the last five minutes. Samples are kept
 for 30 days. They contain counters, not raw messages or log text. Catalog writes
 exclude duplicate events. Schema 3 adds catalog counters automatically on writer
 startup; `top` can also read schema 2.

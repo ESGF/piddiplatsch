@@ -14,12 +14,6 @@ CONTEXT_SETTINGS = {"help_option_names": ["-h", "--help"]}
 DEFAULT_USER_CONFIG = "custom.toml"
 
 
-def _parse_history(ctx: click.Context, param: click.Parameter, value: str | None):
-    if value is None or value.casefold() == "all":
-        return "all" if value else None
-    return click.FloatRange(min=1).convert(value, param, ctx)
-
-
 def _parse_date_selector(
     _ctx: click.Context, _param: click.Parameter, value: str | None
 ) -> datetime | str | None:
@@ -506,13 +500,6 @@ def config_explain(
     type=click.FloatRange(min=0.1),
     help="Mark a running process stale after this many seconds without a heartbeat.",
 )
-@click.option(
-    "--history",
-    "history_minutes",
-    callback=_parse_history,
-    metavar="MINUTES|all",
-    help="Harvest rate window in minutes, or 'all' for the entire active run.",
-)
 @click.pass_context
 def top(
     ctx: click.Context,
@@ -522,7 +509,6 @@ def top(
     json_output: bool,
     refresh_seconds: float,
     stale_after_seconds: float | None,
-    history_minutes: float | str | None,
 ) -> None:
     """Watch current processing progress, separated by project."""
     stats_config = config.get("stats", {})
@@ -536,7 +522,6 @@ def top(
         stale_after_seconds=(
             stale_after_seconds or stats_config.get("stale_after_seconds", 15)
         ),
-        history_minutes=(history_minutes or stats_config.get("history_minutes", 60)),
     ).execute()
 
 

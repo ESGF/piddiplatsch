@@ -39,6 +39,7 @@ class StatsConfig(BaseModel):
     sample_interval_seconds: float = Field(default=15, gt=0)
     sample_retention_days: float = Field(default=30, ge=0)
     stale_after_seconds: float = Field(default=15, gt=0)
+    # Accepted for older configurations; top now uses a fixed recent interval.
     history_minutes: float = Field(default=60, gt=0)
 
 

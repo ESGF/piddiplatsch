@@ -186,7 +186,7 @@ def test_top_harvest_reports_durable_writes_and_duplicate_events(tmp_path):
     assert "ΔWrites" not in result.output
 
 
-def test_top_json_history_window(tmp_path):
+def test_top_json_uses_fixed_recent_history(tmp_path):
     db_path = tmp_path / "piddi.db"
     _monitoring_db(db_path)
 
@@ -199,44 +199,14 @@ def test_top_json_history_window(tmp_path):
             "--db",
             str(db_path),
             "--once",
-            "--history",
-            "30",
             "--json",
         ],
     )
 
     assert result.exit_code == 0
     status = json.loads(result.output)
-    assert status["history_seconds"] == 1800
+    assert status["history_seconds"] == 300
     assert status["runs"][0]["history"]
-
-
-def test_top_all_uses_run_counters_for_harvest_rate(tmp_path):
-    db = tmp_path / "piddi.db"
-    _monitoring_db(db)
-    with sqlite3.connect(db) as connection:
-        connection.execute(
-            "UPDATE monitor_runs SET command='harvest', status='running', started_at=?, heartbeat_at=?",
-            ("2026-10-30T20:00:00+00:00", "2026-10-30T21:00:00+00:00"),
-        )
-    result = CliRunner().invoke(
-        cli, ["top", "--db", str(db), "--history", "all", "--json"]
-    )
-    assert result.exit_code == 0, result.output
-    status = json.loads(result.output)
-    assert status["harvest_rate_window"] == "run"
-    from piddiplatsch.commands.top import _harvest_rates
-
-    run = status["runs"][0]
-    run["state"] = "healthy"
-    run["projects"][0]["consumed"] = 360000
-    run["history"] = []  # Lifetime speed must survive sample retention.
-    assert _harvest_rates([run], since_start=True)["cmip6"] == 100
-    status["health"] = {"storage": [], "projects": []}
-    output = StringIO()
-    Console(file=output, width=160).print(TopCommand._overview(status))
-    assert "360,000 events since run start" in output.getvalue()
-    assert "harvest since run start" in output.getvalue()
 
 
 def test_top_default_is_one_table_without_history(tmp_path):
@@ -330,7 +300,8 @@ def test_compact_overview_keeps_eta_and_actionable_warnings():
     rendered = output.getvalue()
     assert "cordex-cmip6" in rendered
     assert "Handle totals: since 2026-10-30 20:00 UTC" in rendered
-    assert "Rate windows: harvest up to 30m · publish up to 60s" in rendered
+    assert "Rate windows" not in rendered
+    assert "(5m avg)" in rendered
     assert "Harvest: running · 123.4 events/s" in rendered
     assert "Harvest/s" in rendered
     assert "Harvest trend" in rendered

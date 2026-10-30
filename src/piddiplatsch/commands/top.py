@@ -30,7 +30,6 @@ class TopCommand(Command):
     json_output: bool = False
     refresh_seconds: float = 2.0
     stale_after_seconds: float = 15.0
-    history_minutes: float | str = 60.0
 
     def execute(self) -> None:
         console = Console()
@@ -40,14 +39,7 @@ class TopCommand(Command):
                     self.db_path,
                     project=self.project,
                     stale_after_seconds=self.stale_after_seconds,
-                    history_seconds=(
-                        3600
-                        if self.history_minutes == "all"
-                        else self.history_minutes * 60
-                    ),
-                )
-                status["harvest_rate_window"] = (
-                    "run" if self.history_minutes == "all" else "history"
+                    history_seconds=300,
                 )
                 status["health"] = read_health(self.project)
                 status["backlog_estimate"] = backlog_estimate(status)
@@ -89,13 +81,7 @@ class TopCommand(Command):
             )
             lines.append(Text(f"Disk: {space} · {disk['state']} · {disk['path']}"))
         harvest = [run for run in active if run["command"] == "harvest"]
-        since_start = status.get("harvest_rate_window") == "run"
-        harvest_rates = _harvest_rates(harvest, since_start=since_start)
-        window = (
-            "since run start"
-            if since_start
-            else f"up to {_eta_duration(status.get('history_seconds', 3600))}"
-        )
+        harvest_rates = _harvest_rates(harvest)
         if harvest:
             state = (
                 "stale"
@@ -108,19 +94,11 @@ class TopCommand(Command):
             )
             lines.append(
                 Text(
-                    f"Harvest: {state} · {rate} events/s · {total:,} events since run start"
+                    f"Harvest: {state} · {rate} events/s (5m avg) · {total:,} events since run start"
                 )
             )
         else:
             lines.append(Text("Harvest: inactive"))
-        lines.append(
-            Text(
-                f"Rate windows: harvest {window} · publish up to 60s"
-                + (" · harvest trend up to 1h" if since_start else ""),
-                style="dim",
-            )
-        )
-
         table = Table(box=None, padding=(0, 1))
         for heading in (
             "Project",
@@ -295,20 +273,10 @@ def _batch_progress(publishers: list[dict]) -> str:
     return f"{published:,} / {total:,}" if total is not None else f"{published:,} / ?"
 
 
-def _harvest_rates(runs: list[dict], *, since_start: bool = False) -> dict[str, float]:
+def _harvest_rates(runs: list[dict]) -> dict[str, float]:
     rates = {}
     for run in runs:
         if run["state"] == "healthy":
-            if since_start:
-                elapsed = (
-                    datetime.fromisoformat(run["heartbeat_at"])
-                    - datetime.fromisoformat(run["started_at"])
-                ).total_seconds()
-                if elapsed > 0:
-                    for row in run["projects"]:
-                        name = row["project"]
-                        rates[name] = rates.get(name, 0) + row["consumed"] / elapsed
-                continue
             for row in run.get("history", []):
                 if row.get("elapsed_seconds", 0) > 0:
                     name = row["project"]

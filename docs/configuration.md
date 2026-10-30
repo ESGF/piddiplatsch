@@ -227,7 +227,6 @@ summary_interval = 10000
 heartbeat_interval_seconds = 5
 stale_after_seconds = 15
 sample_interval_seconds = 15
-history_minutes = 60
 sample_retention_days = 30
 ```
 
