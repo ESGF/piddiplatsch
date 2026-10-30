@@ -191,7 +191,7 @@ class Config:
     ) -> None:
         """Configure logging from config, with CLI verbosity overrides."""
         logging_config = self.get("logging", {}) or {}
-        configured_level = str(logging_config.get("level", "WARNING")).strip().upper()
+        configured_level = str(logging_config.get("level", "INFO")).strip().upper()
         if configured_level == "WARN":
             configured_level = "WARNING"
         if configured_level not in {"DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"}:

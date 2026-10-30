@@ -60,8 +60,8 @@ publish_retries = 3
 # directory = "/var/lib/piddi/batches"
 
 [logging]
-# WARNING keeps normal runs compact. Use -v for INFO or -vv/--debug for DEBUG.
-level = "WARNING"
+# INFO shows progress summaries. Use -vv/--debug for per-record details.
+level = "INFO"
 # Set to an empty string to log to the terminal instead of a file.
 file = "pid.log"
 

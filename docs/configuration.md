@@ -342,7 +342,7 @@ All existing settings remain supported. Only override values your site needs.
 | `handles.profiles.<name>` | `server_url`, `prefix`, `username`, `password` | Connection and credentials for one Handle service. |
 | `handles.profiles.<name>` | `verify_https`, `timeout` | TLS verification and per-request timeout for one Handle service. |
 | `stac` | `base_url`, `timeout`, `collection` | Global STAC defaults; the shared endpoint is `https://discovery.east.esgf.io`. |
-| `logging` | `level` | Baseline `DEBUG`, `INFO`, `WARNING`, `ERROR`, or `CRITICAL` level. `WARN` is accepted as an alias. |
+| `logging` | `level` | Baseline `DEBUG`, `INFO` (default), `WARNING`, `ERROR`, or `CRITICAL` level. `WARN` is accepted as an alias. |
 | `logging` | `file` | Log destination. An empty string selects terminal logging. |
 
 ### Mapping and validation

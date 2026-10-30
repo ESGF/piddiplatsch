@@ -424,7 +424,7 @@ or force the GIL off.
 
 ## Logging and statistics
 
-The CLI writes WARNING and above to `pid.log` by default. Use `-v` for INFO,
+The CLI writes INFO and above to `pid.log` by default. Use `-v` to select INFO,
 `-vv` or its memorable `--debug` alias for DEBUG, and `--log PATH` to override
 the configured file. `--silent` remains an alias for hiding progress;
 `--progress/--no-progress` provides the explicit form. At INFO level Piddiplatsch
@@ -445,7 +445,7 @@ The `[logging]` configuration provides the service defaults:
 
 ```toml
 [logging]
-level = "WARNING"
+level = "INFO"
 file = "/var/log/piddi/piddi.log"
 ```
 

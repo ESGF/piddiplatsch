@@ -11,6 +11,8 @@ All notable changes to this project are documented here.
   configured projects, plus `--workers` and `--retries` publication overrides.
 
 ### Changed
+- Logging now defaults to INFO so progress summaries are visible without `-v`;
+  explicit site logging levels still take precedence.
 - Handle publication defaults to four workers for both sync and manual publish;
   explicit worker settings continue to override the default.
 - Publication summaries say "published" for successful Handle writes; mapping
