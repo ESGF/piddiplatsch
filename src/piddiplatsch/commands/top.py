@@ -11,6 +11,7 @@ from pathlib import Path
 import click
 from rich.console import Console, Group
 from rich.table import Table
+from rich.text import Text
 
 from piddiplatsch.monitoring.eta import backlog_estimate
 from piddiplatsch.monitoring.health import read_health
@@ -27,6 +28,7 @@ class TopCommand(Command):
     project: str | None = None
     once: bool = False
     json_output: bool = False
+    details: bool = False
     refresh_seconds: float = 2.0
     stale_after_seconds: float = 15.0
     history_minutes: float = 60.0
@@ -51,21 +53,160 @@ class TopCommand(Command):
                 return
             if not self.once:
                 console.clear()
-            console.print(
-                Group(
+            if self.details:
+                view = Group(
                     self._disk_table(status),
                     self._health_table(status),
                     self._publication_table(status),
                     self._table(status),
                     self._history_table(status),
                 )
-            )
+            else:
+                view = self._overview(status)
+            console.print(view)
             if self.once:
                 return
             try:
                 time.sleep(self.refresh_seconds)
             except KeyboardInterrupt:
                 return
+
+    @staticmethod
+    def _overview(status: dict) -> Group:
+        """Keep the daily operator view to one table and actionable status lines."""
+        active = _active_runs(status)
+        lines = []
+        for disk in status["health"]["storage"]:
+            free = disk.get("free_bytes")
+            space = (
+                f"{free / 1024**3:.1f} GiB free"
+                if free is not None
+                else "unknown free space"
+            )
+            lines.append(Text(f"Disk: {space} · {disk['state']} · {disk['path']}"))
+        harvest = [run for run in active if run["command"] == "harvest"]
+        if harvest:
+            state = (
+                "stale"
+                if any(run["state"] == "stale" for run in harvest)
+                else "running"
+            )
+            rate = sum(
+                row.get("message_rate", 0) or 0
+                for run in harvest
+                for row in run.get("history", [])
+            )
+            lines.append(Text(f"Harvest: {state} · {rate:,.1f} events/s"))
+        else:
+            lines.append(Text("Harvest: inactive"))
+
+        table = Table(box=None, padding=(0, 1))
+        for heading in (
+            "Project",
+            "Pending items",
+            "Prepared",
+            "Published",
+            "Activity",
+            "Handles/s",
+            "Batch ETA ~",
+        ):
+            table.add_column(
+                heading,
+                min_width=12 if heading == "Project" else None,
+                no_wrap=heading == "Project",
+                justify=(
+                    "right"
+                    if heading
+                    in {"Pending items", "Prepared", "Published", "Handles/s"}
+                    else "left"
+                ),
+            )
+        health = {row["project"]: row for row in status["health"]["projects"]}
+        totals = {row["project"]: row for row in status.get("handle_totals", [])}
+        names = set(health) | set(totals)
+        for run in status["runs"]:
+            names.update(row["project"] for row in run["projects"])
+        alerts = []
+        for name in sorted(names):
+            row = health.get(name, {})
+            counts = totals.get(name, {})
+            runs = [run for run in active if name in _run_projects(run)]
+            publishers = [
+                run
+                for run in runs
+                if run["command"] == "publish" and run["state"] == "healthy"
+            ]
+            estimate = (
+                publishers[0].get("publication", {}) if len(publishers) == 1 else {}
+            )
+            activity = "idle"
+            if row.get("ready_batches"):
+                activity = "queued"
+            elif row.get("pending_items"):
+                activity = "pending"
+            if any(
+                run["command"] in {"sync", "map"} and run["state"] == "healthy"
+                for run in runs
+            ):
+                activity = "mapping"
+            if publishers:
+                activity = "publishing"
+            if row.get("failed_batches") or any(
+                p.get("failed", 0)
+                for run in runs
+                for p in run["projects"]
+                if p["project"] == name
+            ):
+                activity += " · errors"
+                alerts.append(
+                    Text(
+                        f"{name}: errors recorded; inspect --details and the log.",
+                        style="red",
+                    )
+                )
+            alerts.extend(
+                Text(
+                    f"{name}: {run['command']} heartbeat is stale ({run['heartbeat_age_seconds']:.0f}s).",
+                    style="yellow",
+                )
+                for run in runs
+                if run["state"] == "stale"
+            )
+            alerts.extend(
+                Text(f"{name}: {error}", style="yellow")
+                for error in row.get("errors", [])
+            )
+            eta = "—"
+            if estimate.get("eta_seconds") is not None:
+                end = datetime.fromisoformat(estimate["estimated_end"])
+                eta = f"{_eta_duration(estimate['eta_seconds'])} ({end:%H:%M} UTC)"
+            rate = estimate.get("handles_per_second")
+            table.add_row(
+                name,
+                _count(row.get("pending_items")),
+                _count(counts.get("prepared")),
+                _count(counts.get("published")),
+                activity,
+                f"{rate:,.1f}" if rate is not None else "—",
+                eta,
+            )
+        backlog = status.get("backlog_estimate", {})
+        if backlog.get("eta_seconds") is not None:
+            alerts.append(
+                Text(
+                    f"Known backlog: ~{_eta_duration(backlog['eta_seconds'])} to publish (excludes future arrivals)."
+                )
+            )
+        return Group(
+            *lines,
+            table,
+            *alerts,
+            Text(
+                "Pending = catalog items; Prepared / Published = recorded Handle totals.",
+                style="dim",
+            ),
+            Text("--details for batches, runs and history", style="dim"),
+        )
 
     @staticmethod
     def _disk_table(status: dict) -> Table:
@@ -140,8 +281,8 @@ class TopCommand(Command):
             "End ~ (UTC)",
         ):
             table.add_column(heading)
-        for run in status["runs"]:
-            if run["command"] == "publish" and run["status"] == "running":
+        for run in _active_runs(status):
+            if run["command"] == "publish":
                 names = ",".join(row["project"] for row in run["projects"])
                 table.add_row(*_eta_row(f"{names} batch", run["publication"]))
         table.add_row(*_eta_row("Known backlog ~", estimate))
@@ -166,7 +307,7 @@ class TopCommand(Command):
                 no_wrap=heading in {"State", "Cmd", "Project"},
             )
 
-        active_runs = [run for run in status["runs"] if run["status"] == "running"]
+        active_runs = _active_runs(status)
         for run in active_runs:
             color = {"healthy": "green", "stale": "yellow", "failed": "red"}.get(
                 run["state"], "dim"
@@ -209,7 +350,7 @@ class TopCommand(Command):
     @staticmethod
     def _history_table(status: dict) -> Table:
         minutes = status["history_seconds"] / 60
-        active_runs = [run for run in status["runs"] if run["status"] == "running"]
+        active_runs = _active_runs(status)
         displayed_runs = active_runs or status["runs"][:1]
         scope = "Current run history" if active_runs else "Latest run history"
         table = Table(title=f"{scope} · last {minutes:g} minutes", padding=(0, 0))
@@ -253,6 +394,40 @@ class TopCommand(Command):
         if not any(run["history"] for run in displayed_runs):
             table.add_row("—", "no samples in window", *("—" for _ in range(7)))
         return table
+
+
+def _count(value: int | None) -> str:
+    return f"{value:,}" if value is not None else "—"
+
+
+def _run_projects(run: dict) -> set[str]:
+    return {row["project"] for row in run.get("projects", [])} or set(
+        run.get("selected_projects", [])
+    )
+
+
+def _active_runs(status: dict) -> list[dict]:
+    """Hide stale records superseded by a newer run, including a finished one.
+
+    Healthy concurrent runs remain visible. Raw JSON retains every record.
+    """
+    result = []
+    for run in status["runs"]:
+        if run.get("status") != "running":
+            continue
+        projects = _run_projects(run)
+        newer_projects = set()
+        if run.get("state") == "stale" and run.get("started_at"):
+            for other in status["runs"]:
+                if (
+                    other["command"] == run["command"]
+                    and other.get("started_at", "") > run["started_at"]
+                ):
+                    newer_projects.update(_run_projects(other))
+        if projects and projects <= newer_projects:
+            continue
+        result.append(run)
+    return result
 
 
 def _input_unit(command: str) -> str:

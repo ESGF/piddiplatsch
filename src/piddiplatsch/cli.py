@@ -484,6 +484,9 @@ def config_explain(
 @click.option("--project", help="Show only one project.")
 @click.option("--once", is_flag=True, help="Print one snapshot and exit.")
 @click.option(
+    "--details", is_flag=True, help="Include batch health, run details and history."
+)
+@click.option(
     "--json", "json_output", is_flag=True, help="Print one JSON snapshot and exit."
 )
 @click.option(
@@ -512,6 +515,7 @@ def top(
     db_path: Path | None,
     project: str | None,
     once: bool,
+    details: bool,
     json_output: bool,
     refresh_seconds: float,
     stale_after_seconds: float | None,
@@ -524,6 +528,7 @@ def top(
         db_path=db_path or Path(stats_config.get("db_path", "piddi.db")),
         project=project,
         once=once,
+        details=details,
         json_output=json_output,
         refresh_seconds=refresh_seconds,
         stale_after_seconds=(

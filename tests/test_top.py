@@ -1,11 +1,14 @@
 import json
 import sqlite3
+from io import StringIO
 from types import SimpleNamespace
 from unittest.mock import patch
 
 from click.testing import CliRunner
+from rich.console import Console
 
 from piddiplatsch.cli import cli
+from piddiplatsch.commands.top import TopCommand
 from piddiplatsch.config import config
 from piddiplatsch.monitoring.stats import Stats, publication_monitor
 from piddiplatsch.monitoring.status import read_status
@@ -177,7 +180,9 @@ def test_top_harvest_reports_durable_writes_and_duplicate_events(tmp_path):
     assert project["catalog_writes"] == project["catalog_refreshes"] == 1
     history = status["runs"][0]["history"][0]
     assert history["deltas"]["catalog_writes"] == 1
-    result = CliRunner().invoke(cli, ["top", "--db", str(db_path), "--once"])
+    result = CliRunner().invoke(
+        cli, ["top", "--db", str(db_path), "--once", "--details"]
+    )
     assert result.exit_code == 0, result.output
     assert "events" in result.output
     assert "ΔWrites" in result.output
@@ -198,6 +203,7 @@ def test_top_once_shows_history(tmp_path):
             "--once",
             "--history",
             "30",
+            "--details",
         ],
     )
 
@@ -230,6 +236,7 @@ def test_top_history_excludes_previous_stopped_run(tmp_path):
                 "--db",
                 str(db_path),
                 "--once",
+                "--details",
             ],
         )
     finally:
@@ -239,6 +246,85 @@ def test_top_history_excludes_previous_stopped_run(tmp_path):
     assert "Current run history · last 60 minutes" in result.output
     assert result.output.count("cmip6") == 2
     assert result.output.count("cmip7") == 2
+
+
+def test_top_default_is_one_table_without_history(tmp_path):
+    db_path = tmp_path / "piddi.db"
+    _monitoring_db(db_path)
+    result = CliRunner().invoke(cli, ["top", "--db", str(db_path), "--once"])
+    assert result.exit_code == 0, result.output
+    assert "Harvest: inactive" in result.output
+    assert "Prepared" in result.output
+    assert result.output.count("cmip6") == 1
+    assert "Active runs" not in result.output
+    assert "Publication estimates" not in result.output
+    assert "Trend" not in result.output
+    assert "--details" in result.output
+
+
+def test_stale_runs_are_hidden_only_when_superseded():
+    from piddiplatsch.commands.top import _active_runs
+
+    stale = dict(
+        command="publish",
+        status="running",
+        state="stale",
+        started_at="2026-10-30T20:00:00+00:00",
+        projects=[{"project": "cmip6"}],
+    )
+    finished = dict(
+        stale,
+        status="completed",
+        state="completed",
+        started_at="2026-10-30T20:10:00+00:00",
+    )
+    assert _active_runs({"runs": [stale, finished]}) == []
+    assert _active_runs({"runs": [stale]}) == [stale]
+    healthy = dict(stale, state="healthy")
+    assert _active_runs({"runs": [healthy, finished]}) == [healthy]
+    other_project = dict(finished, projects=[{"project": "cmip7"}])
+    assert _active_runs({"runs": [stale, other_project]}) == [stale]
+
+
+def test_compact_overview_keeps_eta_and_actionable_warnings():
+    status = {
+        "health": {
+            "storage": [],
+            "projects": [
+                {"project": "cordex-cmip6", "pending_items": 1000, "failed_batches": 1}
+            ],
+        },
+        "runs": [
+            {
+                "command": "publish",
+                "status": "running",
+                "state": "healthy",
+                "projects": [{"project": "cordex-cmip6"}],
+                "publication": {
+                    "handles_per_second": 227.5,
+                    "eta_seconds": 186,
+                    "estimated_end": "2026-10-30T21:28:00+00:00",
+                },
+            },
+            {
+                "command": "map",
+                "status": "running",
+                "state": "stale",
+                "heartbeat_age_seconds": 100,
+                "projects": [{"project": "cmip7"}],
+            },
+        ],
+        "backlog_estimate": {"reason": "waiting for complete counts"},
+    }
+    output = StringIO()
+    Console(file=output, width=120).print(TopCommand._overview(status))
+    rendered = output.getvalue()
+    assert "cordex-cmip6" in rendered
+    assert "227.5" in rendered
+    assert "3m 6s (21:28 UTC)" in rendered
+    assert "errors recorded" in rendered
+    assert "cmip7: map heartbeat is stale (100s)" in rendered
+    assert "waiting for complete counts" not in rendered
 
 
 @patch("piddiplatsch.commands.map.map_catalog")
