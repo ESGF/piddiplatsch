@@ -1,6 +1,7 @@
 import fcntl
 import json
 import logging
+import os
 import re
 from pathlib import Path
 
@@ -61,6 +62,13 @@ class _DumpWriter(DailyJsonlWriter):
                 self._size = None
             with path.open("a", encoding="utf-8") as stream:
                 stream.write(line)
+                stream.flush()
+                os.fsync(stream.fileno())
+            descriptor = os.open(path.parent, os.O_RDONLY)
+            try:
+                os.fsync(descriptor)
+            finally:
+                os.close(descriptor)
             self._count += 1
             self._size = path.stat().st_size
             return path

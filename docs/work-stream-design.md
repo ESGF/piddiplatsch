@@ -1,8 +1,8 @@
 # Proposed catalog and work-stream design
 
-Agreed on 2026-11-01. This is a design for a future implementation pass, not a
-description of the current database schema. The current batching fix remains in
-place until this design is implemented.
+Agreed and implemented on 2026-11-01. This describes the fresh-start storage
+format. Existing per-project catalogs, monitoring databases, and batch manifests
+are not migrated. Start with an empty output directory.
 
 ## Storage and responsibilities
 
@@ -124,8 +124,8 @@ same item or Handle in order so an older update cannot overwrite a newer one.
 
 The local database transaction does not include JSONL files or the external
 Handle server. This design does not promise exactly-once remote HTTP execution
-across crashes. Detailed partial-publication recovery and ordering during
-explicit retries remain implementation decisions for the next pass.
+across crashes. Publication retries resume saved output using a durable per-Handle success
+journal; explicit invalid retries use the conservative policy described below.
 
 ### Batch scheduling and future parallelism
 
@@ -145,8 +145,8 @@ in round robin order before returning to a project with more work. Select work
 in ascending `id` order within each project. Retry older unpublished batches
 before publishing newer batches for that project. A publication failure blocks
 later publication for that project while other eligible projects can continue.
-Explicit retries of older invalid entries still need an ordering policy before
-implementation; round robin scheduling alone does not resolve stale retries.
+Explicit invalid retries use additional stale-output checks; round robin
+scheduling alone does not resolve stale retries.
 
 Projects never write to the same Handle. This permits future parallel execution
 across projects without cross-project Handle ordering. Defer parallel execution
@@ -202,9 +202,56 @@ incoming data exceeds the space freed.
 Never run `VACUUM` unsupervised. File shrinking is an explicit operation with
 Piddi stopped, a database backup, and sufficient free disk space checked.
 
-## Implementation follow-up
+## Implementation details and limits
 
-Define migration from the existing per-project catalogs, batch manifests, and
-monitoring database before replacing them. Preserve current data and recovery
-paths. This design supersedes the older separate per-project catalog/work
-database and DuckDB proposals for the next implementation pass.
+The database lives at `<consumer.output_dir>/piddi.db`, or under
+`catalog.directory`. It has the four application tables above; SQLite also
+maintains its internal `sqlite_sequence` table to prevent work ID reuse after
+retention. `stac_blob` contains a zlib-compressed snapshot envelope with the
+unchanged full STAC item, collection/version identity, publication timestamp,
+and optional local recovery provenance. This retains source fields without
+adding database columns or mixing local provenance into the source item.
+
+`map` prepares pending snapshots and seals batches without publishing. With no
+date selector it processes all pending work; date selectors filter local
+`created_at` UTC days. `publish` without paths publishes complete queued batches.
+Explicit file publication remains available for operator-managed files but does
+not acknowledge database work. Use queued publication for the work stream.
+
+Batch manifests record exact work IDs and mapping outcomes. After files and their
+directories are durable, one transaction associates successful work with the
+batch, marks rejected work invalid, and increments daily mapping/error totals.
+Recovery repeats this transaction idempotently. Successful publication advances
+mapped work and adds published Handle totals in one transaction, also
+idempotently. Publication failure records a failed batch attempt and leaves work
+mapped; a failed-attempt summary is not a unique-job count. HTTP may repeat after
+a crash, but a repeated successful acknowledgement does not repeat the summary.
+
+Each ready batch has an append-only `publication-progress.jsonl` journal tied to
+its output checksum. Successful Handle writes are fsynced before any later write
+to the same Handle. Recovery skips already completed positions, so replay cannot
+roll a Handle back to an earlier successful snapshot. An unsuccessful write blocks
+later writes to that Handle for that attempt, including across input chunks.
+A torn final journal line is removed on recovery; a corrupt complete line blocks
+publication. The most recent unrecorded remote write may still repeat after a crash.
+
+Manual mapping filters may prepare newer work first. Publication waits for older
+pending work, and sync maps the older prefix before publishing ready batches in
+work-ID order. All workers use one nonblocking lock beside the database, including
+map, queued publish, sync, retry, reset, and work cleanup.
+
+Invalid retries are conservative: finish the original saved batch first. An
+explicit retry is refused if newer work was mapped/published or the project has
+any recorded successful publication. This avoids stale retries even after work
+retention. Harvest a correction as a new event, or use an explicit whole-project
+reset to replay all retained snapshots in order. Reset does not recover work
+already removed by retention.
+
+Live heartbeats and recent speed samples are atomic JSON files under `status/`
+beside the database; they do not create monitoring tables. Daily summaries remain
+in `stats`. Harvest checkpoints are shared by topic/partition: a harvest clean
+must include every stored project. Project processing reset preserves checkpoints
+and only requeues that project's retained work.
+
+This implementation supersedes the separate per-project database and DuckDB
+proposals. Parallel project workers remain deferred.

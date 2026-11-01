@@ -1,8 +1,6 @@
 """Persistence, transaction recovery, and indexed reads for SQLite catalogs."""
 
-import json
 import sqlite3
-import zlib
 from contextlib import closing
 
 import pytest
@@ -28,12 +26,12 @@ def entry(version=20260101, *, collection="CMIP6", dataset="dataset", **properti
 
 @pytest.fixture
 def catalog(tmp_path):
-    with SQLiteCatalog("cmip6", tmp_path / "cmip6.sqlite") as value:
+    with SQLiteCatalog("cmip6", tmp_path / "piddi.db") as value:
         yield value
 
 
 def test_persists_complete_items_and_checkpoints_across_reopen(tmp_path):
-    path = tmp_path / "nested" / "cmip6.sqlite"
+    path = tmp_path / "nested" / "piddi.db"
     original = entry()
     checkpoint = KafkaCheckpoint("publications", 0, 42)
     with SQLiteCatalog("cmip6", path) as catalog:
@@ -192,22 +190,23 @@ def test_reset_clears_items_and_checkpoints_and_allows_replay(catalog):
 
 
 def test_project_file_ownership_and_schema_version_are_checked(tmp_path):
-    path = tmp_path / "cmip6.sqlite"
+    path = tmp_path / "piddi.db"
     with SQLiteCatalog("cmip6", path) as catalog:
         with catalog.transaction() as transaction:
             transaction.put_item(entry())
-    with pytest.raises(CatalogError, match="does not match"):
-        SQLiteCatalog("cmip7", path)
+    with SQLiteCatalog("cmip7", path) as catalog:
+        assert list(catalog.iter_items()) == []
+        assert catalog.get_checkpoint("topic", 0) is None
     with SQLiteCatalog("cmip6", path) as catalog:
         assert catalog.get_item("CMIP6", entry().item_id) is not None
     with sqlite3.connect(path) as connection:
-        connection.execute("UPDATE catalog_metadata SET schema_version = 999")
-    with pytest.raises(CatalogError, match="schema version"):
+        connection.execute("PRAGMA user_version=999")
+    with pytest.raises(CatalogError, match="schema"):
         SQLiteCatalog("cmip6", path)
 
 
 def test_close_rolls_back_and_invalidates_transaction_and_reader(tmp_path):
-    path = tmp_path / "cmip6.sqlite"
+    path = tmp_path / "piddi.db"
     catalog = SQLiteCatalog("cmip6", path)
     with catalog.transaction() as transaction:
         transaction.put_item(entry(1))
@@ -254,7 +253,7 @@ def test_corrupt_payload_is_an_error_but_predecessor_search_does_not_decode(cata
     with catalog.transaction() as transaction:
         transaction.put_item(entry(1))
     with sqlite3.connect(catalog.path) as connection:
-        connection.execute("UPDATE items SET payload = ?", (b"corrupt",))
+        connection.execute("UPDATE catalog_items SET stac_blob = ?", (b"corrupt",))
     assert catalog.find_previous_version("CMIP6", "dataset", 2) == entry(1).item_id
     with pytest.raises(CatalogError, match="Invalid stored"):
         catalog.get_item("CMIP6", entry(1).item_id)
@@ -269,25 +268,28 @@ def test_compressed_storage_and_query_indexes(catalog):
         transaction.put_item(large)
     with sqlite3.connect(catalog.path) as connection:
         assert (
-            connection.execute("SELECT length(payload) FROM items").fetchone()[0] < 5000
+            connection.execute(
+                "SELECT length(stac_blob) FROM catalog_items"
+            ).fetchone()[0]
+            < 5000
         )
         exact_plan = connection.execute(
-            "EXPLAIN QUERY PLAN SELECT payload FROM items WHERE collection_id = ? AND item_id = ?",
+            "EXPLAIN QUERY PLAN SELECT stac_blob FROM catalog_items WHERE project='cmip6' AND collection_id = ? AND item_id = ?",
             ("CMIP6", large.item_id),
         ).fetchall()
         previous_plan = connection.execute(
-            "EXPLAIN QUERY PLAN SELECT item_id FROM items "
-            "WHERE collection_id = ? AND dataset_id = ? AND version_number < ? "
+            "EXPLAIN QUERY PLAN SELECT item_id FROM catalog_items "
+            "WHERE project='cmip6' AND collection_id = ? AND dataset_id = ? AND version_number < ? "
             "ORDER BY version_number DESC, item_id DESC LIMIT 1",
             ("CMIP6", "dataset", 20260102),
         ).fetchall()
     assert any("SEARCH" in row[3] for row in exact_plan)
-    assert any("COVERING INDEX items_versions" in row[3] for row in previous_plan)
+    assert any("INDEX catalog_versions" in row[3] for row in previous_plan)
     assert catalog.get_item("CMIP6", large.item_id) == large
 
 
 def test_separate_connections_observe_committed_state_only(tmp_path):
-    path = tmp_path / "cmip6.sqlite"
+    path = tmp_path / "piddi.db"
     with SQLiteCatalog("cmip6", path) as writer, SQLiteCatalog("cmip6", path) as reader:
         with writer.transaction() as transaction:
             transaction.put_item(entry())
@@ -296,7 +298,7 @@ def test_separate_connections_observe_committed_state_only(tmp_path):
 
 
 def test_lock_failure_raises_catalog_error_and_allows_later_retry(tmp_path):
-    path = tmp_path / "cmip6.sqlite"
+    path = tmp_path / "piddi.db"
     with (
         SQLiteCatalog("cmip6", path) as first,
         SQLiteCatalog("cmip6", path, timeout=0) as second,
@@ -337,7 +339,7 @@ def test_reset_failure_preserves_items_and_checkpoints(catalog):
         transaction.set_checkpoint(KafkaCheckpoint("topic", 0, 10))
     with sqlite3.connect(catalog.path) as connection:
         connection.execute(
-            "CREATE TRIGGER prevent_checkpoint_delete BEFORE DELETE ON checkpoints "
+            "CREATE TRIGGER prevent_checkpoint_delete BEFORE DELETE ON kafka_checkpoints "
             "BEGIN SELECT RAISE(ABORT, 'simulated reset failure'); END"
         )
     with pytest.raises(CatalogError, match="reset failure"):
@@ -381,7 +383,7 @@ def test_read_only_open_does_not_create_missing_database(tmp_path):
 
 
 def test_read_only_snapshot_is_shared_by_stream_and_predecessor_queries(tmp_path):
-    path = tmp_path / "cmip6.sqlite"
+    path = tmp_path / "piddi.db"
     with SQLiteCatalog("cmip6", path) as writer:
         with writer.transaction() as transaction:
             transaction.put_item(entry(1))
@@ -405,114 +407,45 @@ def test_read_only_snapshot_is_shared_by_stream_and_predecessor_queries(tmp_path
             )
 
 
-def test_version_one_catalog_remains_readable_and_migrates_on_writer_open(tmp_path):
-    path = tmp_path / "cmip6.sqlite"
-    original = entry(1)
-    with sqlite3.connect(path) as connection:
-        connection.execute(
-            "CREATE TABLE catalog_metadata (singleton INTEGER PRIMARY KEY, project TEXT, schema_version INTEGER)"
-        )
-        connection.execute("INSERT INTO catalog_metadata VALUES (1, 'cmip6', 1)")
-        connection.execute(
-            "CREATE TABLE items (collection_id TEXT, item_id TEXT, dataset_id TEXT, "
-            "version_number INTEGER, payload BLOB, PRIMARY KEY (collection_id, item_id))"
-        )
-        connection.execute(
-            "INSERT INTO items VALUES (?, ?, ?, ?, ?)",
-            (
-                original.collection_id,
-                original.item_id,
-                original.dataset_id,
-                original.version_number,
-                zlib.compress(json.dumps(original.item).encode()),
-            ),
-        )
-        connection.execute(
-            "CREATE TABLE checkpoints (topic TEXT, partition INTEGER, next_offset INTEGER, PRIMARY KEY (topic, partition))"
-        )
-        connection.execute("INSERT INTO checkpoints VALUES ('topic', 0, 42)")
-    original_bytes = path.read_bytes()
-    with SQLiteCatalog("cmip6", path, read_only=True) as reader:
-        assert reader.get_item("CMIP6", original.item_id) == original
-        assert list(reader.iter_items()) == [original]
-        assert reader.get_checkpoint("topic", 0).next_offset == 42
-    assert path.read_bytes() == original_bytes
-    with SQLiteCatalog("cmip6", path) as writer:
-        assert writer.get_item("CMIP6", original.item_id) == original
-        assert writer.get_checkpoint("topic", 0).next_offset == 42
-        updated = CatalogEntry(
-            "CMIP6", original.item, "dataset", 1, "2026-10-12T10:15:00Z"
-        )
-        with writer.transaction() as transaction:
-            transaction.put_item(updated)
-    with SQLiteCatalog("cmip6", path, read_only=True) as reader:
-        assert reader.get_item("CMIP6", original.item_id) == updated
+def test_work_snapshots_and_summary_acknowledgement_are_transactional(catalog):
+    from piddiplatsch.core.messages import KafkaSource
 
-
-def test_version_three_migrates_without_rewriting_payload_and_indexes_recovery(
-    tmp_path,
-):
-    path = tmp_path / "cmip6.sqlite"
-    value = entry()
-    payload = zlib.compress(json.dumps(value.item).encode())
-    with sqlite3.connect(path) as connection:
-        connection.execute(
-            "CREATE TABLE catalog_metadata (singleton INTEGER PRIMARY KEY, project TEXT, schema_version INTEGER)"
-        )
-        connection.execute("INSERT INTO catalog_metadata VALUES (1, 'cmip6', 3)")
-        connection.execute(
-            "CREATE TABLE items (collection_id TEXT, item_id TEXT, dataset_id TEXT, "
-            "version_number INTEGER, payload BLOB, publication_time TEXT, event_date TEXT, "
-            "PRIMARY KEY (collection_id, item_id))"
-        )
-        connection.execute(
-            "INSERT INTO items VALUES (?, ?, ?, ?, ?, NULL, NULL)",
-            (
-                value.collection_id,
-                value.item_id,
-                value.dataset_id,
-                value.version_number,
-                payload,
-            ),
-        )
-    with SQLiteCatalog("cmip6", path, read_only=True) as legacy:
-        assert legacy.get_item(value.collection_id, value.item_id) == value
-        assert list(legacy.iter_items(remote_refresh_only=True)) == []
-    with SQLiteCatalog("cmip6", path) as upgraded:
-        assert upgraded.get_item(value.collection_id, value.item_id) == value
-        assert list(upgraded.iter_items(remote_refresh_only=True)) == []
-    with sqlite3.connect(path) as connection:
-        assert connection.execute("SELECT payload FROM items").fetchone()[0] == payload
-        assert (
-            connection.execute(
-                "SELECT schema_version FROM catalog_metadata"
-            ).fetchone()[0]
-            == 5
-        )
-        plan = connection.execute(
-            "EXPLAIN QUERY PLAN SELECT payload FROM items WHERE remote_refresh IS NOT NULL ORDER BY collection_id, item_id"
-        ).fetchall()
-        assert any("items_remote_refresh" in row[3] for row in plan)
-
-
-def test_pending_state_rolls_back_with_item_and_protects_new_changes(catalog):
-    original = entry()
+    first = entry(custom="original")
     with pytest.raises(RuntimeError), catalog.transaction() as transaction:
-        transaction.put_item(original)
-        raise RuntimeError("failed write")
-    assert catalog.pending_changes().count == 0
-    with catalog.transaction() as transaction:
-        transaction.put_item(original)
-    before = catalog.pending_changes()
-    with catalog.transaction() as transaction:
-        transaction.put_item(entry(custom="newer"))
-    after = catalog.pending_changes()
-    assert after.count == 1
-    assert after.oldest_at == before.oldest_at
-    catalog.acknowledge_mapped(before.generation, before.sequence)
-    assert catalog.pending_changes().count == 1
-    catalog.acknowledge_mapped(after.generation, after.sequence)
-    assert catalog.pending_changes().count == 0
-    catalog.reset()
-    with pytest.raises(CatalogError, match="different catalog generation"):
-        catalog.acknowledge_mapped(after.generation, 0)
+        transaction.put_item(first)
+        transaction.add_work(first, KafkaSource("topic", 0, 0))
+        transaction.set_checkpoint(KafkaCheckpoint("topic", 0, 1))
+        raise RuntimeError("interrupted")
+    assert catalog.pending_work().count == 0
+    assert catalog.get_checkpoint("topic", 0) is None
+    for offset, record in enumerate((first, entry(custom="updated"))):
+        with catalog.transaction() as transaction:
+            transaction.put_item(record)
+            transaction.add_work(record, KafkaSource("topic", 0, offset))
+            transaction.set_checkpoint(KafkaCheckpoint("topic", 0, offset + 1))
+    work = list(catalog.iter_pending(10))
+    assert [row.entry.item["properties"]["custom"] for row in work] == [
+        "original",
+        "updated",
+    ]
+    outcomes = [{"id": work[0].id, "error": None}]
+    catalog.seal_batch("batch", outcomes)
+    catalog.seal_batch("batch", outcomes)
+    assert catalog.pending_work().count == 1
+    catalog.publish_batch("batch", 2)
+    catalog.publish_batch("batch", 2)
+    assert catalog._execute("SELECT items,handles,errors FROM stats").fetchone() == (
+        1,
+        2,
+        0,
+    )
+
+
+def test_fresh_database_has_four_application_tables(catalog):
+    tables = {
+        row[0]
+        for row in catalog._execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'"
+        )
+    }
+    assert tables == {"catalog_items", "work_items", "kafka_checkpoints", "stats"}

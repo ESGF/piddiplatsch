@@ -11,11 +11,26 @@ from piddiplatsch.monitoring.disk import disk_status
 
 def read_health(project: str | None = None) -> dict:
     output = Path(config.get("consumer", "output_dir", "outputs"))
-    catalogs = Path(config.get("catalog", "directory") or output / "catalog")
+    from piddiplatsch.catalog.api import get_catalog_directory
+
+    catalogs = get_catalog_directory()
     batches = Path(config.get("batch", "directory") or output / "batches")
     selected = config.get("consumer", "projects", [])
     names = set(selected) if isinstance(selected, list) else set()
-    names.update(path.stem for path in catalogs.glob("*.sqlite"))
+    database = catalogs / "piddi.db"
+    if database.is_file():
+        try:
+            with closing(
+                sqlite3.connect(database.resolve().as_uri() + "?mode=ro", uri=True)
+            ) as connection:
+                names.update(
+                    row[0]
+                    for row in connection.execute(
+                        "SELECT DISTINCT project FROM catalog_items UNION SELECT DISTINCT project FROM work_items"
+                    )
+                )
+        except sqlite3.Error:
+            pass  # Per-project rows below report the storage error.
     if batches.is_dir():
         names.update(path.name for path in batches.iterdir() if path.is_dir())
     if project:
@@ -28,6 +43,7 @@ def read_health(project: str | None = None) -> dict:
             "project": name,
             "total_items": None,
             "pending_items": None,
+            "invalid_items": None,
             "ready_batches": 0,
             "failed_batches": 0,
             "last_publication": None,
@@ -35,7 +51,7 @@ def read_health(project: str | None = None) -> dict:
             "ready_batch_ids": [],
             "errors": [],
         }
-        catalog = catalogs / f"{name}.sqlite"
+        catalog = database
         if catalog.is_file():
             try:
                 with closing(
@@ -43,9 +59,14 @@ def read_health(project: str | None = None) -> dict:
                         catalog.resolve().as_uri() + "?mode=ro", uri=True, timeout=0.2
                     )
                 ) as connection:
-                    row["total_items"], row["pending_items"] = connection.execute(
-                        "SELECT (SELECT COUNT(*) FROM items), (SELECT COUNT(*) FROM pending_items)"
-                    ).fetchone()
+                    row["total_items"], row["pending_items"], row["invalid_items"] = (
+                        connection.execute(
+                            "SELECT (SELECT COUNT(*) FROM catalog_items WHERE project=?), "
+                            "(SELECT COUNT(*) FROM work_items WHERE project=? AND state='pending'), "
+                            "(SELECT COUNT(*) FROM work_items WHERE project=? AND state='invalid')",
+                            (name, name, name),
+                        ).fetchone()
+                    )
             except sqlite3.Error as exc:
                 row["errors"].append(f"Catalog status unavailable: {exc}")
         _batch_health(batches / name, row)

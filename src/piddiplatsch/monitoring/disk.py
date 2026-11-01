@@ -19,12 +19,9 @@ def storage_paths() -> tuple[Path, ...]:
     output = Path(config.get("consumer", "output_dir", "outputs"))
     paths = [
         output,
-        Path(config.get("catalog", "directory") or output / "catalog"),
+        Path(config.get("catalog", "directory") or output),
         Path(config.get("batch", "directory") or output / "batches"),
     ]
-    value = config.get("stats", "db_path")
-    if value and config.get("stats", "enable_db", True):
-        paths.append(Path(value).parent)
     return tuple(sorted({path.resolve() for path in paths}))
 
 

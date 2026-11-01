@@ -1,5 +1,4 @@
 import json
-import sqlite3
 
 from piddiplatsch.config import config
 from piddiplatsch.monitoring.health import read_health
@@ -8,13 +7,18 @@ from piddiplatsch.monitoring.health import read_health
 def test_health_reads_backlog_failed_work_and_last_success_without_migration(tmp_path):
     config._set("consumer", "output_dir", str(tmp_path))
     config._set("consumer", "projects", ["cmip7"])
-    catalog = tmp_path / "catalog/cmip7.sqlite"
-    catalog.parent.mkdir()
-    with sqlite3.connect(catalog) as connection:
-        connection.execute("CREATE TABLE items (id INTEGER PRIMARY KEY)")
-        connection.executemany("INSERT INTO items VALUES (?)", [(1,), (2,), (3,)])
-        connection.execute("CREATE TABLE pending_items (id INTEGER PRIMARY KEY)")
-        connection.executemany("INSERT INTO pending_items VALUES (?)", [(1,), (2,)])
+    catalog = tmp_path / "piddi.db"
+    from piddiplatsch.catalog import CatalogEntry
+    from piddiplatsch.catalog.sqlite import SQLiteCatalog
+    from piddiplatsch.core.messages import KafkaSource
+
+    with SQLiteCatalog("cmip7", catalog) as writer:
+        with writer.transaction() as transaction:
+            for index in range(3):
+                entry = CatalogEntry("CMIP7", {"id": f"item{index}"}, "dataset", index)
+                transaction.put_item(entry)
+                if index < 2:
+                    transaction.add_work(entry, KafkaSource("topic", 0, index))
     original = catalog.read_bytes()
     root = tmp_path / "batches/cmip7"
     (root / "ready/batch-one").mkdir(parents=True)
@@ -32,6 +36,7 @@ def test_health_reads_backlog_failed_work_and_last_success_without_migration(tmp
             "project": "cmip7",
             "total_items": 3,
             "pending_items": 2,
+            "invalid_items": 0,
             "ready_batches": 1,
             "failed_batches": 1,
             "last_publication": marker,
@@ -49,8 +54,7 @@ def test_health_reports_old_or_unreadable_catalog_without_creating_missing_paths
 ):
     config._set("consumer", "output_dir", str(tmp_path))
     config._set("consumer", "projects", ["cmip6", "cmip7"])
-    catalog = tmp_path / "catalog/cmip6.sqlite"
-    catalog.parent.mkdir()
+    catalog = tmp_path / "piddi.db"
     catalog.write_text("not a database")
 
     rows = read_health()["projects"]
@@ -60,7 +64,7 @@ def test_health_reports_old_or_unreadable_catalog_without_creating_missing_paths
     assert "Catalog status unavailable" in rows[0]["errors"][0]
     assert rows[1]["project"] == "cmip7"
     assert not (tmp_path / "batches").exists()
-    assert not (tmp_path / "catalog/cmip7.sqlite").exists()
+    assert catalog.read_text() == "not a database"
 
 
 def test_health_counts_publication_failure_as_ready_and_failed(tmp_path):

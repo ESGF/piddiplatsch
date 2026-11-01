@@ -27,84 +27,61 @@ def read_status(
     with sqlite3.connect(path.resolve().as_uri() + "?mode=ro", uri=True) as connection:
         connection.row_factory = sqlite3.Row
         try:
-            version_row = connection.execute(
-                "SELECT value FROM monitor_meta WHERE key = 'schema_version'"
-            ).fetchone()
-            runs = connection.execute(
-                "SELECT * FROM monitor_runs ORDER BY heartbeat_at DESC"
+            handle_totals = connection.execute(
+                "SELECT project, SUM(items) AS mapped_items, SUM(handles) AS published, SUM(errors) AS errors FROM stats "
+                "WHERE (? IS NULL OR lower(project)=lower(?)) GROUP BY project ORDER BY project",
+                (project, project),
             ).fetchall()
-        except sqlite3.OperationalError as exc:
-            raise ValueError(f"{path} is not a valid monitoring database") from exc
-        version = int(version_row["value"]) if version_row else 0
-        if version not in (2, 3):
-            raise ValueError(
-                f"{path} uses unsupported monitoring schema version {version}"
-            )
-
-        handle_totals = connection.execute(
-            """
-            SELECT p.project,
-                   SUM(CASE WHEN r.command IN ('map', 'sync')
-                            THEN p.handles ELSE NULL END) AS prepared,
-                   SUM(CASE WHEN r.command = 'publish' THEN p.handles ELSE NULL END) AS published
-            FROM monitor_project_stats p JOIN monitor_runs r USING (run_id)
-            WHERE (? IS NULL OR lower(p.project) = lower(?))
-            GROUP BY p.project ORDER BY p.project
-            """,
-            (project, project),
-        ).fetchall()
+        except sqlite3.Error as exc:
+            raise ValueError(f"{path} is not a valid piddi database") from exc
+        # Prepared Handles remain in immutable batch files; stats intentionally
+        # counts mapped work entries and published Handles, not prepared Handles.
         result_runs = []
-        catalog_columns = (
-            "catalog_writes, catalog_refreshes"
-            if version >= 3
-            else "0 AS catalog_writes, 0 AS catalog_refreshes"
-        )
-        history_cutoff = (now - datetime.timedelta(seconds=history_seconds)).isoformat()
-        for run_row in runs:
-            run = dict(run_row)
-            project_rows = connection.execute(
-                f"""
-                SELECT project, consumed, routed, filtered, succeeded, skipped,
-                       failed, handles, updated_at, {catalog_columns}
-                FROM monitor_project_stats
-                WHERE run_id = ? AND (? IS NULL OR lower(project) = lower(?))
-                ORDER BY project
-                """,  # noqa: S608 - columns are fixed schema-dependent literals
-                (run["run_id"], project, project),
-            ).fetchall()
-            selected = json.loads(run.pop("selected_projects"))
-            if (
-                project
-                and project.casefold() not in {value.casefold() for value in selected}
-                and not project_rows
-            ):
+        cutoff = (now - datetime.timedelta(seconds=history_seconds)).isoformat()
+        for filename in (path.parent / "status").glob("*.json"):
+            try:
+                payload = json.loads(filename.read_text())
+                run = payload["run"]
+                selected = run.get("selected_projects", [])
+                rows = [
+                    row
+                    for row in payload["projects"]
+                    if project is None
+                    or row["project"].casefold() == project.casefold()
+                ]
+                if (
+                    project
+                    and project.casefold() not in {name.casefold() for name in selected}
+                    and not rows
+                ):
+                    continue
+                samples = [
+                    row
+                    for row in payload["samples"]
+                    if row["sampled_at"] >= cutoff
+                    and (
+                        project is None
+                        or row["project"].casefold() == project.casefold()
+                    )
+                ]
+                heartbeat = datetime.datetime.fromisoformat(run["heartbeat_at"])
+                age = max(0.0, (now - heartbeat).total_seconds())
+                state = run["status"]
+                if state == "running":
+                    state = "healthy" if age <= stale_after_seconds else "stale"
+                run.update(
+                    state=state,
+                    heartbeat_age_seconds=age,
+                    projects=rows,
+                    history=_summarize_history(samples),
+                )
+                if run["command"] == "publish":
+                    run["publication"] = publication_progress(run, samples, now)
+                result_runs.append(run)
+            except (OSError, ValueError, KeyError, TypeError):
                 continue
-            sample_rows = connection.execute(
-                f"""
-                SELECT project, sampled_at, consumed, routed, filtered,
-                       succeeded, skipped, failed, handles, {catalog_columns}
-                FROM monitor_samples
-                WHERE run_id = ? AND sampled_at >= ?
-                  AND (? IS NULL OR lower(project) = lower(?))
-                ORDER BY project, sampled_at
-                """,  # noqa: S608 - columns are fixed schema-dependent literals
-                (run["run_id"], history_cutoff, project, project),
-            ).fetchall()
-            heartbeat = datetime.datetime.fromisoformat(run["heartbeat_at"])
-            age = max(0.0, (now - heartbeat).total_seconds())
-            state = run["status"]
-            if state == "running":
-                state = "healthy" if age <= stale_after_seconds else "stale"
-            run.update(
-                selected_projects=selected,
-                state=state,
-                heartbeat_age_seconds=age,
-                projects=[dict(row) for row in project_rows],
-                history=_summarize_history(sample_rows),
-            )
-            if run["command"] == "publish":
-                run["publication"] = publication_progress(run, sample_rows, now)
-            result_runs.append(run)
+        result_runs.sort(key=lambda run: run["heartbeat_at"], reverse=True)
+        version = 1
 
     return {
         "schema_version": version,

@@ -2,6 +2,7 @@
 
 from contextlib import closing
 from dataclasses import dataclass
+from pathlib import Path
 
 import click
 
@@ -22,6 +23,7 @@ class HarvestCommand(KafkaCommand):
     catalog: bool | None = None
     clean_catalog: bool = False
     clean_projects: tuple[str, ...] = ()
+    archives: tuple[Path, ...] = ()
 
     def execute(self) -> None:
         catalog_cfg = config.get("catalog", {})
@@ -62,6 +64,24 @@ class HarvestCommand(KafkaCommand):
                     click.echo(
                         f"Cleared catalogs: {', '.join(clean_projects)}. Replaying retained Kafka history."
                     )
+                if self.archives:
+                    if not enabled:
+                        raise ValueError("Archive replay requires the database catalog")
+                    from piddiplatsch.catalog.replay import archived_messages
+                    from piddiplatsch.consumer import start_consumer
+
+                    with (
+                        closing(archived_messages(self.archives)) as messages,
+                        self.progress(title="harvest replay", stream=True) as progress,
+                    ):
+                        start_consumer(
+                            processor=processor,
+                            direct_messages=messages,
+                            limit=self.limit,
+                            monitor_db=True,
+                            progress=progress,
+                        )
+                    return
                 self.run_consumer(
                     title="harvest",
                     processor=processor,

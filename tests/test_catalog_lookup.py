@@ -26,7 +26,7 @@ def test_default_lookup_uses_index_and_project_collection(
     collection = item["collection"]
     config._set("plugins", project, {"stac": {"collection": collection}})
     ids = [f"{dataset_id}.v{version}" for version in (1, 2, 10)]
-    with SQLiteCatalog(project, tmp_path / f"{project}.sqlite") as catalog:
+    with SQLiteCatalog(project, tmp_path / "piddi.db") as catalog:
         with catalog.transaction() as transaction:
             for version, item_id in zip((1, 2, 10), ids, strict=True):
                 transaction.put_item(

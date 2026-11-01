@@ -1,13 +1,15 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
+import os
 import re
 import threading
 import time
 from collections.abc import Callable, Iterable
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from contextlib import AbstractContextManager, ExitStack, closing
+from contextlib import AbstractContextManager, ExitStack, closing, nullcontext
 from dataclasses import dataclass, replace
 from itertools import islice
 from pathlib import Path
@@ -82,6 +84,87 @@ class _PublicationResultWriter(AbstractContextManager):
         self.close()
 
 
+class _PublicationJournal:
+    """Durable per-Handle progress for one immutable batch output file.
+
+    A successful write must be journaled before a later write to that Handle.
+    After a crash only the last unrecorded write may repeat, never an older one.
+    """
+
+    def __init__(self, path, source):
+        self.path = path
+        self.successes = {}
+        self.blocked = set()
+        self.lock = threading.Lock()
+        digest = hashlib.sha256()
+        with source.open("rb") as stream:
+            for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+                digest.update(chunk)
+        self.digest = digest.hexdigest()
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        self.stream = path.open("a+b")
+        try:
+            self.stream.seek(0)
+            while True:
+                position = self.stream.tell()
+                line = self.stream.readline()
+                if not line:
+                    break
+                if not line.endswith(b"\n"):
+                    self.stream.truncate(position)
+                    self.stream.flush()
+                    os.fsync(self.stream.fileno())
+                    break
+                record = json.loads(line)
+                if (
+                    record["sha256"] != self.digest
+                    or not isinstance(record["handle"], str)
+                    or type(record["line"]) is not int
+                    or record["line"] < 1
+                ):
+                    raise ValueError(
+                        "Publication journal does not match immutable batch output"
+                    )
+                self.successes[record["handle"]] = max(
+                    self.successes.get(record["handle"], 0), record["line"]
+                )
+            self.stream.seek(0, os.SEEK_END)
+            self.stream.flush()
+            os.fsync(self.stream.fileno())
+            descriptor = os.open(path.parent, os.O_RDONLY)
+            try:
+                os.fsync(descriptor)
+            finally:
+                os.close(descriptor)
+        except BaseException:
+            self.stream.close()
+            raise
+
+    def status(self, handle, line):
+        with self.lock:
+            if line <= self.successes.get(handle, 0):
+                return "done"
+            return "blocked" if handle in self.blocked else "pending"
+
+    def record(self, outcome):
+        with self.lock:
+            if outcome.error is not None:
+                self.blocked.add(outcome.handle)
+                return
+            if outcome.line_number <= self.successes.get(outcome.handle, 0):
+                return
+            record = dict(
+                handle=outcome.handle, line=outcome.line_number, sha256=self.digest
+            )
+            self.stream.write((json.dumps(record) + "\n").encode())
+            self.stream.flush()
+            os.fsync(self.stream.fileno())
+            self.successes[outcome.handle] = outcome.line_number
+
+    def close(self):
+        self.stream.close()
+
+
 class HandlePublisher:
     """Publish prepared Handles from immutable JSONL files."""
 
@@ -114,6 +197,7 @@ class HandlePublisher:
         log_operation: str = "publish",
         expected_handles: int | None = None,
         batch_id: str | None = None,
+        publication_journal: Path | None = None,
     ) -> PublishResult:
         if limit is not None and limit < 1:
             raise ValueError("limit must be at least 1")
@@ -156,6 +240,9 @@ class HandlePublisher:
             ) as monitoring,
             ExitStack() as stack,
         ):
+            journal = stack.enter_context(
+                self._journal_context(publication_journal, files, offset, limit)
+            )
             records = stack.enter_context(
                 closing(
                     iter_jsonl_records(
@@ -229,6 +316,7 @@ class HandlePublisher:
                     outcome_callback=report,
                     expected_project=selected_project,
                     validate_project=validate_project,
+                    journal=journal,
                 )
                 completed += len(batch)
         if not validate_project:
@@ -266,6 +354,16 @@ class HandlePublisher:
         # second unbounded collection when a service rejects a large run.
         if len(result.errors) < 100:
             result.errors.append(error)
+
+    @staticmethod
+    def _journal_context(path, files, offset, limit):
+        if path is None:
+            return nullcontext(None)
+        if len(files) != 1 or offset or limit is not None:
+            raise ValueError(
+                "A publication journal requires one complete immutable output file"
+            )
+        return closing(_PublicationJournal(path, files[0]))
 
     def _record_outcome(
         self,
@@ -351,6 +449,7 @@ class HandlePublisher:
         outcome_callback: OutcomeCallback,
         expected_project: str | None,
         validate_project: bool,
+        journal=None,
     ) -> None:
         indexed_records = [
             (index, path, line_number, record, contexts[index])
@@ -364,6 +463,7 @@ class HandlePublisher:
                 on_outcome=outcome_callback,
                 expected_project=expected_project,
                 validate_project=validate_project,
+                journal=journal,
             )
 
         # Updates for one Handle form a chain and stay in source order. Separate
@@ -392,6 +492,7 @@ class HandlePublisher:
                     on_outcome=outcome_queue.put,
                     expected_project=expected_project,
                     validate_project=validate_project,
+                    journal=journal,
                 )
             finally:
                 outcome_queue.put(None)
@@ -477,6 +578,7 @@ class HandlePublisher:
         on_outcome: OutcomeCallback,
         expected_project: str | None,
         validate_project: bool,
+        journal=None,
     ) -> None:
         for index, path, line_number, record, context in records:
             handle = record.get("handle") if isinstance(record, dict) else None
@@ -488,6 +590,7 @@ class HandlePublisher:
 
             error: Exception | None = None
             write_result = None
+            state = "pending"
             try:
                 if isinstance(record, Exception):
                     raise record
@@ -497,14 +600,22 @@ class HandlePublisher:
                         f"project {expected_project!r}"
                     )
                 pid, handle_data = self._prepare_record(record)
-                write_result = self._store_with_retries(
-                    str(handle),
-                    pid,
-                    handle_data,
-                    retries=retries,
-                    retry_delay=retry_delay,
-                    on_retry=count_retry,
+                state = (
+                    journal.status(str(handle), line_number) if journal else "pending"
                 )
+                if state == "blocked":
+                    raise ValueError(
+                        "Earlier publication for this Handle failed; later update deferred"
+                    )
+                if state != "done":
+                    write_result = self._store_with_retries(
+                        str(handle),
+                        pid,
+                        handle_data,
+                        retries=retries,
+                        retry_delay=retry_delay,
+                        on_retry=count_retry,
+                    )
             except Exception as exc:
                 # Tracebacks retain this frame, its records, and its outcomes.
                 # Receipts need the exception message, not that reference cycle.
@@ -516,12 +627,18 @@ class HandlePublisher:
                 handle=str(handle or "<invalid>"),
                 error=error,
                 retry_attempts=retry_attempts,
-                action=getattr(write_result, "action", "published"),
+                action=(
+                    "already_published"
+                    if state == "done"
+                    else getattr(write_result, "action", "published")
+                ),
                 url=getattr(write_result, "url", self._record_url(str(handle))),
                 project=context.project,
                 dataset_id=context.dataset_id,
                 file_name=context.file_name,
             )
+            if journal is not None:
+                journal.record(outcome)
             on_outcome(outcome)
 
     def _store_with_retries(

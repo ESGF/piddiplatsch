@@ -113,8 +113,8 @@ class TopCommand(Command):
         for heading in (
             "Project",
             "Catalog items",
-            "Pending items",
-            "Generated handles",
+            "Pending entries",
+            "Mapped entries",
             "Published handles",
             "Errors",
             "Activity",
@@ -135,8 +135,8 @@ class TopCommand(Command):
                     if heading
                     in {
                         "Catalog items",
-                        "Pending items",
-                        "Generated handles",
+                        "Pending entries",
+                        "Mapped entries",
                         "Published handles",
                         "Errors",
                         "Harvest/s",
@@ -156,6 +156,9 @@ class TopCommand(Command):
                 error_totals[name] = error_totals.get(name, 0) + project.get(
                     "failed", 0
                 )
+        error_totals.update(
+            {name: counts.get("errors", 0) for name, counts in totals.items()}
+        )
         alerts = []
         for name in sorted(names):
             row = health.get(name, {})
@@ -183,6 +186,7 @@ class TopCommand(Command):
                 activity = "publishing"
             if (
                 row.get("failed_batches")
+                or row.get("invalid_items")
                 or _latest_mapping_has_errors(name, status["runs"])
                 or any(
                     p.get("failed", 0)
@@ -219,7 +223,7 @@ class TopCommand(Command):
                 name,
                 _count(row.get("total_items")),
                 _count(row.get("pending_items")),
-                _count(counts.get("prepared")),
+                _count(counts.get("mapped_items")),
                 _count(counts.get("published")),
                 Text(
                     _count(error_totals.get(name)),
@@ -254,12 +258,12 @@ def _totals_line(status: dict) -> Text:
         sum(counts) if counts and all(value is not None for value in counts) else None
     )
     generated = [
-        row["prepared"]
+        row["mapped_items"]
         for row in status.get("handle_totals", [])
-        if row.get("prepared") is not None
+        if row.get("mapped_items") is not None
     ]
     return Text(
-        f"Catalog: {_count(datasets)} datasets · Generated: {_count(sum(generated) if generated else None)} handles (recorded)"
+        f"Catalog: {_count(datasets)} datasets · Mapped: {_count(sum(generated) if generated else None)} work entries (recorded)"
     )
 
 

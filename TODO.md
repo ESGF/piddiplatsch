@@ -2,23 +2,22 @@
 
 ## Agreed catalog and work-stream design
 
-See [the design agreed on 2026-11-01](docs/work-stream-design.md) for the proposed
+See [the design agreed on 2026-11-01](docs/work-stream-design.md) for the implemented
 single `piddi.db` with `catalog_items`, `work_items`, `kafka_checkpoints`, and
 `stats`. It records the exact columns, snapshot/state rules, JSONL output,
-archive replay requirements, and retention decisions. This is future work;
-the current batching fix remains in place.
+archive replay requirements, and retention decisions. This format requires a fresh start; no legacy migration is provided.
 
-- [ ] Implement the agreed schema and transactional harvest handoff, including
-  migration from existing catalogs, batches, and monitoring data.
-- [ ] Make mapping/publication use saved work snapshots and processing states;
+- [x] Implement the four-table schema and transactional harvest handoff for a
+  fresh start; backward compatibility and migration are intentionally omitted.
+- [x] Make mapping/publication use saved work snapshots and processing states;
   keep generated Handles in JSONL batches linked by `batch_id`.
-- [ ] Add sequential round robin scheduling of project batches, initially capped
+- [x] Add sequential round robin scheduling of project batches, initially capped
   at 2,000 work entries each. Separate selection, batch execution, and scheduling
   to allow a bounded project-worker pool later; defer parallel execution and
   worker claims until durable recovery and ordering are established.
-- [ ] Add daily summaries and configurable cleanup of old published work without
+- [x] Add daily summaries and configurable cleanup of old published work without
   double counting results. Keep invalid work available for explicit retry.
-- [ ] Keep `VACUUM` an explicit supervised operation with Piddi stopped; scheduled
+- [x] Keep `VACUUM` an explicit supervised operation with Piddi stopped; scheduled
   maintenance only deletes expired work.
 
 ## Handle service
@@ -40,7 +39,7 @@ the current batching fix remains in place.
 
 ## Recovery and Kafka
 
-- [ ] Archive each Kafka event to JSONL before further processing, including
+- [x] Archive each Kafka event to JSONL before further processing, including
   topic, partition, offset, key, and the original message payload. Keep archived
   events unchanged regardless of processing outcome and preserve ordering
   within each partition.
@@ -48,10 +47,10 @@ the current batching fix remains in place.
   initial harvest can contain the complete retained history and produce several
   GB in one day. Split a day's archive into numbered parts with deterministic
   replay ordering; preserve every event across rotation and restart.
-- [ ] Support Kafka and archived JSONL files as alternative inputs to the same
+- [x] Support Kafka and archived JSONL files as alternative inputs to the same
   processing flow, including rebuilding the STAC catalog after Kafka retention
   has removed old events. Dumps are an archive, not the batch pending queue.
-  Current gap: dumps contain payloads without attached Kafka coordinates.
+  Replay requires the new coordinate-bearing archive envelope.
 - [ ] Keep event error policy separate from batching: either stop without
   acknowledging an invalid event, or optionally record the failure, acknowledge
   it, and continue. Never modify an original event; a later correction on Kafka

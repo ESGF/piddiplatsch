@@ -301,7 +301,7 @@ def start_consumer(
     selected_projects = getattr(proc_instance, "project_names", ())
     stats.configure_for_run(
         enable_db=monitor_db and stats_config.get("enable_db", False),
-        db_path=stats_config.get("db_path"),
+        db_path=None,
         log_interval_seconds=stats_config.get("interval_seconds"),
         log_interval_messages=stats_config.get("summary_interval"),
         command="harvest" if isinstance(proc_instance, HarvestProcessor) else "consume",

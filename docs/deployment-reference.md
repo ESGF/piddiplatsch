@@ -28,9 +28,10 @@ pending catalog items into separate batches and publishes them.
 | --- | --- |
 | `/opt/piddiplatsch/.conda` | Application environment. |
 | `/etc/piddi/piddi.toml` | Installed configuration. |
-| `/var/lib/piddi/catalog` | Catalogs and `.harvest-state.json`. |
+| `/var/lib/piddi/.harvest-state.json` | Harvest replay generation and clean progress. |
+| `/var/lib/piddi/status` | Atomic live heartbeats and recent rate samples. |
 | `/var/lib/piddi/batches` | Ready and published sync batches. |
-| `/var/lib/piddi/piddi.db` | Monitoring database. |
+| `/var/lib/piddi/piddi.db` | Catalog, work stream, shared checkpoints, daily summaries. |
 | `/var/lib/piddi/published` | Publication receipts. |
 | `/var/log/piddi/piddi.log` | Application log. |
 
@@ -93,13 +94,13 @@ Publication receipts are saved under `/var/lib/piddi/published/YYYY/MM/DD/`,
 grouped by UTC date. Existing flat receipt files remain in place.
 
 Failed batches stay in `batches/<project>/ready/` and block newer work for that
-project. Other projects can continue. See [Scheduled batch recovery](recovery.md#scheduled-batch-recovery).
+project. Other projects can continue. See [Scheduled batch recovery](recovery.md#publication-interruption).
 
 ## Backups
 
 Stop Piddi before taking a file-based backup. Save the configuration, catalog
 directory (including `.harvest-state.json`), and batch directory together.
-Keep daily Handle files and receipts according to your site's audit policy.
+Keep immutable batch files and receipts according to your site's audit policy.
 Output files and batches have no automatic retention policy.
 
 The maintenance timer compresses closed raw dumps daily; it does not delete old
@@ -123,7 +124,7 @@ Move old application settings from Ansible YAML to `custom.toml`:
 | `piddi_max_errors` | `[plugins.<project>]` `max_errors`; set separately for each affected project. |
 | `piddi_output_dir` | `[consumer]` `output_dir`. |
 | `piddi_log_level`, `piddi_log_file` | `[logging]` `level`, `file`. |
-| `piddi_stats_enable_db`, `piddi_db_path` | `[stats]` `enable_db`, `db_path`. |
+| `piddi_stats_enable_db` | `[stats]` `enable_db` for live status files. |
 
 The playbook rejects these old YAML variables until they are moved.
 

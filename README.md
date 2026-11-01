@@ -27,7 +27,7 @@ piddi config validate
 
 ## Harvest, map, and publish
 
-Fill or update the local catalogs:
+Fill or update the shared `outputs/piddi.db`:
 
 ```bash
 piddi harvest
@@ -36,9 +36,9 @@ piddi harvest
 Prepare Handle files, inspect them, then publish:
 
 ```bash
-piddi map --project cmip6 --date all
-# Inspect the files under outputs/cmip6/handles/ before publishing.
-piddi publish --project cmip6 --date all --workers 4 --retries 3
+piddi map --project cmip6
+# Inspect outputs/batches/cmip6/ready/<batch-id>/handles.jsonl.
+piddi publish --project cmip6 --workers 4 --retries 3
 ```
 
 ## Map and publish with sync
@@ -60,6 +60,10 @@ To run only one configured project:
 ```bash
 piddi sync --project cmip6 --workers 4 --retries 3
 ```
+
+This storage format requires a fresh start. Archive the previous output directory
+and monitoring database, then use an empty output directory. There is no migration
+from per-project catalogs or old batches.
 
 ## Check progress and options
 

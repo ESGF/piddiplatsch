@@ -19,7 +19,6 @@ class StatsConfig(BaseModel):
     interval_seconds: float = Field(default=30, gt=0)
     summary_interval: int = Field(default=10000, gt=0)
     enable_db: bool = True
-    db_path: str = "piddi.db"
     heartbeat_interval_seconds: float = Field(default=5, gt=0)
     sample_interval_seconds: float = Field(default=15, gt=0)
     sample_retention_days: float = Field(default=30, ge=0)
@@ -28,6 +27,10 @@ class StatsConfig(BaseModel):
     @model_validator(mode="before")
     @classmethod
     def _reject_removed_window(cls, data):
+        if isinstance(data, dict) and "db_path" in data:
+            raise ValueError(
+                "[stats].db_path is removed; piddi.db lives under catalog.directory or consumer.output_dir"
+            )
         if isinstance(data, dict) and "history_minutes" in data:
             raise ValueError(
                 "[stats].history_minutes is not supported; top uses the last five minutes"
@@ -242,6 +245,7 @@ class BatchConfig(BaseModel):
     max_items: int = Field(default=2000, ge=1, strict=True)
     publish_workers: int = Field(default=4, ge=1, strict=True)
     publish_retries: int = Field(default=3, ge=0, strict=True)
+    retention_days: int = Field(default=30, ge=1, strict=True)
 
 
 class DiskConfig(BaseModel):

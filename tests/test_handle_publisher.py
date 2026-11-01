@@ -33,9 +33,9 @@ class FakeBackend:
 def test_publication_monitor_records_live_counts_and_preserves_partial_success(
     tmp_path,
 ):
-    db = tmp_path / "monitor.db"
+    db = tmp_path / "piddi.db"
+    config._set("catalog", "directory", str(tmp_path))
     config._set("stats", "enable_db", True)
-    config._set("stats", "db_path", str(db))
     source = tmp_path / "handles.jsonl"
     write_jsonl(
         source, [handle_record("good"), handle_record("bad"), handle_record("good2")]
@@ -60,13 +60,14 @@ def test_publication_monitor_records_live_counts_and_preserves_partial_success(
     assert snapshots[0]["runs"][0]["batch_id"] == "test-batch"
     assert snapshots[0]["runs"][0]["publication"]["remaining_handles"] == 2
     assert snapshots[0]["runs"][0]["state"] == "healthy"
-    assert snapshots[0]["handle_totals"] == [
-        {"project": "cmip6", "prepared": None, "published": 1}
-    ]
+    assert (
+        snapshots[0]["handle_totals"] == []
+    )  # Unmanaged file, no work-state acknowledgement.
     assert result.succeeded == 2 and result.failed == 1
     status = read_status(db)
     assert status["runs"][0]["state"] == "failed"
-    assert status["handle_totals"][0]["published"] == 2
+    assert status["handle_totals"] == []
+    assert status["runs"][0]["projects"][0]["handles"] == 2
     assert status["runs"][0]["projects"][0]["failed"] == 1
 
 
@@ -878,3 +879,67 @@ def test_invalid_records_are_receipted_and_next_valid_record_is_published(
     assert receipts[0]["status"] == "failed"
     assert receipts[0]["source_line"] == 1
     assert receipts[1]["status"] == "succeeded"
+
+
+@pytest.mark.parametrize("workers", [1, 3])
+@pytest.mark.parametrize("chunk_size", [1, 256])
+def test_queued_journal_resumes_without_replaying_older_handle_versions(
+    tmp_path, monkeypatch, workers, chunk_size
+):
+    monkeypatch.setattr("piddiplatsch.runners.publish.BATCH_SIZE", chunk_size)
+    source = tmp_path / "handles.jsonl"
+    records = []
+    for version in ("1", "2", "3"):
+        record = handle_record("same")
+        record["data"]["VERSION"] = version
+        records.append(record)
+    write_jsonl(source, records)
+    journal = tmp_path / "progress.jsonl"
+
+    class Backend(FakeBackend):
+        fail_version = "2"
+
+        def add(self, pid, record):
+            if record["VERSION"] == self.fail_version:
+                raise RuntimeError("temporarily unavailable")
+            return super().add(pid, record)
+
+    backend = Backend()
+    publisher = HandlePublisher(backend)
+    first = publisher.run([source], workers=workers, publication_journal=journal)
+    assert first.succeeded == 1 and first.failed == 2
+    assert [data["VERSION"] for _, data in backend.published] == ["1"]
+    # A partial final journal write must not discard prior durable progress.
+    with journal.open("ab") as stream:
+        stream.write(b'{"incomplete":')
+    backend.fail_version = None
+    resumed = publisher.run([source], workers=workers, publication_journal=journal)
+    assert resumed.succeeded == 3 and resumed.failed == 0
+    assert [data["VERSION"] for _, data in backend.published] == ["1", "2", "3"]
+    assert (
+        publisher.run([source], workers=workers, publication_journal=journal).succeeded
+        == 3
+    )
+    assert [data["VERSION"] for _, data in backend.published] == ["1", "2", "3"]
+
+
+def test_journal_write_failure_stops_before_later_handle_versions(
+    tmp_path, monkeypatch
+):
+    from piddiplatsch.runners.publish import _PublicationJournal
+
+    source = tmp_path / "handles.jsonl"
+    first, second = handle_record("same"), handle_record("same")
+    first["data"]["VERSION"], second["data"]["VERSION"] = "1", "2"
+    write_jsonl(source, [first, second])
+    backend = FakeBackend()
+
+    def fail(*args):
+        raise OSError("journal disk failed")
+
+    monkeypatch.setattr(_PublicationJournal, "record", fail)
+    with pytest.raises(OSError, match="journal disk failed"):
+        HandlePublisher(backend).run(
+            [source], workers=3, publication_journal=tmp_path / "progress.jsonl"
+        )
+    assert [data["VERSION"] for _, data in backend.published] == ["1"]

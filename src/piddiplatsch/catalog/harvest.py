@@ -59,24 +59,44 @@ class CatalogHarvester:
             known_projects = set(self.project_names)
             if set(clean_projects) - known_projects:
                 raise ValueError("Clean projects must be registered plugin names")
+            path = get_catalog_path(self.project_names[0], directory=self.directory)
+            if clean_projects and path.exists():
+                catalog = self._get_catalog(self.project_names[0])
+                stored = {
+                    row[0]
+                    for row in catalog._execute(
+                        "SELECT DISTINCT project FROM catalog_items UNION SELECT DISTINCT project FROM work_items"
+                    )
+                }
+                if stored - set(clean_projects):
+                    raise CatalogError(
+                        "Project-only harvest cleaning is unsafe with shared Kafka checkpoints; use --clean-catalog for a complete rebuild"
+                    )
             if clean_projects:
                 self._state.request_clean(clean_projects)
-            # Upgrade existing catalogs even when Kafka has no new messages.
-            for project in self.project_names:
-                if get_catalog_path(
-                    project, directory=self.directory, backend=self.backend
-                ).is_file():
-                    self._get_catalog(project)
             if set(self._state.pending_clean) - known_projects:
                 raise CatalogError("Pending clean references an unregistered project")
-            for project in self._state.pending_clean:
-                # Do not create empty databases for projects never harvested.
-                if get_catalog_path(
-                    project, directory=self.directory, backend=self.backend
-                ).exists():
-                    catalog = self._get_catalog(project)
-                    catalog.reset()
-                    catalog.compact()
+            if self._state.pending_clean and path.exists():
+                catalog = self._get_catalog(self.project_names[0])
+                with catalog.transaction():
+                    stored = {
+                        row[0]
+                        for row in catalog._execute(
+                            "SELECT DISTINCT project FROM catalog_items UNION SELECT DISTINCT project FROM work_items"
+                        )
+                    }
+                    if stored - set(self._state.pending_clean):
+                        raise CatalogError(
+                            "Pending clean must include every stored project because Kafka checkpoints are shared"
+                        )
+                    catalog._execute("DELETE FROM catalog_items")
+                    catalog._execute("DELETE FROM work_items")
+                    catalog._execute("DELETE FROM kafka_checkpoints")
+                    catalog._execute("DELETE FROM stats")
+            # Open project views for recovered-item refresh without migration.
+            if path.exists():
+                for project in self.project_names:
+                    self._get_catalog(project)
             self._state.complete_clean()
             self._refresh_recovered_items()
         except BaseException:
@@ -104,7 +124,7 @@ class CatalogHarvester:
 
     def _get_catalog(self, project: str) -> BaseCatalog:
         if project not in self._catalogs:
-            # Plugin names become filenames; reject unsafe third-party names.
+            # Plugin names also become spool directories; reject unsafe names.
             if Path(project).name != project or project in {".", ".."}:
                 raise CatalogError(f"Unsafe catalog project name: {project!r}")
             self._catalogs[project] = open_catalog(
@@ -214,6 +234,7 @@ class CatalogHarvester:
                         recovery,
                     )
             transaction.put_item(entry)
+            transaction.add_work(entry, source)
             transaction.set_checkpoint(
                 KafkaCheckpoint(source.topic, source.partition, source.offset + 1)
             )

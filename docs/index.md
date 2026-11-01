@@ -7,7 +7,7 @@ CMIP7, and CORDEX-CMIP6.
 The workflow has three steps:
 
 1. **Harvest** stores events and builds local STAC catalogs.
-2. **Map** turns catalog items into validated Handle records.
+2. **Map** turns pending event snapshots into saved Handle batches.
 3. **Publish** sends those records to the Handle service.
 
 The `sync` command maps and publishes pending changes. A timer can run it

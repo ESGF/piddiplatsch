@@ -28,9 +28,14 @@ from piddiplatsch.monitoring.disk import check_disk_space
 from piddiplatsch.monitoring.progress import get_progress
 from piddiplatsch.monitoring.stats import stats
 from piddiplatsch.result import ProcessingResult
-from piddiplatsch.runners.publish import HandlePublisher
 
 LOGGER = logging.getLogger(__name__)
+
+
+def get_publisher():
+    from piddiplatsch.runners.publish import HandlePublisher
+
+    return HandlePublisher()
 
 
 def _sync_directory(path: Path):
@@ -144,6 +149,9 @@ class _BatchMapper:
                 or result.filtered_reason
                 or "Mapping did not produce a successful result",
             )
+        self.manifest["outcomes"].append(
+            {"id": self.manifest["last_work_id"], "error": None}
+        )
         self.manifest["succeeded_count"] += 1
         return result
 
@@ -156,7 +164,7 @@ class _BatchMapper:
             **value,
             "__infos__": {
                 "project": self.manifest["project"],
-                "sequence": self.manifest["sequence"],
+                "last_work_id": self.manifest["last_work_id"],
                 "reason": reason,
             },
         }
@@ -164,6 +172,9 @@ class _BatchMapper:
             "a", encoding="utf-8"
         ) as stream:
             stream.write(json.dumps(record, allow_nan=False) + "\n")
+        self.manifest["outcomes"].append(
+            {"id": self.manifest["last_work_id"], "error": reason}
+        )
         self.manifest["failed_count"] += 1
         LOGGER.error("[sync/map] Rejected %s: %s", key, reason)
         return ProcessingResult(
@@ -191,6 +202,10 @@ class SyncWorker:
         projects=(),
         workers=None,
         retries=None,
+        directory=None,
+        handle_profile=None,
+        version_history=None,
+        require_configured=True,
     ):
         settings = dict(config.get("batch", {}))
         if workers is not None:
@@ -202,7 +217,7 @@ class SyncWorker:
         self.plugins = get_plugins(projects) if projects else configured
         configured_names = {plugin.name for plugin in configured}
         for plugin in self.plugins:
-            if plugin.name not in configured_names:
+            if require_configured and plugin.name not in configured_names:
                 raise ValueError(
                     f"Project {plugin.name!r} is not enabled in [consumer].projects"
                 )
@@ -210,26 +225,40 @@ class SyncWorker:
             settings.get("directory")
             or Path(config.get("consumer", "output_dir", "outputs")) / "batches"
         ).resolve()
-        self.catalog_directory = get_catalog_directory()
+        self.catalog_directory = (
+            Path(directory) if directory is not None else get_catalog_directory()
+        )
+        self.handle_profile = handle_profile
+        self.version_history = version_history
+        self.from_date = None
+        self.to_date = None
+        self.remaining = None
+        self.offset = 0
+        self.map_only = False
         self.trigger_items = settings["trigger_items"]
         self.max_wait_seconds = settings.get("max_wait_seconds", 3600)
         self.max_items = settings["max_items"]
         self.publish_workers = settings.get("publish_workers", 4)
         self.publish_retries = settings.get("publish_retries", 3)
         self.now = now or (lambda: datetime.now(UTC))
-        self.publisher = publisher or HandlePublisher()
+        self.publisher = publisher
         self.errors = []
         self.progress = progress
         self.horizons = {}
+        self.skipped_through = {}
         self.mapping_stops = {}
 
-    def run(self, *, force_map=False) -> list[Path]:
+    def run(self, *, force_map=False, map_only=False, publish_only=False) -> list[Path]:
         check_disk_space(force=True)
+        self.map_only = map_only
+        self.publish_only = publish_only
+        self.published_handles = 0
         completed = []
         self.errors = []
         self.horizons = {}
+        self.skipped_through = {}
         self.mapping_stops = {}
-        with _worker_lock(self.root) as acquired:
+        with _worker_lock(self.catalog_directory) as acquired:
             if not acquired:
                 LOGGER.info("[sync] Skipped | another worker holds the lock")
                 return completed
@@ -243,25 +272,34 @@ class SyncWorker:
                 )
             plugins = self.plugins
             blocked = set()
+            recovered = set()
             while True:
-                made_batch = False
+                made_progress = False
                 for plugin in plugins:
                     if plugin.name in blocked:
                         continue
                     project_root = self.root / plugin.name
                     try:
-                        self._publish_ready(plugin.name, project_root)
+                        if not map_only or plugin.name not in recovered:
+                            published = self._publish_ready(plugin.name, project_root)
+                            recovered.add(plugin.name)
+                            if published and not map_only:
+                                made_progress = True
+                                continue
                         if not get_catalog_path(
                             plugin.name, directory=self.catalog_directory
                         ).is_file():
                             continue
+                        self._check_mapped_batches(plugin.name, project_root)
+                        if publish_only or self.remaining == 0:
+                            continue
                         batch = self._map_due(plugin.name, project_root, force_map)
                         if batch is not None:
-                            made_batch = True
+                            made_progress = True
                             completed.append(batch)
-                            self._publish_ready(plugin.name, project_root)
-                            if not batch.exists():
-                                completed[-1] = self._published_path(batch)
+                            completed[-1] = self._finish_mapped_batch(
+                                plugin.name, project_root, batch
+                            )
                             if plugin.name in self.mapping_stops:
                                 blocked.add(plugin.name)
                                 reason = self.mapping_stops[plugin.name]
@@ -277,7 +315,7 @@ class SyncWorker:
                         LOGGER.error(
                             "[sync] %s | batch processing failed: %s", plugin.name, exc
                         )
-                if not made_batch:
+                if not made_progress:
                     break
         LOGGER.info(
             "[sync] Complete | %d batches sealed | %d project errors",
@@ -286,15 +324,54 @@ class SyncWorker:
         )
         return completed
 
+    def _finish_mapped_batch(self, project, project_root, batch):
+        if not self.map_only:
+            self._publish_ready(project, project_root)
+        return batch if batch.exists() else self._published_path(batch)
+
+    def _check_mapped_batches(self, project, project_root):
+        path = get_catalog_path(project, directory=self.catalog_directory)
+        if not path.exists():
+            return
+        with open_catalog(
+            project, directory=self.catalog_directory, read_only=True
+        ) as reader:
+            batch_ids = [
+                row[0]
+                for row in reader._execute(
+                    "SELECT DISTINCT batch_id FROM work_items WHERE project=? AND state='mapped'",
+                    (project,),
+                )
+            ]
+        for batch_id in batch_ids:
+            if (
+                not batch_id
+                or not (project_root / "ready" / batch_id / "manifest.json").is_file()
+            ):
+                raise BatchError(
+                    f"Mapped batch output is missing: {project}/{batch_id}; restore it before continuing"
+                )
+
     def _map_due(self, project, project_root, force):
         check_disk_space(force=True)
         with open_catalog(
             project, directory=self.catalog_directory, read_only=True
         ) as reader:
-            frontier = self.horizons.setdefault(
-                project, reader.pending_changes().sequence
-            )
-            pending = reader.pending_changes(max_sequence=frontier)
+            frontier = self.horizons.setdefault(project, reader.pending_work().last_id)
+            mapped = reader._execute(
+                "SELECT MIN(id) FROM work_items WHERE project=? AND state='mapped'",
+                (project,),
+            ).fetchone()[0]
+            if (
+                not self.map_only
+                and mapped is not None
+                and reader._execute(
+                    "SELECT 1 FROM work_items WHERE project=? AND state='pending' AND id<? LIMIT 1",
+                    (project, mapped),
+                ).fetchone()
+            ):
+                frontier = min(frontier, mapped - 1)
+            pending = reader.pending_work(max_id=frontier)
             if not pending.count:
                 return None
             waited = (self.now() - pending.oldest_at).total_seconds()
@@ -304,6 +381,29 @@ class SyncWorker:
                 and waited < self.max_wait_seconds
             ):
                 return None
+            # Select a concrete, bounded batch before invoking its executor.
+            if self.offset:
+                skipped, last_skipped = reader.skip_work(
+                    self.offset,
+                    frontier,
+                    from_date=self.from_date,
+                    to_date=self.to_date,
+                )
+                self.offset -= skipped
+                self.skipped_through[project] = last_skipped
+            entries = reader.select_work_ids(
+                (
+                    min(self.max_items, self.remaining)
+                    if self.remaining is not None
+                    else self.max_items
+                ),
+                frontier,
+                from_date=self.from_date,
+                to_date=self.to_date,
+                after_id=self.skipped_through.get(project, 0),
+            )
+            if not entries:
+                return None
             project_root.mkdir(parents=True, exist_ok=True)
             _sync_directory(self.root)
             batch_id = self.now().strftime("%Y%m%dT%H%M%S") + "-" + uuid4().hex
@@ -311,17 +411,22 @@ class SyncWorker:
             staging.mkdir()
             _sync_directory(project_root)
             manifest = {
-                "schema_version": 1,
+                "schema_version": 2,
                 "batch_id": batch_id,
                 "project": project,
                 "created_at": self.now().isoformat(),
                 "status": "building",
-                "generation": pending.generation,
-                "sequence": 0,
-                "upper_sequence": frontier,
+                "last_work_id": 0,
+                "upper_work_id": frontier,
                 "mapping_acknowledged": False,
-                "version_history": config.get("catalog", "version_history", False),
-                "handle_profile": config.get_handle_profile(project),
+                "version_history": (
+                    self.version_history
+                    if self.version_history is not None
+                    else config.get("catalog", "version_history", False)
+                ),
+                "handle_profile": self.handle_profile
+                or config.get_handle_profile(project),
+                "outcomes": [],
                 "item_count": 0,
                 "succeeded_count": 0,
                 "failed_count": 0,
@@ -329,7 +434,9 @@ class SyncWorker:
             }
             _save_manifest(staging / "manifest.json", manifest)
             try:
-                self._map_items(project, reader, staging, manifest)
+                self._map_items(project, reader, staging, manifest, entries)
+                if not manifest["item_count"]:
+                    return None
                 manifest["sha256"], manifest["handle_count"] = _fingerprint(
                     staging / "handles.jsonl", sync=True
                 )
@@ -364,7 +471,7 @@ class SyncWorker:
             )
         return final
 
-    def _map_items(self, project, reader, staging, manifest):
+    def _map_items(self, project, reader, staging, manifest, entries):
         settings = config.get("stats", {})
         LOGGER.info(
             "[sync/map] %s | starting batch %s | force_dataset_pid=%s",
@@ -374,14 +481,14 @@ class SyncWorker:
         )
         stats.configure_for_run(
             enable_db=settings.get("enable_db", False),
-            db_path=settings.get("db_path"),
-            command="sync",
+            db_path=None,
+            command="map" if self.map_only else "sync",
             selected_projects=(project,),
         )
         if self.progress is not None:
             self.progress.set_phase(f"sync {project} map", mode="map")
         try:
-            self._write_items(project, reader, staging, manifest)
+            self._write_items(project, reader, staging, manifest, entries)
         except BaseException as exc:
             stats.close(status="failed", error_summary=str(exc))
             raise
@@ -405,7 +512,7 @@ class SyncWorker:
                     manifest["failed_count"],
                 )
 
-    def _write_items(self, project, reader, staging, manifest):
+    def _write_items(self, project, reader, staging, manifest, entries):
         output = staging / "handles.jsonl"
         output.touch()
         (staging / "failures.jsonl").touch()
@@ -415,18 +522,17 @@ class SyncWorker:
             version_history=manifest["version_history"],
             handle_output_filename=str(output),
             require_all_assets=True,
+            handle_profile=manifest["handle_profile"],
         )
 
         def records():
-            with closing(
-                reader.iter_pending(
-                    self.max_items, max_sequence=manifest["upper_sequence"]
-                )
-            ) as entries:
-                for pending in entries:
-                    manifest["sequence"] = pending.sequence
-                    manifest["item_count"] += 1
-                    yield _envelope(pending.entry)
+            for identity in entries:
+                pending = reader.get_work(identity)
+                if self.remaining is not None:
+                    self.remaining -= 1
+                manifest["last_work_id"] = pending.id
+                manifest["item_count"] += 1
+                yield _envelope(pending.entry)
 
         try:
             with closing(records()) as selected:
@@ -445,49 +551,65 @@ class SyncWorker:
             raise BatchError("Batch mapping outcomes do not match selected items")
 
     def _acknowledge(self, batch, manifest):
-        if not get_catalog_path(
-            manifest["project"], directory=self.catalog_directory
-        ).is_file():
-            raise CatalogError(
-                "Batch source catalog is missing; restore it before publication"
-            )
-        with open_catalog(
-            manifest["project"], directory=self.catalog_directory, read_only=True
-        ) as reader:
-            if reader.pending_changes().generation != manifest["generation"]:
-                raise CatalogError(
-                    "Batch belongs to a previous catalog generation; inspect before publication"
-                )
-        if manifest["mapping_acknowledged"]:
-            return
         with open_catalog(
             manifest["project"], directory=self.catalog_directory
         ) as catalog:
-            catalog.acknowledge_mapped(manifest["generation"], manifest["sequence"])
-        manifest["mapping_acknowledged"] = True
-        _save_manifest(batch / "manifest.json", manifest)
+            catalog.seal_batch(manifest["batch_id"], manifest["outcomes"])
+        if not manifest["mapping_acknowledged"]:
+            manifest["mapping_acknowledged"] = True
+            _save_manifest(batch / "manifest.json", manifest)
+
+    @staticmethod
+    def _ready_batches(project_root):
+        batches = []
+        for batch in (project_root / "ready").glob("*"):
+            if batch.is_dir() and not batch.name.startswith("."):
+                manifest = json.loads((batch / "manifest.json").read_text())
+                batches.append(
+                    (
+                        min(
+                            (entry["id"] for entry in manifest.get("outcomes", [])),
+                            default=0,
+                        ),
+                        batch,
+                    )
+                )
+        return [batch for _, batch in sorted(batches)]
 
     def _publish_ready(self, project, project_root):
-        for batch in sorted((project_root / "ready").glob("*")):
-            if not batch.is_dir() or batch.name.startswith("."):
-                continue
+        for batch in self._ready_batches(project_root):
             manifest_path = batch / "manifest.json"
             manifest = json.loads(manifest_path.read_text())
-            if manifest["project"] != project or manifest.get("schema_version") != 1:
+            if manifest["project"] != project or manifest.get("schema_version") != 2:
                 raise ValueError(f"Invalid batch manifest: {manifest_path}")
             if manifest["status"] == "published":
+                self._record_publication(manifest)
                 self._archive(batch)
+                if not self.map_only:
+                    return True
                 continue
-            if manifest["status"] != "ready":
-                raise ValueError(f"Unexpected batch status: {manifest_path}")
-            output = batch / "handles.jsonl"
-            if _fingerprint(output) != (manifest["sha256"], manifest["handle_count"]):
-                raise ValueError(f"Batch checksum/count mismatch: {batch}")
-            if "failures_sha256" in manifest and _fingerprint(
-                batch / "failures.jsonl"
-            ) != (manifest["failures_sha256"], manifest["failed_count"]):
-                raise ValueError(f"Batch failure checksum/count mismatch: {batch}")
+            output = self._verify_output(batch, manifest)
             self._acknowledge(batch, manifest)
+            if self.map_only:
+                continue
+            first_id = min(entry["id"] for entry in manifest["outcomes"])
+            with open_catalog(
+                project, directory=self.catalog_directory, read_only=True
+            ) as reader:
+                if (
+                    manifest["handle_count"]
+                    and reader._execute(
+                        "SELECT 1 FROM work_items WHERE project=? AND state='pending' AND id<? LIMIT 1",
+                        (project, first_id),
+                    ).fetchone()
+                ):
+                    # Explicit map filters can prepare newer work before older
+                    # work. Let the scheduler map the older prefix first.
+                    if self.publish_only:
+                        raise BatchError(
+                            "Older work is still pending; map it or run sync before publishing this batch"
+                        )
+                    return
             manifest["publication_attempts"] = (
                 manifest.get("publication_attempts", 0) + 1
             )
@@ -511,13 +633,18 @@ class SyncWorker:
                 ):
                     tracker.update(total=size, position=index, ok=error is None)
 
-                result = self.publisher.run(
+                if self.publisher is None:
+                    self.publisher = get_publisher()
+                result = self._send_batch(
+                    output,
+                    manifest,
                     (output,),
                     project=project,
-                    handle_profile=manifest["handle_profile"],
+                    handle_profile=self.handle_profile or manifest["handle_profile"],
                     log_operation="sync/publish",
                     expected_handles=manifest["handle_count"],
                     batch_id=manifest["batch_id"],
+                    publication_journal=batch / "publication-progress.jsonl",
                     workers=self.publish_workers,
                     retries=self.publish_retries,
                     progress_callback=show_progress,
@@ -544,13 +671,50 @@ class SyncWorker:
                 manifest["publication_error"] = (
                     f"Published {result.succeeded}/{manifest['handle_count']}; failed {result.failed}"
                 )
+                self._record_publication(manifest, error=manifest["publication_error"])
                 _save_manifest(manifest_path, manifest)
                 raise BatchError(f"Publication failed for {batch}; batch remains ready")
+            self._record_publication(manifest)
+            self.published_handles += manifest["handle_count"]
             manifest["status"] = "published"
             manifest["published_at"] = self.now().isoformat()
             manifest.pop("publication_error", None)
             _save_manifest(manifest_path, manifest)
             self._archive(batch)
+            return True
+        return False
+
+    def _send_batch(self, output, manifest, *args, **kwargs):
+        try:
+            return self.publisher.run(*args, **kwargs)
+        except Exception as exc:
+            manifest["publication_error"] = str(exc)
+            self._record_publication(manifest, error=str(exc))
+            _save_manifest(output.parent / "manifest.json", manifest)
+            raise
+
+    @staticmethod
+    def _verify_output(batch, manifest):
+        manifest_path = batch / "manifest.json"
+        if manifest["status"] != "ready":
+            raise ValueError(f"Unexpected batch status: {manifest_path}")
+        output = batch / "handles.jsonl"
+        if _fingerprint(output) != (manifest["sha256"], manifest["handle_count"]):
+            raise ValueError(f"Batch checksum/count mismatch: {batch}")
+        if "failures_sha256" in manifest and _fingerprint(batch / "failures.jsonl") != (
+            manifest["failures_sha256"],
+            manifest["failed_count"],
+        ):
+            raise ValueError(f"Batch failure checksum/count mismatch: {batch}")
+        return output
+
+    def _record_publication(self, manifest, error=None):
+        with open_catalog(
+            manifest["project"], directory=self.catalog_directory
+        ) as catalog:
+            catalog.publish_batch(
+                manifest["batch_id"], manifest["handle_count"], error=error
+            )
 
     @staticmethod
     def _published_path(batch: Path) -> Path:

@@ -2,6 +2,7 @@
 
 import fcntl
 import gzip
+import json
 import logging
 import os
 import re
@@ -99,3 +100,66 @@ def compress_closed_dumps(*, dry_run=False) -> list[Path]:
             LOGGER.info("[maintenance] Compressed %s", destination)
             completed.append(destination)
     return completed
+
+
+def clean_published_work(*, dry_run=False):
+    """Delete only expired published work; summaries already committed with state.
+
+    This never compacts the database or removes catalog records and output files.
+    """
+    import sqlite3
+    from contextlib import closing
+    from datetime import UTC, datetime, timedelta
+
+    from piddiplatsch.catalog.api import get_catalog_directory
+    from piddiplatsch.config.schema import BatchConfig
+    from piddiplatsch.runners.sync import _worker_lock
+
+    directory = get_catalog_directory()
+    path = directory / "piddi.db"
+    if not path.is_file():
+        return 0
+    settings = BatchConfig.model_validate(config.get("batch", {}))
+    cutoff = (datetime.now(UTC) - timedelta(days=settings.retention_days)).isoformat()
+    with _worker_lock(directory) as acquired:
+        if not acquired:
+            LOGGER.info("[maintenance] Batch worker is active; postponing work cleanup")
+            return 0
+        with closing(sqlite3.connect(path)) as connection:
+            if dry_run:
+                return connection.execute(
+                    "SELECT COUNT(*) FROM work_items WHERE state='published' AND updated_at<?",
+                    (cutoff,),
+                ).fetchone()[0]
+            with connection:
+                return connection.execute(
+                    "DELETE FROM work_items WHERE state='published' AND updated_at<?",
+                    (cutoff,),
+                ).rowcount
+
+
+def clean_status_files(*, dry_run=False):
+    """Remove expired completed heartbeat files; never remove active/stale runs."""
+    from datetime import UTC, datetime, timedelta
+
+    from piddiplatsch.catalog.api import get_catalog_directory
+
+    days = config.get("stats", "sample_retention_days", 30)
+    if not days:
+        return 0
+    cutoff = datetime.now(UTC) - timedelta(days=days)
+    count = 0
+    for path in (get_catalog_directory() / "status").glob("*.json"):
+        try:
+            run = json.loads(path.read_text())["run"]
+            finished = run.get("finished_at")
+            if run.get("status") == "running" or not finished:
+                continue
+            if datetime.fromisoformat(finished) >= cutoff:
+                continue
+            if not dry_run:
+                path.unlink()
+            count += 1
+        except (OSError, ValueError, KeyError, TypeError):
+            LOGGER.warning("Could not inspect status file %s", path)
+    return count

@@ -1,8 +1,6 @@
 import json
-import sqlite3
 from io import StringIO
 from types import SimpleNamespace
-from unittest.mock import patch
 
 import pytest
 from click.testing import CliRunner
@@ -13,10 +11,11 @@ from piddiplatsch.commands.top import TopCommand
 from piddiplatsch.config import config
 from piddiplatsch.monitoring.stats import Stats, publication_monitor
 from piddiplatsch.monitoring.status import read_status
-from piddiplatsch.result import FeedResult, ProcessingResult
+from piddiplatsch.result import ProcessingResult
 
 
 def _monitoring_db(path):
+    config._set("catalog", "directory", str(path.parent))
     stats = Stats(enable_db=False)
     stats.configure_for_run(
         enable_db=True,
@@ -45,6 +44,7 @@ def _monitoring_db(path):
 
 def test_top_json_is_project_aware(tmp_path):
     db_path = tmp_path / "piddi.db"
+    config._set("catalog", "directory", str(tmp_path))
     _monitoring_db(db_path)
 
     result = CliRunner().invoke(
@@ -62,58 +62,9 @@ def test_top_json_is_project_aware(tmp_path):
     assert history["cmip6"]["deltas"]["consumed"] == 1
 
 
-def test_top_shows_prepared_and_published_totals_alongside_active_harvest(tmp_path):
-    db = tmp_path / "monitor.db"
-    config._set("stats", "enable_db", True)
-    config._set("stats", "db_path", str(db))
-    config._set("consumer", "projects", ["cmip6"])
-    _monitoring_db(db)
-    # Model harvest running in another process while sync changes phases.
-    with sqlite3.connect(db) as connection:
-        connection.execute(
-            "UPDATE monitor_runs SET command='harvest', status='running'"
-        )
-    stats = Stats()
-    stats.configure_for_run(
-        enable_db=True, db_path=str(db), command="sync", selected_projects=("cmip6",)
-    )
-    stats.record_result(
-        ProcessingResult(key="item", plugin="cmip6", success=True, num_handles=42)
-    )
-    stats.close(status="completed")
-
-    with publication_monitor("cmip6") as monitor:
-        for _ in range(7):
-            monitor.record_publication("cmip6", success=True)
-        monitor._heartbeat_once(force_sample=True)
-        result = CliRunner().invoke(
-            cli, ["--log", str(tmp_path / "top.log"), "top", "--db", str(db), "--json"]
-        )
-        assert result.exit_code == 0, result.output
-        status = json.loads(result.output)
-        assert status["handle_totals"][0] == {
-            "project": "cmip6",
-            "prepared": 42,
-            "published": 7,
-        }
-        active = {
-            run["command"] for run in status["runs"] if run["status"] == "running"
-        }
-        assert active == {"harvest", "publish"}
-
-    result = CliRunner().invoke(
-        cli, ["--log", str(tmp_path / "top.log"), "top", "--db", str(db), "--once"]
-    )
-    assert result.exit_code == 0, result.output
-    assert "Generated" in result.output
-    assert "Published" in result.output
-    assert "42" in result.output
-    assert "7" in result.output
-    assert read_status(db)["handle_totals"][0]["published"] == 7
-
-
 def test_top_once_filters_project(tmp_path):
     db_path = tmp_path / "piddi.db"
+    config._set("catalog", "directory", str(tmp_path))
     _monitoring_db(db_path)
 
     result = CliRunner().invoke(
@@ -136,9 +87,9 @@ def test_top_once_filters_project(tmp_path):
 
 
 def test_top_error_column_counts_finished_and_active_attempts_per_project(tmp_path):
-    db = tmp_path / "monitor.db"
+    db = tmp_path / "piddi.db"
+    config._set("catalog", "directory", str(tmp_path))
     config._set("stats", "enable_db", True)
-    config._set("stats", "db_path", str(db))
     stats = Stats()
     for command, project, errors in (
         ("sync", "cmip6plus", 12),
@@ -197,16 +148,10 @@ def test_finished_mapping_errors_survive_empty_publication_and_clear_after_clean
     tmp_path,
     mapping_status,
 ):
-    db = tmp_path / "monitor.db"
+    db = tmp_path / "piddi.db"
+    config._set("catalog", "directory", str(tmp_path))
     config._set("stats", "enable_db", True)
-    config._set("stats", "db_path", str(db))
     config._set("consumer", "projects", ["cmip6plus"])
-    catalog_dir = tmp_path / "outputs/catalog"
-    catalog_dir.mkdir(parents=True)
-    with sqlite3.connect(catalog_dir / "cmip6plus.sqlite") as connection:
-        connection.execute("CREATE TABLE items (id INTEGER)")
-        connection.execute("CREATE TABLE pending_items (id INTEGER)")
-        connection.execute("INSERT INTO pending_items VALUES (1)")
     stats = Stats()
     stats.configure_for_run(
         enable_db=True,
@@ -222,8 +167,7 @@ def test_finished_mapping_errors_survive_empty_publication_and_clear_after_clean
         pass  # The failure-only batch publishes zero Handles successfully.
     result = CliRunner().invoke(cli, ["top", "--db", str(db), "--once"])
     assert result.exit_code == 0, result.output
-    assert "pending" in result.output
-    assert "· errors" in result.output
+    assert "errors recorded" in result.output
     assert "cmip6plus: errors recorded" in result.output
 
     # Activity clears the old alert after a later successful mapping pass.
@@ -239,7 +183,6 @@ def test_finished_mapping_errors_survive_empty_publication_and_clear_after_clean
     stats.close(status="completed")
     result = CliRunner().invoke(cli, ["top", "--db", str(db), "--once"])
     assert result.exit_code == 0, result.output
-    assert "pending" in result.output
     assert "errors recorded" not in result.output
     assert "· errors" not in result.output
 
@@ -263,6 +206,7 @@ def test_top_missing_database_is_clear(tmp_path):
 
 def test_top_harvest_reports_durable_writes_and_duplicate_events(tmp_path):
     db_path = tmp_path / "piddi.db"
+    config._set("catalog", "directory", str(tmp_path))
     stats = Stats(enable_db=False)
     stats.configure_for_run(
         enable_db=True,
@@ -298,6 +242,7 @@ def test_top_harvest_reports_durable_writes_and_duplicate_events(tmp_path):
 
 def test_top_json_uses_fixed_recent_history(tmp_path):
     db_path = tmp_path / "piddi.db"
+    config._set("catalog", "directory", str(tmp_path))
     _monitoring_db(db_path)
 
     result = CliRunner().invoke(
@@ -321,11 +266,12 @@ def test_top_json_uses_fixed_recent_history(tmp_path):
 
 def test_top_default_is_one_table_without_history(tmp_path):
     db_path = tmp_path / "piddi.db"
+    config._set("catalog", "directory", str(tmp_path))
     _monitoring_db(db_path)
     result = CliRunner().invoke(cli, ["top", "--db", str(db_path), "--once"])
     assert result.exit_code == 0, result.output
     assert "Harvest: inactive" in result.output
-    assert "Generated" in result.output
+    assert "Mapped" in result.output
     assert result.output.count("cmip6") == 1
     assert "Active runs" not in result.output
     assert "Publication estimates" not in result.output
@@ -445,51 +391,11 @@ def test_catalog_and_generated_totals_include_all_projects():
                 {"total_items": 200000, "pending_items": 0},
             ]
         },
-        "handle_totals": [{"prepared": 500000}, {"prepared": 250000}],
+        "handle_totals": [{"mapped_items": 500000}, {"mapped_items": 250000}],
     }
     assert (
         _totals_line(status).plain
-        == "Catalog: 1,000,000 datasets · Generated: 750,000 handles (recorded)"
+        == "Catalog: 1,000,000 datasets · Mapped: 750,000 work entries (recorded)"
     )
     status["health"]["projects"][1]["total_items"] = None
     assert "Catalog: — datasets" in _totals_line(status).plain
-
-
-@patch("piddiplatsch.commands.map.map_catalog")
-def test_map_command_owns_monitoring_database(mock_map_catalog, tmp_path):
-    source = tmp_path / "dump.jsonl"
-    source.write_text("{}\n")
-    db_path = tmp_path / "piddi.db"
-    config._set("stats", "enable_db", True)
-    config._set("stats", "db_path", str(db_path))
-    mock_map_catalog.return_value = FeedResult(total=1, succeeded=1)
-
-    result = CliRunner().invoke(
-        cli,
-        ["--log", str(tmp_path / "test.log"), "map", "--project", "cmip6"],
-    )
-
-    assert result.exit_code == 0
-    status = read_status(db_path)
-    assert status["runs"][0]["command"] == "map"
-    assert status["runs"][0]["state"] == "completed"
-
-
-@patch("piddiplatsch.commands.map.map_catalog")
-def test_map_failures_close_monitoring_run_as_failed(mock_map_catalog, tmp_path):
-    source = tmp_path / "dump.jsonl"
-    source.write_text("{}\n")
-    db_path = tmp_path / "piddi.db"
-    config._set("stats", "enable_db", True)
-    config._set("stats", "db_path", str(db_path))
-    mock_map_catalog.return_value = FeedResult(total=2, succeeded=1, failed=1)
-
-    result = CliRunner().invoke(
-        cli,
-        ["--log", str(tmp_path / "test.log"), "map", "--project", "cmip6"],
-    )
-
-    assert result.exit_code == 1
-    run = read_status(db_path)["runs"][0]
-    assert run["state"] == "failed"
-    assert run["error_summary"] == "1 mapping messages failed"

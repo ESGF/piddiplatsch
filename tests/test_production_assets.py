@@ -52,7 +52,7 @@ def test_ansible_render_matches_esgf_example_and_production_paths(tmp_path):
     assert configured.get("consumer", "output_dir") == "/var/lib/piddi"
     assert configured.get("logging", "file") == "/var/log/piddi/piddi.log"
     assert configured.get("stats", "enable_db") is True
-    assert configured.get("stats", "db_path") == "/var/lib/piddi/piddi.db"
+    assert configured.get("stats", "db_path") is None
     assert configured.get("catalog", "enabled") is True
     assert configured.get("catalog", "backend") == "sqlite"
     assert configured.get("catalog", "version_history") is False
@@ -77,7 +77,7 @@ def test_deployment_preserves_explicit_application_overrides(tmp_path):
     overrides = {
         "consumer": {"output_dir": "/data/piddi", "projects": ["cmip7"]},
         "logging": {"file": "", "level": "INFO"},
-        "stats": {"enable_db": False, "db_path": "/data/stats.db"},
+        "stats": {"enable_db": False},
         "catalog": {"directory": "/data/catalog", "version_history": True},
         "lookup": {"backend": "stac", "enabled": False},
         "stac": {"base_url": "https://site-stac.example.test", "timeout": 20},

@@ -172,7 +172,20 @@ class ProcessingPipeline:
         try:
             logger.debug(f"Processing message: {key}")
             if self.dump_recorder is not None:
-                self.dump_recorder.record(key, value)
+                archive = (
+                    {
+                        "source": {
+                            "topic": source_message.source.topic,
+                            "partition": source_message.source.partition,
+                            "offset": source_message.source.offset,
+                        },
+                        "key": key,
+                        "payload": value,
+                    }
+                    if source_message
+                    else value
+                )
+                self.dump_recorder.record(key, archive)
             if source_message is not None:
                 process = getattr(self.processor, "process_with_source", None)
                 if callable(process):
