@@ -158,6 +158,7 @@ class _BatchMapper:
             }
         )
         self.manifest["succeeded_count"] += 1
+        result.event_type = self.manifest["last_event_type"]
         return result
 
     def _rollback(self, offset):
@@ -187,6 +188,7 @@ class _BatchMapper:
             project=self.manifest["project"],
             plugin=self.manifest["project"],
             error=reason,
+            event_type=self.manifest["last_event_type"],
         )
 
 
@@ -536,6 +538,7 @@ class SyncWorker:
                 if self.remaining is not None:
                     self.remaining -= 1
                 manifest["last_work_id"] = pending.id
+                manifest["last_event_type"] = pending.event_type
                 manifest["item_count"] += 1
                 yield _envelope(pending.entry)
 

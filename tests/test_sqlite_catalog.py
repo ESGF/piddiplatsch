@@ -464,7 +464,11 @@ def test_batch_stats_reuse_one_row_across_days_retries_and_work_cleanup(
     monkeypatch.setattr("piddiplatsch.catalog.sqlite._now", lambda: clock[0])
     with catalog.transaction() as transaction:
         for offset in range(3):
-            transaction.add_work(entry(offset), KafkaSource("topic", 0, offset))
+            transaction.add_work(
+                entry(offset),
+                KafkaSource("topic", 0, offset),
+                event_type="patch" if offset == 1 else "full",
+            )
     first = [
         dict(id=1, error=None, handle_count=3, alias_count=1),
         dict(id=2, error="invalid item"),
@@ -483,11 +487,11 @@ def test_batch_stats_reuse_one_row_across_days_retries_and_work_cleanup(
     # A stale failed acknowledgement must not undo successful completion.
     catalog.publish_batch("first", 3, error="stale failure")
     assert catalog._execute(
-        "SELECT id,status,items,invalid_items,prepared_handles,alias_handles,handles,errors "
-        "FROM stats ORDER BY id"
+        "SELECT id,status,items,invalid_items,prepared_handles,alias_handles,handles,errors,"
+        "full_events,patch_events FROM stats ORDER BY id"
     ).fetchall() == [
-        ("first", "published", 1, 1, 3, 1, 3, 2),
-        ("second", "ready", 1, 0, 2, 0, 0, 0),
+        ("first", "published", 1, 1, 3, 1, 3, 2, 1, 1),
+        ("second", "ready", 1, 0, 2, 0, 0, 0, 1, 0),
     ]
     assert catalog._execute(
         "SELECT mapped_at,published_at,message FROM stats WHERE id='first'"
@@ -499,7 +503,17 @@ def test_batch_stats_reuse_one_row_across_days_retries_and_work_cleanup(
     assert (
         after["handle_totals"]
         == before["handle_totals"]
-        == [dict(project="cmip6", mapped_items=2, prepared=5, published=3, errors=2)]
+        == [
+            dict(
+                project="cmip6",
+                mapped_items=2,
+                prepared=5,
+                published=3,
+                errors=2,
+                full_events=2,
+                patch_events=1,
+            )
+        ]
     )
     assert after["totals_since"] == "2026-10-01T12:00:00+00:00"
     health = after["health"]["projects"][0]

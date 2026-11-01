@@ -273,7 +273,9 @@ Terminal-only logging does not create a companion file.
 Statistics log every 30 seconds or 10,000 messages as results arrive. One row per
 batch in `piddi.db.stats` records mapped/rejected work, prepared Handles, the alias
 subset, published Handles, and failed attempts. Mapping creates the row;
-publication updates it. Retries reuse the same batch ID.
+publication updates it. Retries reuse the same batch ID. Each batch also records
+`full_events` and `patch_events`, including rejected events. Source types are
+preserved even though mapping reads reconstructed full snapshots.
 `enable_db` enables separate `run` rows for live heartbeats and rate histories
 in the same `stats` table. These rows do not contribute to batch totals.
 No extra tables or separate monitoring database are created.

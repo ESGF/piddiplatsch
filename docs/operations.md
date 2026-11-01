@@ -4,7 +4,9 @@
 
 Stop harvest and batch services. Archive the previous output directory and old
 monitoring database, then configure a new empty output directory. There is no
-migration from per-project catalogs, dirty-item queues, or older batch manifests.
+migration from per-project catalogs, dirty-item queues, older shared database
+schemas, or older batch manifests. Full/patch event tracking requires schema 4;
+restart tests with a new empty output directory, rather than a project reset.
 Keep each new database paired with its batch directory and harvest control file.
 
 ## Harvest
@@ -152,6 +154,14 @@ piddi maintain
 Top reads only `piddi.db`, including when `--db PATH` selects another database.
 Catalog items count distinct stored STAC items. Pending and mapped events count
 processing events; several events can refer to the same catalog item.
+The harvest summary adds `stored: N full / M patch` for the displayed harvest
+runs. These counts include only successfully stored events. The received-event
+total also includes filtered/replayed deliveries and failures, so it can be larger.
+`top --json` includes `full_events` and `patch_events` in run counters, history
+deltas, and processed-batch totals, plus `pending_full_events` and
+`pending_patch_events` in each project's health. Batch type totals include both
+successfully mapped and rejected events. Mapping uses full snapshots while
+retaining the original source event type for statistics.
 Prepared and published Handle totals include dataset, file, and alias Handles.
 One retained summary per batch supplies mapped-work, prepared-Handle,
 published-Handle, and error totals, even after work retention. Pending entry counts

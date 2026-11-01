@@ -33,7 +33,8 @@ def read_status(
         try:
             handle_totals = connection.execute(
                 "SELECT project, SUM(items) AS mapped_items, SUM(handles) AS published, "
-                "SUM(prepared_handles) AS prepared, SUM(errors) AS errors FROM stats "
+                "SUM(prepared_handles) AS prepared, SUM(errors) AS errors, "
+                "SUM(full_events) AS full_events, SUM(patch_events) AS patch_events FROM stats "
                 "WHERE kind='batch' AND (? IS NULL OR lower(project)=lower(?)) GROUP BY project "
                 "HAVING SUM(items)+SUM(handles)+SUM(errors)+SUM(prepared_handles)>0 ORDER BY project",
                 (project, project),
@@ -143,6 +144,8 @@ def _summarize_history(rows: list[sqlite3.Row]) -> list[dict]:
         "handles",
         "catalog_writes",
         "catalog_refreshes",
+        "full_events",
+        "patch_events",
     )
     for project, samples in grouped.items():
         first = samples[0]
@@ -154,7 +157,10 @@ def _summarize_history(rows: list[sqlite3.Row]) -> list[dict]:
                 - datetime.datetime.fromisoformat(first["sampled_at"])
             ).total_seconds(),
         )
-        deltas = {counter: last[counter] - first[counter] for counter in counters}
+        deltas = {
+            counter: last.get(counter, 0) - first.get(counter, 0)
+            for counter in counters
+        }
         rate_series = []
         for previous, current in pairwise(samples):
             seconds = (

@@ -16,7 +16,7 @@ from piddiplatsch.catalog.models import (
 )
 from piddiplatsch.exceptions import CatalogError
 
-_SCHEMA_VERSION = 3
+_SCHEMA_VERSION = 4
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS catalog_items (
     project TEXT NOT NULL, collection_id TEXT NOT NULL, item_id TEXT NOT NULL,
@@ -30,6 +30,7 @@ CREATE TABLE IF NOT EXISTS work_items (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     project TEXT NOT NULL, topic TEXT NOT NULL, partition INTEGER NOT NULL,
     offset INTEGER NOT NULL, stac_blob BLOB NOT NULL,
+    event_type TEXT NOT NULL CHECK(event_type IN ('full','patch')),
     state TEXT NOT NULL DEFAULT 'pending' CHECK(state IN ('pending','mapped','invalid','published')),
     created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
     batch_id TEXT, message TEXT, handle_count INTEGER NOT NULL DEFAULT 0,
@@ -49,6 +50,7 @@ CREATE TABLE IF NOT EXISTS stats (
     items INTEGER NOT NULL DEFAULT 0, invalid_items INTEGER NOT NULL DEFAULT 0,
     handles INTEGER NOT NULL DEFAULT 0, prepared_handles INTEGER NOT NULL DEFAULT 0,
     alias_handles INTEGER NOT NULL DEFAULT 0, errors INTEGER NOT NULL DEFAULT 0,
+    full_events INTEGER NOT NULL DEFAULT 0, patch_events INTEGER NOT NULL DEFAULT 0,
     message TEXT, runtime TEXT,
     PRIMARY KEY(kind, project, id)
 );
@@ -148,7 +150,7 @@ class SQLiteCatalog(BaseCatalog):
                 self._execute("PRAGMA journal_mode=WAL")
                 self._execute("PRAGMA synchronous=FULL")
                 self._require_connection().executescript(
-                    "BEGIN IMMEDIATE;\n" + _SCHEMA + "\nPRAGMA user_version=3;\nCOMMIT;"
+                    "BEGIN IMMEDIATE;\n" + _SCHEMA + "\nPRAGMA user_version=4;\nCOMMIT;"
                 )
         except (OSError, sqlite3.Error, CatalogError) as exc:
             self.close()
@@ -347,17 +349,17 @@ class SQLiteCatalog(BaseCatalog):
 
     def get_work(self, identity):
         row = self._execute(
-            "SELECT stac_blob FROM work_items WHERE project=? AND id=?",
+            "SELECT stac_blob,event_type FROM work_items WHERE project=? AND id=?",
             (self.project, identity),
         ).fetchone()
         if row is None:
             raise CatalogError(f"Work entry {identity} is missing")
-        return WorkItem(_decode(row[0]), identity)
+        return WorkItem(_decode(row[0]), identity, row[1])
 
     def seal_batch(self, batch_id, outcomes):
         """Commit one retained batch summary with its work-state transitions."""
         with self.transaction():
-            items = invalid = handles = aliases = 0
+            items = invalid = handles = aliases = full = patches = 0
             existing = self._execute(
                 "SELECT 1 FROM stats WHERE kind='batch' AND project=? AND id=?",
                 (self.project, batch_id),
@@ -365,7 +367,7 @@ class SQLiteCatalog(BaseCatalog):
             for outcome in outcomes:
                 identity, error = outcome["id"], outcome.get("error")
                 row = self._execute(
-                    "SELECT state,batch_id FROM work_items WHERE project=? AND id=?",
+                    "SELECT state,batch_id,event_type FROM work_items WHERE project=? AND id=?",
                     (self.project, identity),
                 ).fetchone()
                 desired = "invalid" if error is not None else "mapped"
@@ -373,11 +375,12 @@ class SQLiteCatalog(BaseCatalog):
                     raise CatalogError(
                         "Batch source work is missing; refusing stale batch"
                     )
-                if row == (desired, batch_id) or row == ("published", batch_id):
+                state = row[:2]
+                if state == (desired, batch_id) or state == ("published", batch_id):
                     if not existing:
                         raise CatalogError("Batch statistics are missing")
                     continue
-                if row != ("pending", None) or existing:
+                if state != ("pending", None) or existing:
                     raise CatalogError("Work already belongs to another batch or state")
                 prepared = outcome.get("handle_count") if error is None else 0
                 alias_count = outcome.get("alias_count", 0) if error is None else 0
@@ -393,6 +396,8 @@ class SQLiteCatalog(BaseCatalog):
                 invalid += int(error is not None)
                 handles += prepared
                 aliases += alias_count
+                full += int(row[2] == "full")
+                patches += int(row[2] == "patch")
             if existing:
                 return
             if not items and not invalid:
@@ -400,8 +405,8 @@ class SQLiteCatalog(BaseCatalog):
             now = _now()
             self._execute(
                 "INSERT INTO stats(kind,project,id,status,created_at,updated_at,mapped_at,"
-                "items,invalid_items,prepared_handles,alias_handles,errors) "
-                "VALUES ('batch',?,?,?,?,?,?,?,?,?,?,?)",
+                "items,invalid_items,prepared_handles,alias_handles,errors,full_events,patch_events) "
+                "VALUES ('batch',?,?,?,?,?,?,?,?,?,?,?,?,?)",
                 (
                     self.project,
                     batch_id,
@@ -414,6 +419,8 @@ class SQLiteCatalog(BaseCatalog):
                     handles,
                     aliases,
                     invalid,
+                    full,
+                    patches,
                 ),
             )
 
@@ -586,19 +593,22 @@ class SQLiteCatalogTransaction(BaseCatalogTransaction):
             self._failed = True
             raise CatalogError(f"Could not store catalog item: {exc}") from exc
 
-    def add_work(self, entry, source):
+    def add_work(self, entry, source, *, event_type="full"):
         self._require_active()
         try:
+            if event_type not in ("full", "patch"):
+                raise ValueError("Work event_type must be full or patch")
             timestamp = _now()
             self._catalog._execute(
                 "INSERT INTO work_items "
-                "(project,topic,partition,offset,stac_blob,created_at,updated_at) VALUES (?,?,?,?,?,?,?)",
+                "(project,topic,partition,offset,stac_blob,event_type,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?)",
                 (
                     self._catalog.project,
                     source.topic,
                     source.partition,
                     source.offset,
                     _encode(entry),
+                    event_type,
                     timestamp,
                     timestamp,
                 ),

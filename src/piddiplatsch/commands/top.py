@@ -107,6 +107,7 @@ class TopCommand(Command):
             lines.append(
                 Text(
                     f"Harvest: {state} · {rate} events/s (5m avg) · {total:,} events {since}"
+                    + _harvest_event_types(harvest)
                 )
             )
         else:
@@ -267,6 +268,13 @@ def _totals_line(status: dict) -> Text:
     return Text(
         f"Catalog: {_count(items)} items · Mapped: {_count(sum(generated) if generated else None)} events"
     )
+
+
+def _harvest_event_types(runs):
+    rows = [row for run in runs for row in run["projects"]]
+    full = sum(row.get("full_events", 0) for row in rows)
+    patches = sum(row.get("patch_events", 0) for row in rows)
+    return f" · stored: {full:,} full / {patches:,} patch"
 
 
 def _harvest_trend(runs: list[dict], project: str) -> str:

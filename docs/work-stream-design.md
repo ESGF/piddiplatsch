@@ -56,6 +56,7 @@ Full event snapshots and their processing progress.
 | `partition` | Kafka partition |
 | `offset` | Kafka event offset |
 | `stac_blob` | Independent full STAC snapshot, compressed with zlib |
+| `event_type` | Original source event: `full` (POST, including omitted method) or `patch` (PATCH) |
 | `state` | `pending`, `mapped`, `invalid`, or `published` |
 | `created_at` | When the job was stored |
 | `updated_at` | When its state last changed |
@@ -100,6 +101,7 @@ Live monitoring uses separate rows marked `run`, within the same table.
 | `created_at`, `updated_at` | First recording and latest update, in UTC |
 | `mapped_at`, `published_at` | Mapping acknowledgement and full publication completion |
 | `items`, `invalid_items` | Successfully mapped and rejected work entries |
+| `full_events`, `patch_events` | Original types of all processed events in this batch, including rejected ones |
 | `prepared_handles` | All prepared Handle records, including aliases |
 | `alias_handles` | Alias subset of prepared Handles |
 | `handles` | Published Handle records; assigned on full batch completion |
@@ -115,6 +117,13 @@ visible in live run counters; durable published totals advance on batch completi
 Batch rows contain no runtime samples. Run rows have zero processing totals and
 never contribute to batch aggregates. Daily mapping and publication reports can
 group batches by `mapped_at` and `published_at`, respectively.
+
+Harvest stores `event_type` with each immutable work snapshot, outside the source
+STAC JSON. A PATCH remains a patch event even when harvest recovers its current
+state remotely; mapping always receives the reconstructed full snapshot. Batch
+type counts are derived from stored work, not from the POST envelope used for
+mapping, and sum to `items + invalid_items`. Repeated acknowledgement and
+publication do not increment them. Reset/retry preserve the original event type.
 
 ## Mapping and publication
 
@@ -243,7 +252,8 @@ Implementation tasks:
   rollup. Mapping and publication continue updating batch rows; heartbeats
   continue updating run rows. Support a dry run and configurable retention age.
 - Aggregate eligible batches by project and UTC date. Preserve mapped/rejected
-  item counts, prepared Handles, the alias subset, published Handles, and errors.
+  item counts, full/patch event counts, prepared Handles, the alias subset,
+  published Handles, and errors.
   Attribute mapping counts to `mapped_at` and publication counts to
   `published_at`, including batches spanning midnight. Define error-date
   attribution explicitly: existing batch totals do not retain individual failed
@@ -319,7 +329,7 @@ prunes expired completed run rows. `top` reads one database snapshot for live
 activity, prepared/published Handle totals, and backlog. It does not inspect
 output manifests or status files. Batch summaries survive work retention and
 run-history cleanup. Reset deletes only the selected project's statistics.
-Database schema version 3 and batch manifest version 3 require a fresh start;
+Database schema version 4 and batch manifest version 3 require a fresh start;
 no migration is provided. Harvest checkpoints are shared by topic/partition: a
 harvest clean must include every stored project. Project processing reset
 preserves checkpoints and only requeues that project's retained work.

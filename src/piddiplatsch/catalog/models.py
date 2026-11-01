@@ -113,3 +113,4 @@ class PendingWork:
 class WorkItem:
     entry: CatalogEntry
     id: int
+    event_type: str = "full"

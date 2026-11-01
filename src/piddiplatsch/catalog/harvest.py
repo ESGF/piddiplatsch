@@ -251,10 +251,13 @@ class CatalogHarvester:
                         recovery,
                     )
             transaction.put_item(entry)
-            transaction.add_work(entry, source)
+            transaction.add_work(
+                entry, source, event_type="patch" if method == "PATCH" else "full"
+            )
             transaction.set_checkpoint(
                 KafkaCheckpoint(source.topic, source.partition, source.offset + 1)
             )
+        result.event_type = "patch" if method == "PATCH" else "full"
         result.catalog_written = True
         result.catalog_refreshed = recovery is not None
         return result

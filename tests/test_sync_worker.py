@@ -136,6 +136,8 @@ def test_sync_map_info_reports_force_setting_and_alias_summary(setup, caplog, fo
         dict(
             project="cmip7",
             mapped_items=2,
+            full_events=2,
+            patch_events=0,
             prepared=6 if force else 4,
             published=6 if force else 4,
             errors=0,
@@ -858,3 +860,79 @@ def test_sync_progress_displays_map_and_known_publication_total(setup, monkeypat
         str(call) for call in bars.return_value.set_description_str.call_args_list
     ]
     assert any("sync cmip7 map" in phase and "items:" in phase for phase in phases)
+
+
+def test_full_and_patch_event_types_survive_harvest_mapping_and_publication(setup):
+    from piddiplatsch.monitoring.stats import Stats
+    from piddiplatsch.monitoring.status import read_status
+
+    put, directory, _root = setup
+    original = put(1)
+    payload = original["data"]["payload"]
+    patch = {
+        "data": {
+            "payload": dict(
+                method="PATCH",
+                collection_id=payload["collection_id"],
+                item_id=payload["item"]["id"],
+                patch=[dict(op="add", path="/properties/piddi:test", value="patched")],
+            )
+        }
+    }
+    config._set("batch", "max_items", 10)
+    config._set("stats", "enable_db", True)
+    database = directory / "piddi.db"
+    stats = Stats()
+    stats.configure_for_run(
+        enable_db=True,
+        db_path=str(database),
+        command="harvest",
+        selected_projects=("cmip7",),
+        heartbeat_interval_seconds=60,
+    )
+    with closing(CatalogHarvester(directory)) as harvester:
+        for key, message, offset in (
+            ("duplicate", original, 0),
+            ("full", original, 1),
+            ("patch", patch, 2),
+        ):
+            result = harvester.process_with_source(
+                key, message, KafkaSource("topic", 0, offset)
+            )
+            stats.record_result(result)
+    stats.close(status="completed")
+    before = read_status(database)
+    harvested = before["runs"][0]["projects"][0]
+    assert (
+        harvested["consumed"],
+        harvested["filtered"],
+        harvested["full_events"],
+        harvested["patch_events"],
+    ) == (3, 1, 1, 1)
+    health = before["health"]["projects"][0]
+    assert (health["pending_full_events"], health["pending_patch_events"]) == (2, 1)
+    with SQLiteCatalog("cmip7", database, read_only=True) as reader:
+        work = list(reader.iter_pending(10))
+        assert [row.event_type for row in work] == ["full", "full", "patch"]
+        assert work[-1].entry.item["properties"]["piddi:test"] == "patched"
+        assert "piddi:test" not in work[0].entry.item["properties"]
+    publisher = Publisher()
+    worker = SyncWorker(publisher=publisher)
+    worker.run(force_map=True)
+    assert not worker.errors
+    assert len(publisher.calls) == 1
+    after = read_status(database)
+    assert after["handle_totals"][0]["full_events"] == 2
+    assert after["handle_totals"][0]["patch_events"] == 1
+    mapped = next(run for run in after["runs"] if run["command"] == "sync")
+    assert (
+        mapped["projects"][0]["full_events"],
+        mapped["projects"][0]["patch_events"],
+    ) == (2, 1)
+    assert (
+        mapped["history"][0]["deltas"]["full_events"],
+        mapped["history"][0]["deltas"]["patch_events"],
+    ) == (2, 1)
+    # Recovery/repeated sync must not reclassify a saved PATCH as a full event.
+    assert SyncWorker(publisher=publisher).run(force_map=True) == []
+    assert read_status(database)["handle_totals"] == after["handle_totals"]

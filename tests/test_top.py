@@ -318,7 +318,9 @@ def test_compact_overview_keeps_eta_and_actionable_warnings():
                 "status": "running",
                 "state": "healthy",
                 "started_at": "2026-10-30T20:00:00+00:00",
-                "projects": [{"project": "cordex-cmip6"}],
+                "projects": [
+                    {"project": "cordex-cmip6", "full_events": 123, "patch_events": 45}
+                ],
                 "history": [
                     {
                         "project": "cordex-cmip6",
@@ -359,6 +361,7 @@ def test_compact_overview_keeps_eta_and_actionable_warnings():
     assert "Rate windows" not in rendered
     assert "(5m avg)" in rendered
     assert "Harvest: running · 123.4 events/s" in rendered
+    assert "stored: 123 full / 45 patch" in rendered
     assert "0 events since 2026-10-30 20:00 UTC" in rendered
     assert "Harvest/s" in rendered
     assert "Harvest trend" in rendered

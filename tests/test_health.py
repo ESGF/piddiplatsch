@@ -40,6 +40,8 @@ def test_health_reads_only_database_without_modifying_it(tmp_path):
         project="cmip7",
         total_items=5,
         pending_items=2,
+        pending_full_events=2,
+        pending_patch_events=0,
         invalid_items=1,
         ready_batches=1,
         failed_batches=1,

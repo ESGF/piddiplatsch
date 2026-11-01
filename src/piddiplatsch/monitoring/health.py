@@ -19,11 +19,13 @@ def database_health(connection, project=None):
         names = {project.casefold()}
     projects = []
     for name in sorted(names):
-        total, pending, invalid = connection.execute(
+        total, pending, invalid, full, patches = connection.execute(
             "SELECT (SELECT COUNT(*) FROM catalog_items WHERE project=?), "
             "(SELECT COUNT(*) FROM work_items WHERE project=? AND state='pending'), "
-            "(SELECT COUNT(*) FROM work_items WHERE project=? AND state='invalid')",
-            (name, name, name),
+            "(SELECT COUNT(*) FROM work_items WHERE project=? AND state='invalid'), "
+            "(SELECT COUNT(*) FROM work_items WHERE project=? AND state='pending' AND event_type='full'), "
+            "(SELECT COUNT(*) FROM work_items WHERE project=? AND state='pending' AND event_type='patch')",
+            (name, name, name, name, name),
         ).fetchone()
         batches = connection.execute(
             "SELECT id,prepared_handles,status='publication_failed' FROM stats "
@@ -41,6 +43,8 @@ def database_health(connection, project=None):
                 project=name,
                 total_items=total,
                 pending_items=pending,
+                pending_full_events=full,
+                pending_patch_events=patches,
                 invalid_items=invalid,
                 ready_batches=len(batches),
                 failed_batches=sum(row[2] for row in batches),
@@ -82,6 +86,8 @@ def read_health(project: str | None = None) -> dict:
                     project=name,
                     total_items=None,
                     pending_items=None,
+                    pending_full_events=None,
+                    pending_patch_events=None,
                     invalid_items=None,
                     ready_batches=0,
                     failed_batches=0,

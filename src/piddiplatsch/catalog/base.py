@@ -77,7 +77,9 @@ class BaseCatalogTransaction(BaseCatalogReader):
         """
 
     @abstractmethod
-    def add_work(self, entry: CatalogEntry, source) -> None:
+    def add_work(
+        self, entry: CatalogEntry, source, *, event_type: str = "full"
+    ) -> None:
         """Insert an immutable event snapshot in the catalog/checkpoint transaction."""
 
     @abstractmethod

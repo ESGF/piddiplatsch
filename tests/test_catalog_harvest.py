@@ -105,6 +105,12 @@ def test_patch_replay_is_idempotent_and_new_updates_replace_existing_item(
             "updates"
         ] == ["one", "one"]
         assert catalog.get_checkpoint("topic", 0).next_offset == 4
+        assert [work.event_type for work in catalog.iter_pending(10)] == [
+            "full",
+            "patch",
+            "patch",
+            "full",
+        ]
         assert (
             catalog.find_previous_version("CMIP6", "CMIP6.dataset", 2)
             == "CMIP6.dataset.v1"
@@ -394,6 +400,7 @@ def test_remote_recovery_never_reapplies_patch_and_survives_restart(
             "offset": 5,
         }
         assert entry.remote_refresh["endpoint"] == "https://stac.example"
+        assert catalog.get_work(1).event_type == "patch"
         assert entry.remote_refresh["fetched_at"]
         assert list(catalog.iter_items(remote_refresh_only=True)) == [entry]
         assert catalog.get_checkpoint("topic", 0).next_offset == 6

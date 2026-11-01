@@ -411,7 +411,15 @@ def test_concurrent_heartbeats_preserve_runs_and_durable_totals(tmp_path, monkey
     status = read_status(database)
     assert {run["run_id"] for run in status["runs"]} == {"0", "1"}
     assert status["handle_totals"] == [
-        dict(project="cmip7", mapped_items=1, prepared=3, published=3, errors=0)
+        dict(
+            project="cmip7",
+            mapped_items=1,
+            prepared=3,
+            published=3,
+            errors=0,
+            full_events=1,
+            patch_events=0,
+        )
     ]
     assert not (tmp_path / "status").exists()
     assert clean_status_history(dry_run=True) == 2

@@ -244,6 +244,8 @@ class Stats:
                     "handles",
                     "catalog_writes",
                     "catalog_refreshes",
+                    "full_events",
+                    "patch_events",
                 ),
                 0,
             )
@@ -294,6 +296,8 @@ class Stats:
                     "handles",
                     "catalog_writes",
                     "catalog_refreshes",
+                    "full_events",
+                    "patch_events",
                 ),
                 0,
             )
@@ -412,6 +416,9 @@ class Stats:
         with self._lock:
             counters = self._project_counters[project]
             counters["consumed"] += 1
+            event_type = getattr(result, "event_type", None)
+            if event_type in {"full", "patch"}:
+                counters[event_type + "_events"] += 1
             if result.filtered:
                 counters["filtered"] += 1
                 self.tick()
