@@ -4,6 +4,8 @@
 
 ### Added
 
+- Companion error log beside the normal log (`piddi.error.log`), containing
+  ERROR/CRITICAL messages and tracebacks, with deployment log rotation.
 - Raw JSONL dump rotation by UTC day and event count (`consumer.dump_max_events`,
   default 100,000), with numbered parts, restart continuation, and maintenance
   compression of previous days' parts.

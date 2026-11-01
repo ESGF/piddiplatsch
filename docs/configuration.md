@@ -241,6 +241,11 @@ sample_retention_days = 30
 INFO logs show progress summaries. Use `-vv` or `--debug` for record details.
 `--log PATH` overrides the log file for one command. Set `logging.file = ""`
 to log to the terminal. `--silent` hides progress bars but keeps final summaries.
+File logging also writes ERROR and CRITICAL messages, including tracebacks, to
+a companion file: `pid.error.log` beside `pid.log`, or `piddi.error.log` beside
+`piddi.log`. The normal log still follows its configured level. The companion
+always includes ERROR and CRITICAL, even if the normal level is CRITICAL.
+Terminal-only logging does not create a companion file.
 
 Statistics log every 30 seconds or 10,000 messages as results arrive.
 The monitoring database records harvest and mapping. `piddi top` reads it.

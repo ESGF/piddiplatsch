@@ -68,6 +68,7 @@ publish_retries = 3
 # INFO shows progress summaries. Use -vv/--debug for per-record details.
 level = "INFO"
 # Set to an empty string to log to the terminal instead of a file.
+# File logging also writes ERROR/CRITICAL messages to a sibling .error.log file.
 file = "pid.log"
 
 [kafka]

@@ -315,6 +315,9 @@ catalog size. Ctrl-C closes the input, progress display, and monitoring reporter
 INFO is the default log level. Local runs write to `pid.log`; deployed services
 normally write to `/var/log/piddi/piddi.log`. Use `--log PATH` to change the file
 for one command. Use `-vv` or `--debug` for individual record details.
+ERROR and CRITICAL messages also go to the adjacent `piddi.error.log` (locally,
+`pid.error.log`), including tracebacks. The deployment logrotate policy rotates
+both files. No extra setting is needed.
 
 Log summaries use labels such as `[harvest]`, `[map]`, `[publish]`, `[sync/map]`,
 and `[sync/publish]`. Harvest and mapping summaries appear every 30 seconds or

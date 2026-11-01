@@ -206,10 +206,17 @@ class Config:
         if console:
             handlers.append(RichHandler(rich_tracebacks=True))
         else:
-            handlers.append(WatchedFileHandler(log_path, encoding="utf-8"))
+            normal_handler = WatchedFileHandler(log_path, encoding="utf-8")
+            normal_handler.setLevel(log_level)
+            handlers.append(normal_handler)
+            path = Path(log_path)
+            error_path = path.with_name(f"{path.stem}.error{path.suffix}")
+            error_handler = WatchedFileHandler(str(error_path), encoding="utf-8")
+            error_handler.setLevel(logging.ERROR)
+            handlers.append(error_handler)
 
         logging.basicConfig(
-            level=log_level,
+            level=log_level if console else min(log_level, logging.ERROR),
             format=(
                 "%(message)s"
                 if console
