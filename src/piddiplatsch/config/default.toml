@@ -24,6 +24,8 @@
 projects = ["cmip6"]
 topic = "CMIP6"
 output_dir = "outputs"
+# Split raw archives by UTC day and by this many events per file.
+dump_max_events = 100000
 
 [disk]
 enabled = true

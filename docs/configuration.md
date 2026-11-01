@@ -251,6 +251,24 @@ become stale after 15 seconds without a heartbeat. History samples are kept for
 30 days; use `sample_retention_days = 0` to keep them indefinitely.
 See [Logging and statistics](operations.md#logging-and-statistics) for examples.
 
+## Raw dump files
+
+Harvest archives events under `<consumer.output_dir>/dump` before processing.
+Files split at the UTC day boundary or after `consumer.dump_max_events` events
+(default `100000`, must be positive):
+
+```toml
+[consumer]
+dump_max_events = 100000
+```
+
+Parts are named `dump_messages_2026-11-01_000001.jsonl`, then `_000002.jsonl`,
+and so on. Restarting resumes the last part and its event count. Existing daily
+files are preserved; numbered parts follow them in filename order. Each line
+still contains the original event payload. The limit counts events, not bytes;
+individual events can vary greatly in size. Maintenance compresses parts from
+previous UTC days, leaving today's files available for appending.
+
 ## Mapping settings
 
 | Setting | Purpose |

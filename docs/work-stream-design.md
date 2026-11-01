@@ -142,7 +142,8 @@ including replay after Kafka retention has removed older events.
 Rotate dumps by a configurable event count as well as by day. The first day's
 harvest can contain the complete retained history and reach several GB. Numbered
 parts must preserve deterministic replay order across rotation and restart.
-Current dumps do not yet attach Kafka coordinates or rotate by event count.
+Event-count rotation is implemented through `consumer.dump_max_events` (default
+100,000). Current dumps do not yet attach Kafka coordinates.
 
 ## Retention and compaction
 

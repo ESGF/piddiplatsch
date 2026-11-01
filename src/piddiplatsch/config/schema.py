@@ -41,6 +41,7 @@ class ConsumerConfig(BaseModel):
     projects: list[str] | Literal["all"]
     topic: str
     output_dir: str | None = None
+    dump_max_events: int = Field(default=100000, gt=0)
 
     @model_validator(mode="before")
     @classmethod

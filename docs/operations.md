@@ -410,8 +410,9 @@ piddi maintain --dry-run
 piddi maintain
 ```
 
-Maintenance compresses `dump/dump_messages_YYYY-MM-DD.jsonl` files dated before
-today in UTC, using gzip level 1. It skips today's file, future dates, symbolic
+Maintenance compresses `dump/dump_messages_YYYY-MM-DD_NNNNNN.jsonl` parts and
+existing daily `dump_messages_YYYY-MM-DD.jsonl` files dated before today in UTC,
+using gzip level 1. It skips today's files, future dates, symbolic
 links, and files with an existing `.jsonl.gz` archive. A lock prevents overlapping
 maintenance runs. The original remains until the gzip output is complete and
 durably stored; a dump that changes during compression is preserved with an

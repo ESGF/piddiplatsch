@@ -85,6 +85,7 @@ class ProcessingPipeline:
             publish=publish,
         )
         self.dump_messages = dump_messages
+        self.dump_recorder = DumpRecorder() if dump_messages else None
         self.disk_guard = get_disk_guard()
         self.max_errors = 1 if max_errors is None else int(max_errors)
         if limit is not None and limit <= 0:
@@ -170,8 +171,8 @@ class ProcessingPipeline:
     def _safe_process_message(self, key, value, *, source_message=None):
         try:
             logger.debug(f"Processing message: {key}")
-            if self.dump_messages:
-                DumpRecorder().record(key, value)
+            if self.dump_recorder is not None:
+                self.dump_recorder.record(key, value)
             if source_message is not None:
                 process = getattr(self.processor, "process_with_source", None)
                 if callable(process):

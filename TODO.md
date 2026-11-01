@@ -40,7 +40,7 @@ the current batching fix remains in place.
   topic, partition, offset, key, and the original message payload. Keep archived
   events unchanged regardless of processing outcome and preserve ordering
   within each partition.
-- [ ] Rotate dump files by a configurable event count as well as by day. The
+- [x] Rotate dump files by a configurable event count as well as by day. The
   initial harvest can contain the complete retained history and produce several
   GB in one day. Split a day's archive into numbered parts with deterministic
   replay ordering; preserve every event across rotation and restart.

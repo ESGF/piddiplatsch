@@ -93,3 +93,16 @@ def test_existing_archive_is_not_replaced_or_used_to_delete_source(dumps):
     assert compress_closed_dumps() == []
     assert source.read_bytes() == original
     assert gzip.decompress(archived.read_bytes()) == b"older archive"
+
+
+def test_maintenance_compresses_numbered_parts_only_before_today(dumps):
+    yesterday = dumps / "dump_messages_2026-10-29_000002.jsonl"
+    today = dumps / "dump_messages_2026-10-30_000001.jsonl"
+    yesterday.write_bytes(b'{"event": 1}\n')
+    today.write_bytes(b'{"event": 2}\n')
+    paths = compress_closed_dumps()
+    archived = yesterday.with_suffix(".jsonl.gz")
+    assert archived in paths
+    assert gzip.decompress(archived.read_bytes()) == b'{"event": 1}\n'
+    assert not yesterday.exists()
+    assert today.exists()

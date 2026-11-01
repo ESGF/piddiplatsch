@@ -4,6 +4,9 @@
 
 ### Added
 
+- Raw JSONL dump rotation by UTC day and event count (`consumer.dump_max_events`,
+  default 100,000), with numbered parts, restart continuation, and maintenance
+  compression of previous days' parts.
 - Project-specific mapping error limits under `[plugins.<name>].max_errors`;
   removed the consumer-level setting. Unconfigured projects stop on the first error.
 - Per-project numeric `Errors` totals in `piddi top`, including finished runs.
