@@ -88,24 +88,33 @@ checkpoints are not project-specific.
 
 ### `stats`
 
-Daily summaries retained independently of completed work entries.
+One durable summary per batch, retained independently of completed work entries.
+Live monitoring uses separate rows marked `run`, within the same table.
 
 | Column | Purpose |
 | --- | --- |
-| `date` | Summary date |
-| `project` | Project |
-| `items` | Successfully mapped items |
-| `handles` | Successfully published Handles |
-| `prepared_handles` | Successfully prepared Handles, including aliases |
-| `runtime` | JSON run snapshots and bounded rate samples, keyed by run ID |
-| `last_publication` | Last completed batch summary for this project/day |
-| `errors` | Failed processing attempts |
+| `kind` | `batch` for durable processing counts; `run` for live monitoring |
+| `project` | Project; empty only for a monitoring run with no projects yet |
+| `id` | Batch ID or monitoring run ID, according to `kind` |
+| `status` | Batch: `ready`, `invalid`, `publication_failed`, or `published`; run: current run status |
+| `created_at`, `updated_at` | First recording and latest update, in UTC |
+| `mapped_at`, `published_at` | Mapping acknowledgement and full publication completion |
+| `items`, `invalid_items` | Successfully mapped and rejected work entries |
+| `prepared_handles` | All prepared Handle records, including aliases |
+| `alias_handles` | Alias subset of prepared Handles |
+| `handles` | Published Handle records; assigned on full batch completion |
+| `errors` | Rejected items plus failed publication attempts |
+| `message` | Latest publication failure; cleared on successful completion |
+| `runtime` | Run rows only: heartbeat, project counters, bounded rate samples, disk snapshot |
 
-Primary key: `(date, project)`. All dates and timestamps use UTC. Weekly and
-monthly reports can sum daily rows; the table name does not prescribe a reporting
-interval. Job totals and failed-attempt totals have distinct meanings. Repeated
-summary or maintenance runs must not count the same result again; summary
-updates and their database progress must be transaction-safe.
+Primary key: `(kind, project, id)`. Mapping inserts the batch row in the same
+transaction as its work-state changes. Publication updates that row. Repeating a
+successful acknowledgement never creates another row or adds the counts again;
+each failed publication attempt increments `errors`. Partial publication remains
+visible in live run counters; durable published totals advance on batch completion.
+Batch rows contain no runtime samples. Run rows have zero processing totals and
+never contribute to batch aggregates. Daily mapping and publication reports can
+group batches by `mapped_at` and `published_at`, respectively.
 
 ## Mapping and publication
 
@@ -185,7 +194,7 @@ Unknown-project handling is configured separately through
 coordinate-bearing `unknown_projects` dump before advancing the shared
 checkpoint. Ignored events count as filtered in run/live statistics under their
 project identifier, with a warning per newly ignored event. They create no
-catalog/work rows and do not count as mapping errors in the daily summary.
+catalog/work rows and do not count as mapping errors in batch summaries.
 Missing/conflicting identities and malformed envelopes still stop harvest.
 
 JSONL dumps are the original event archive, not the pending work queue. Include
@@ -234,9 +243,9 @@ not acknowledge database work. Use queued publication for the work stream.
 
 Batch manifests record exact work IDs and mapping outcomes. After files and their
 directories are durable, one transaction associates successful work with the
-batch, marks rejected work invalid, and increments daily mapping/error totals.
+batch, marks rejected work invalid, and inserts its mapping/error summary.
 Recovery repeats this transaction idempotently. Successful publication advances
-mapped work and adds published Handle totals in one transaction, also
+mapped work and updates the same summary row in one transaction, also
 idempotently. Publication failure records a failed batch attempt and leaves work
 mapped; a failed-attempt summary is not a unique-job count. HTTP may repeat after
 a crash, but a repeated successful acknowledgement does not repeat the summary.
@@ -261,18 +270,17 @@ retention. Harvest a correction as a new event, or use an explicit whole-project
 reset to replay all retained snapshots in order. Reset does not recover work
 already removed by retention.
 
-Live heartbeats and recent speed samples are stored in `stats.runtime`. Each
-run stores a project-specific snapshot in its start-date/project row. Concurrent
-commands merge their run IDs transactionally without changing daily totals.
-Runtime-only rows have zero daily counters. Each run retains up to one hour of
-samples; maintenance prunes expired completed runs. `top` reads one database
-snapshot for live activity, prepared/published Handle totals, and work backlog.
-It does not inspect output manifests or status files. Prepared counts are committed
-with batch acknowledgement, and include aliases. Daily totals and the last
-publication summary survive work retention. Database schema version 2 and batch
-manifest version 3 require a fresh start; no migration is provided. Harvest checkpoints are shared by topic/partition: a harvest clean
-must include every stored project. Project processing reset preserves checkpoints
-and only requeues that project's retained work.
+Live heartbeats and recent speed samples are stored in `stats` rows marked `run`,
+keyed by project and run ID. Concurrent commands update their own rows without
+changing batch totals. Each run retains up to one hour of samples; maintenance
+prunes expired completed run rows. `top` reads one database snapshot for live
+activity, prepared/published Handle totals, and backlog. It does not inspect
+output manifests or status files. Batch summaries survive work retention and
+run-history cleanup. Reset deletes only the selected project's statistics.
+Database schema version 3 and batch manifest version 3 require a fresh start;
+no migration is provided. Harvest checkpoints are shared by topic/partition: a
+harvest clean must include every stored project. Project processing reset
+preserves checkpoints and only requeues that project's retained work.
 
 This implementation supersedes the separate per-project database and DuckDB
 proposals. Parallel project workers remain deferred.

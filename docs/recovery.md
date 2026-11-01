@@ -24,7 +24,7 @@ snapshots remain pending. Building artifacts may remain for inspection.
 A sealed batch has durable Handle/failure files, checksums, and exact work-ID
 outcomes. If the process stopped before database acknowledgement, the next batch
 command verifies the files and repeats the acknowledgement transaction. Repeated
-acknowledgement cannot repeat the daily totals. A checksum error or missing source
+acknowledgement cannot repeat the batch totals. A checksum error or missing source
 work blocks that batch; restore the matching database and output together.
 
 Mapping validation failures become invalid work with an explanation, while
@@ -43,7 +43,7 @@ a later write to that Handle starts. Retries skip completed positions and defer
 later updates after a failure. A torn final journal line is repaired on restart.
 A crash between remote HTTP success and its journal append can repeat that last
 write; earlier completed Handle versions are not replayed. The local system does not promise exactly-once remote execution. Successful
-work-state transitions and daily totals are nevertheless committed together and
+work-state transitions and batch totals are nevertheless committed together and
 are idempotent on recovery. If acknowledgement completed before archival, the
 next run archives the batch without republishing it.
 

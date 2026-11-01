@@ -146,7 +146,7 @@ class BaseCatalog(BaseCatalogReader):
 
     @abstractmethod
     def publish_batch(self, batch_id: str, handle_count: int, *, error=None) -> None:
-        """Record publication and daily totals in one transaction."""
+        """Update publication progress and the retained batch summary atomically."""
 
     @abstractmethod
     def compact(self) -> None:

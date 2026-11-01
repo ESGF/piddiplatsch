@@ -146,7 +146,7 @@ def clean_published_work(*, dry_run=False):
 
 
 def clean_status_history(*, dry_run=False):
-    """Prune expired completed runs in stats without touching daily totals."""
+    """Prune expired completed run rows without touching retained batch summaries."""
     import sqlite3
     from contextlib import closing
     from datetime import UTC, datetime, timedelta
@@ -161,23 +161,20 @@ def clean_status_history(*, dry_run=False):
     count = 0
     with closing(sqlite3.connect(database, timeout=5)) as connection, connection:
         connection.execute("BEGIN IMMEDIATE")
-        for day, project, encoded in connection.execute(
-            "SELECT date,project,runtime FROM stats"
+        for project, identity, encoded in connection.execute(
+            "SELECT project,id,runtime FROM stats WHERE kind='run'"
         ).fetchall():
-            runtime = json.loads(encoded)
-            expired = [
-                identity
-                for identity, payload in runtime.items()
-                if payload["run"].get("status") != "running"
-                and payload["run"].get("finished_at")
-                and payload["run"]["finished_at"] < cutoff
-            ]
-            count += len(expired)
-            if expired and not dry_run:
-                for identity in expired:
-                    del runtime[identity]
+            run = json.loads(encoded)["run"]
+            if (
+                run.get("status") == "running"
+                or not run.get("finished_at")
+                or run["finished_at"] >= cutoff
+            ):
+                continue
+            count += 1
+            if not dry_run:
                 connection.execute(
-                    "UPDATE stats SET runtime=? WHERE date=? AND project=?",
-                    (json.dumps(runtime), day, project),
+                    "DELETE FROM stats WHERE kind='run' AND project=? AND id=?",
+                    (project, identity),
                 )
     return count

@@ -16,7 +16,7 @@ from piddiplatsch.catalog.models import (
 )
 from piddiplatsch.exceptions import CatalogError
 
-_SCHEMA_VERSION = 2
+_SCHEMA_VERSION = 3
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS catalog_items (
     project TEXT NOT NULL, collection_id TEXT NOT NULL, item_id TEXT NOT NULL,
@@ -42,10 +42,15 @@ CREATE TABLE IF NOT EXISTS kafka_checkpoints (
     PRIMARY KEY(topic, partition)
 );
 CREATE TABLE IF NOT EXISTS stats (
-    date TEXT NOT NULL, project TEXT NOT NULL,
-    items INTEGER NOT NULL DEFAULT 0, handles INTEGER NOT NULL DEFAULT 0,
-    errors INTEGER NOT NULL DEFAULT 0, prepared_handles INTEGER NOT NULL DEFAULT 0,
-    runtime TEXT NOT NULL DEFAULT '{}', last_publication TEXT, PRIMARY KEY(date, project)
+    kind TEXT NOT NULL CHECK(kind IN ('batch','run')),
+    project TEXT NOT NULL, id TEXT NOT NULL,
+    status TEXT NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
+    mapped_at TEXT, published_at TEXT,
+    items INTEGER NOT NULL DEFAULT 0, invalid_items INTEGER NOT NULL DEFAULT 0,
+    handles INTEGER NOT NULL DEFAULT 0, prepared_handles INTEGER NOT NULL DEFAULT 0,
+    alias_handles INTEGER NOT NULL DEFAULT 0, errors INTEGER NOT NULL DEFAULT 0,
+    message TEXT, runtime TEXT,
+    PRIMARY KEY(kind, project, id)
 );
 """
 
@@ -143,7 +148,7 @@ class SQLiteCatalog(BaseCatalog):
                 self._execute("PRAGMA journal_mode=WAL")
                 self._execute("PRAGMA synchronous=FULL")
                 self._require_connection().executescript(
-                    "BEGIN IMMEDIATE;\n" + _SCHEMA + "\nPRAGMA user_version=2;\nCOMMIT;"
+                    "BEGIN IMMEDIATE;\n" + _SCHEMA + "\nPRAGMA user_version=3;\nCOMMIT;"
                 )
         except (OSError, sqlite3.Error, CatalogError) as exc:
             self.close()
@@ -349,29 +354,14 @@ class SQLiteCatalog(BaseCatalog):
             raise CatalogError(f"Work entry {identity} is missing")
         return WorkItem(_decode(row[0]), identity)
 
-    def _summary(
-        self, items=0, handles=0, errors=0, prepared_handles=0, last_publication=None
-    ):
-        self._execute(
-            "INSERT INTO stats(date,project,items,handles,errors,prepared_handles,last_publication) "
-            "VALUES (?,?,?,?,?,?,?) ON CONFLICT(date,project) DO UPDATE SET "
-            "items=items+excluded.items, handles=handles+excluded.handles, errors=errors+excluded.errors, "
-            "prepared_handles=prepared_handles+excluded.prepared_handles, "
-            "last_publication=COALESCE(excluded.last_publication,stats.last_publication)",
-            (
-                datetime.now(UTC).date().isoformat(),
-                self.project,
-                items,
-                handles,
-                errors,
-                prepared_handles,
-                last_publication,
-            ),
-        )
-
     def seal_batch(self, batch_id, outcomes):
-        """Idempotent DB acknowledgement after the immutable files are durable."""
+        """Commit one retained batch summary with its work-state transitions."""
         with self.transaction():
+            items = invalid = handles = aliases = 0
+            existing = self._execute(
+                "SELECT 1 FROM stats WHERE kind='batch' AND project=? AND id=?",
+                (self.project, batch_id),
+            ).fetchone()
             for outcome in outcomes:
                 identity, error = outcome["id"], outcome.get("error")
                 row = self._execute(
@@ -384,56 +374,86 @@ class SQLiteCatalog(BaseCatalog):
                         "Batch source work is missing; refusing stale batch"
                     )
                 if row == (desired, batch_id) or row == ("published", batch_id):
+                    if not existing:
+                        raise CatalogError("Batch statistics are missing")
                     continue
-                if row != ("pending", None):
+                if row != ("pending", None) or existing:
                     raise CatalogError("Work already belongs to another batch or state")
-                handles = outcome.get("handle_count") if error is None else 0
-                if type(handles) is not int or handles < 0:
+                prepared = outcome.get("handle_count") if error is None else 0
+                alias_count = outcome.get("alias_count", 0) if error is None else 0
+                if type(prepared) is not int or prepared < 0:
                     raise CatalogError("Missing or invalid prepared Handle count")
+                if type(alias_count) is not int or not 0 <= alias_count <= prepared:
+                    raise CatalogError("Invalid alias Handle count")
                 self._execute(
                     "UPDATE work_items SET state=?,batch_id=?,message=?,updated_at=?,handle_count=? WHERE id=?",
-                    (
-                        desired,
-                        batch_id,
-                        error,
-                        _now(),
-                        handles,
-                        identity,
-                    ),
+                    (desired, batch_id, error, _now(), prepared, identity),
                 )
-                self._summary(
-                    items=int(error is None),
-                    errors=int(error is not None),
-                    prepared_handles=handles,
-                )
+                items += int(error is None)
+                invalid += int(error is not None)
+                handles += prepared
+                aliases += alias_count
+            if existing:
+                return
+            if not items and not invalid:
+                raise CatalogError("Cannot seal an empty batch")
+            now = _now()
+            self._execute(
+                "INSERT INTO stats(kind,project,id,status,created_at,updated_at,mapped_at,"
+                "items,invalid_items,prepared_handles,alias_handles,errors) "
+                "VALUES ('batch',?,?,?,?,?,?,?,?,?,?,?)",
+                (
+                    self.project,
+                    batch_id,
+                    "ready" if items else "invalid",
+                    now,
+                    now,
+                    now,
+                    items,
+                    invalid,
+                    handles,
+                    aliases,
+                    invalid,
+                ),
+            )
 
     def publish_batch(self, batch_id, handle_count, *, error=None):
+        """Update the same batch row; only full completion counts as published."""
         with self.transaction():
-            count = self._execute(
-                "SELECT COUNT(*) FROM work_items WHERE project=? AND batch_id=? AND state='mapped'",
+            row = self._execute(
+                "SELECT status,prepared_handles FROM stats WHERE kind='batch' AND project=? AND id=?",
                 (self.project, batch_id),
-            ).fetchone()[0]
+            ).fetchone()
+            if row is None:
+                raise CatalogError("Batch statistics are missing")
+            status, prepared = row
+            if type(handle_count) is not int or handle_count != prepared:
+                raise CatalogError(
+                    "Publication Handle count does not match the prepared batch"
+                )
+            if status == "published":
+                return
+            now = _now()
             if error is not None:
                 self._execute(
                     "UPDATE work_items SET message=? WHERE project=? AND batch_id=? AND state='mapped'",
                     (error, self.project, batch_id),
                 )
-                self._summary(errors=1)
-            elif count:
+                self._execute(
+                    "UPDATE stats SET status='publication_failed',errors=errors+1,message=?,updated_at=? "
+                    "WHERE kind='batch' AND project=? AND id=?",
+                    (error, now, self.project, batch_id),
+                )
+            else:
                 self._execute(
                     "UPDATE work_items SET state='published',message=NULL,updated_at=? "
                     "WHERE project=? AND batch_id=? AND state='mapped'",
-                    (_now(), self.project, batch_id),
+                    (now, self.project, batch_id),
                 )
-                self._summary(
-                    handles=handle_count,
-                    last_publication=json.dumps(
-                        dict(
-                            batch_id=batch_id,
-                            published_at=_now(),
-                            handle_count=handle_count,
-                        )
-                    ),
+                self._execute(
+                    "UPDATE stats SET status='published',handles=prepared_handles,published_at=?,updated_at=?,message=NULL "
+                    "WHERE kind='batch' AND project=? AND id=?",
+                    (now, now, self.project, batch_id),
                 )
 
     def retry_invalid(self, identities):
@@ -446,7 +466,7 @@ class SQLiteCatalog(BaseCatalog):
                 if row != ("invalid",):
                     raise CatalogError(f"Work entry {identity} is not invalid")
                 if self._execute(
-                    "SELECT 1 FROM stats WHERE project=? AND handles>0 LIMIT 1",
+                    "SELECT 1 FROM stats WHERE kind='batch' AND project=? AND handles>0 LIMIT 1",
                     (self.project,),
                 ).fetchone():
                     raise CatalogError(

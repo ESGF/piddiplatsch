@@ -391,8 +391,18 @@ def test_concurrent_heartbeats_preserve_runs_and_durable_totals(tmp_path, monkey
     for reporter in reporters:
         reporter.close()
     with SQLiteCatalog("cmip7", database) as catalog:
-        with catalog.transaction():
-            catalog._summary(items=1, prepared_handles=3, handles=3)
+        from piddiplatsch.catalog import CatalogEntry
+        from piddiplatsch.core.messages import KafkaSource
+
+        with catalog.transaction() as transaction:
+            transaction.add_work(
+                CatalogEntry("CMIP7", {"id": "one"}, "dataset", 1),
+                KafkaSource("topic", 0, 0),
+            )
+        catalog.seal_batch(
+            "batch", [{"id": 1, "error": None, "handle_count": 3, "alias_count": 1}]
+        )
+        catalog.publish_batch("batch", 3)
     # Reading a complete snapshot needs no status, batch, or disk inspection.
     monkeypatch.setattr(
         "piddiplatsch.monitoring.disk.disk_status",

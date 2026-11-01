@@ -83,10 +83,10 @@ skip completed positions and do not remap. A failed write defers later updates t
 that Handle for the attempt. Receipts go under
 `published/YYYY/MM/DD/`. Successful batches move to
 `batches/<project>/published/YYYY/MM/DD/<batch-id>/`. A crash may repeat HTTP
-writes, but database acknowledgements and daily summaries are idempotent.
+writes, but database acknowledgements and batch summaries are idempotent.
 
 Explicit `piddi publish PATH...` is available for operator-managed JSONL files.
-It does not acknowledge database work or add to the work-stream daily totals.
+It does not acknowledge database work or add to the work-stream batch totals.
 Use queued publication for mapped work. Queued publication processes complete
 batches; date, limit, and offset selectors cannot bypass its ordering.
 
@@ -115,7 +115,7 @@ piddi reset --project cmip6 --apply
 
 Reset updates work rows in place without copying the shared database. It moves
 that project's old output into `reset-archives/<timestamp-id>/`, clears that
-project's daily summaries, and requeues all retained event snapshots. Catalog
+project's batch summaries, and requeues all retained event snapshots. Catalog
 records and Kafka checkpoints stay unchanged. Work already removed by
 retention cannot be recovered by this reset.
 
@@ -151,13 +151,15 @@ piddi maintain
 
 Top reads only `piddi.db`, including when `--db PATH` selects another database.
 Prepared and published Handle totals include dataset, file, and alias Handles.
-Daily mapped-work, prepared-Handle, published-Handle, and error totals survive work
-retention. Pending entries and ready batch counts come from work rows. Publication
+One retained summary per batch supplies mapped-work, prepared-Handle,
+published-Handle, and error totals, even after work retention. Pending entry counts
+come from work rows; ready batch counts come from batch summaries. Publication
 failures remain ready; mapping failures appear as invalid work or failed runs.
-Live heartbeats and rate samples share the `stats` table. Disk space is the last
-heartbeat snapshot, rather than a fresh filesystem check by top.
+Live heartbeats and rate samples occupy separate `run` rows in `stats`. Disk space
+is the last heartbeat snapshot, rather than a fresh filesystem check by top.
 `maintain` prunes completed run histories according to `stats.sample_retention_days`
-without deleting daily totals or last-publication summaries.
+without deleting batch summaries. Last publication comes from the latest
+published batch row.
 
 Maintain compresses closed dump files. Database work cleanup is prepared but
 disabled by default (`batch.retention_days = 0`), so all work rows remain.

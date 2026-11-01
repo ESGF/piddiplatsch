@@ -452,3 +452,78 @@ def test_fresh_database_has_four_application_tables(catalog):
         )
     }
     assert tables == {"catalog_items", "work_items", "kafka_checkpoints", "stats"}
+
+
+def test_batch_stats_reuse_one_row_across_days_retries_and_work_cleanup(
+    catalog, monkeypatch
+):
+    from piddiplatsch.core.messages import KafkaSource
+    from piddiplatsch.monitoring.status import read_status
+
+    clock = ["2026-10-01T12:00:00+00:00"]
+    monkeypatch.setattr("piddiplatsch.catalog.sqlite._now", lambda: clock[0])
+    with catalog.transaction() as transaction:
+        for offset in range(3):
+            transaction.add_work(entry(offset), KafkaSource("topic", 0, offset))
+    first = [
+        dict(id=1, error=None, handle_count=3, alias_count=1),
+        dict(id=2, error="invalid item"),
+    ]
+    catalog.seal_batch("first", first)
+    catalog.seal_batch("second", [dict(id=3, error=None, handle_count=2)])
+    clock[0] = "2026-10-02T12:00:00+00:00"
+    catalog.publish_batch("first", 3, error="Service unavailable")
+    assert catalog._execute(
+        "SELECT status,handles,errors,message FROM stats WHERE id='first'"
+    ).fetchone() == ("publication_failed", 0, 2, "Service unavailable")
+    clock[0] = "2026-10-03T12:00:00+00:00"
+    catalog.publish_batch("first", 3)
+    catalog.publish_batch("first", 3)
+    catalog.seal_batch("first", first)
+    # A stale failed acknowledgement must not undo successful completion.
+    catalog.publish_batch("first", 3, error="stale failure")
+    assert catalog._execute(
+        "SELECT id,status,items,invalid_items,prepared_handles,alias_handles,handles,errors "
+        "FROM stats ORDER BY id"
+    ).fetchall() == [
+        ("first", "published", 1, 1, 3, 1, 3, 2),
+        ("second", "ready", 1, 0, 2, 0, 0, 0),
+    ]
+    assert catalog._execute(
+        "SELECT mapped_at,published_at,message FROM stats WHERE id='first'"
+    ).fetchone() == ("2026-10-01T12:00:00+00:00", clock[0], None)
+    before = read_status(catalog.path)
+    with catalog.transaction():
+        catalog._execute("DELETE FROM work_items WHERE state='published'")
+    after = read_status(catalog.path)
+    assert (
+        after["handle_totals"]
+        == before["handle_totals"]
+        == [dict(project="cmip6", mapped_items=2, prepared=5, published=3, errors=2)]
+    )
+    assert after["totals_since"] == "2026-10-01T12:00:00+00:00"
+    health = after["health"]["projects"][0]
+    assert health["ready_batches"] == 1
+    assert health["ready_handles"] == 2
+    assert health["ready_batch_ids"] == ["second"]
+    assert health["last_publication"] == dict(
+        batch_id="first", published_at=clock[0], handle_count=3
+    )
+
+
+@pytest.mark.parametrize(
+    "counts", [dict(handle_count=-1), dict(handle_count=2, alias_count=3)]
+)
+def test_invalid_batch_counts_roll_back_all_work_and_summary(catalog, counts):
+    from piddiplatsch.core.messages import KafkaSource
+
+    with catalog.transaction() as transaction:
+        for offset in range(2):
+            transaction.add_work(entry(offset), KafkaSource("topic", 0, offset))
+    with pytest.raises(CatalogError, match="Handle count"):
+        catalog.seal_batch(
+            "batch",
+            [dict(id=1, error=None, handle_count=2), dict(id=2, error=None, **counts)],
+        )
+    assert catalog.pending_work().count == 2
+    assert catalog._execute("SELECT COUNT(*) FROM stats").fetchone() == (0,)

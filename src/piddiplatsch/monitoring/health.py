@@ -1,6 +1,5 @@
 """Read-only backlog checks from the shared database."""
 
-import json
 import sqlite3
 from contextlib import closing
 
@@ -27,17 +26,16 @@ def database_health(connection, project=None):
             (name, name, name),
         ).fetchone()
         batches = connection.execute(
-            "SELECT batch_id,SUM(handle_count),MAX(message IS NOT NULL) FROM work_items "
-            "WHERE project=? AND state='mapped' GROUP BY batch_id ORDER BY MIN(id)",
+            "SELECT id,prepared_handles,status='publication_failed' FROM stats "
+            "WHERE kind='batch' AND project=? AND status IN ('ready','publication_failed') "
+            "ORDER BY mapped_at,id",
             (name,),
         ).fetchall()
-        publications = [
-            json.loads(row[0])
-            for row in connection.execute(
-                "SELECT last_publication FROM stats WHERE project=? AND last_publication IS NOT NULL",
-                (name,),
-            )
-        ]
+        publication = connection.execute(
+            "SELECT id,published_at,handles FROM stats WHERE kind='batch' AND project=? "
+            "AND status='published' ORDER BY published_at DESC,id DESC LIMIT 1",
+            (name,),
+        ).fetchone()
         projects.append(
             dict(
                 project=name,
@@ -48,8 +46,14 @@ def database_health(connection, project=None):
                 failed_batches=sum(row[2] for row in batches),
                 ready_handles=sum(row[1] for row in batches),
                 ready_batch_ids=[row[0] for row in batches],
-                last_publication=max(
-                    publications, key=lambda row: row["published_at"], default=None
+                last_publication=(
+                    dict(
+                        batch_id=publication[0],
+                        published_at=publication[1],
+                        handle_count=publication[2],
+                    )
+                    if publication
+                    else None
                 ),
                 errors=[],
             )

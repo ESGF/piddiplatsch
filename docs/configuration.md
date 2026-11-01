@@ -184,7 +184,7 @@ or `harvest --stop-on-unknown-projects`. These flags do not change the saved
 configuration and require catalog-backed harvesting.
 
 These filtered counts appear in run statistics, logs, and per-project live
-status (`top --json`), not the daily mapping/publication summary table. Unknown
+status (`top --json`), not the batch mapping/publication totals. Unknown
 events create no catalog or work rows. Missing/conflicting project identities
 and malformed envelopes still stop harvest in both modes. Registered projects are
 harvested even when disabled for automatic mapping/publication.
@@ -230,7 +230,7 @@ is a new event; it does not overwrite or automatically retry invalid snapshots.
 
 Publication failures leave work mapped and its saved batch ready. Older pending
 work and failed older publication prevent newer output from overtaking it within
-the same project. Other projects continue. Database acknowledgements and daily
+the same project. Other projects continue. Database acknowledgements and batch
 summaries commit together, so recovery cannot double count them.
 
 `retention_days` defaults to 0, disabling database work cleanup. All work rows
@@ -270,9 +270,12 @@ a companion file: `pid.error.log` beside `pid.log`, or `piddi.error.log` beside
 always includes ERROR and CRITICAL, even if the normal level is CRITICAL.
 Terminal-only logging does not create a companion file.
 
-Statistics log every 30 seconds or 10,000 messages as results arrive. Daily mapped
-work, prepared Handle, published Handle, and failed-attempt totals always live in `piddi.db.stats`.
-`enable_db` enables live heartbeats and rate histories in the same `stats` table.
+Statistics log every 30 seconds or 10,000 messages as results arrive. One row per
+batch in `piddi.db.stats` records mapped/rejected work, prepared Handles, the alias
+subset, published Handles, and failed attempts. Mapping creates the row;
+publication updates it. Retries reuse the same batch ID.
+`enable_db` enables separate `run` rows for live heartbeats and rate histories
+in the same `stats` table. These rows do not contribute to batch totals.
 No extra tables or separate monitoring database are created.
 `piddi top` reads live harvest, mapping, and publication status. Publication
 results also appear in logs and JSONL receipts.

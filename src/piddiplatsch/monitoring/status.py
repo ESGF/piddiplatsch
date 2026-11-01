@@ -34,31 +34,37 @@ def read_status(
             handle_totals = connection.execute(
                 "SELECT project, SUM(items) AS mapped_items, SUM(handles) AS published, "
                 "SUM(prepared_handles) AS prepared, SUM(errors) AS errors FROM stats "
-                "WHERE (? IS NULL OR lower(project)=lower(?)) GROUP BY project "
+                "WHERE kind='batch' AND (? IS NULL OR lower(project)=lower(?)) GROUP BY project "
                 "HAVING SUM(items)+SUM(handles)+SUM(errors)+SUM(prepared_handles)>0 ORDER BY project",
                 (project, project),
             ).fetchall()
         except sqlite3.Error as exc:
             raise ValueError(f"{path} is not a valid piddi database") from exc
+        totals_since = connection.execute(
+            "SELECT MIN(mapped_at) FROM stats WHERE kind='batch' "
+            "AND (? IS NULL OR lower(project)=lower(?))",
+            (project, project),
+        ).fetchone()[0]
         from piddiplatsch.monitoring.health import database_health
 
         health = database_health(connection, project)
         payloads = {}
         latest = None
-        for row in connection.execute("SELECT runtime FROM stats"):
-            for identity, fragment in json.loads(row[0]).items():
-                if (
-                    latest is None
-                    or fragment["run"]["heartbeat_at"] > latest["run"]["heartbeat_at"]
-                ):
-                    latest = fragment
-                payload = payloads.setdefault(
-                    identity, dict(run=fragment["run"], projects=[], samples=[])
-                )
-                if fragment["run"]["heartbeat_at"] > payload["run"]["heartbeat_at"]:
-                    payload["run"] = fragment["run"]
-                payload["projects"].extend(fragment["projects"])
-                payload["samples"].extend(fragment["samples"])
+        for row in connection.execute("SELECT id,runtime FROM stats WHERE kind='run'"):
+            identity, encoded = row
+            fragment = json.loads(encoded)
+            if (
+                latest is None
+                or fragment["run"]["heartbeat_at"] > latest["run"]["heartbeat_at"]
+            ):
+                latest = fragment
+            payload = payloads.setdefault(
+                identity, dict(run=fragment["run"], projects=[], samples=[])
+            )
+            if fragment["run"]["heartbeat_at"] > payload["run"]["heartbeat_at"]:
+                payload["run"] = fragment["run"]
+            payload["projects"].extend(fragment["projects"])
+            payload["samples"].extend(fragment["samples"])
         if latest:
             health["storage"] = latest.get("storage", [])
         result_runs = []
@@ -116,6 +122,7 @@ def read_status(
         "runs": result_runs,
         "health": health,
         "handle_totals": [dict(row) for row in handle_totals],
+        "totals_since": totals_since,
     }
 
 

@@ -141,6 +141,10 @@ def test_sync_map_info_reports_force_setting_and_alias_summary(setup, caplog, fo
             errors=0,
         )
     ]
+    with SQLiteCatalog("cmip7", directory / "piddi.db", read_only=True) as reader:
+        assert reader._execute(
+            "SELECT COUNT(*),SUM(alias_handles) FROM stats WHERE kind='batch'"
+        ).fetchone() == (1, 2 if force else 0)
 
 
 def test_hour_trigger_preserves_successive_event_snapshots(setup):

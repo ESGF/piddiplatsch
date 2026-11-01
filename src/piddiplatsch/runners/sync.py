@@ -154,6 +154,7 @@ class _BatchMapper:
                 "id": self.manifest["last_work_id"],
                 "error": None,
                 "handle_count": result.num_handles,
+                "alias_count": result.num_alias_handles,
             }
         )
         self.manifest["succeeded_count"] += 1

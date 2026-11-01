@@ -98,7 +98,7 @@ Raw events go to `outputs/dump/` before processing. Each archive record includes
 source coordinates, key, and original payload. Date/count rotation preserves
 replay order. Failure files are for inspection; replay uses original archives.
 
-Daily summaries, live heartbeats, and recent rate samples live in the shared
+Batch summaries, live heartbeats, and recent rate samples live in the shared
 database. `piddi top` reads only that database; output files remain publication artifacts.
 
 ## Kafka consumer groups

@@ -164,23 +164,14 @@ class StatusReporter(StatsReporter):
                 self._last_sample = time.monotonic()
             cutoff = (now - datetime.timedelta(hours=1)).isoformat()
             self.samples = [row for row in self.samples if row["sampled_at"] >= cutoff]
-            # Serialize only monitoring JSON here; processing transactions update
-            # the numeric columns independently. IMMEDIATE prevents concurrent
-            # harvest/publish heartbeats from overwriting each other's runs.
             from piddiplatsch.monitoring.disk import disk_status
 
             storage = disk_status()
+            # Each run/project owns its row. Heartbeats never update batch totals.
             with self.connection:
-                self.connection.execute("BEGIN IMMEDIATE")
                 for row in projects or [{"project": ""}]:
                     name = row["project"]
-                    day = run["started_at"][:10]
-                    previous = self.connection.execute(
-                        "SELECT runtime FROM stats WHERE date=? AND project=?",
-                        (day, name),
-                    ).fetchone()
-                    runtime = json.loads(previous[0]) if previous else {}
-                    runtime[run["run_id"]] = dict(
+                    payload = dict(
                         run=run,
                         storage=storage,
                         projects=[row] if name else [],
@@ -191,9 +182,17 @@ class StatusReporter(StatsReporter):
                         ],
                     )
                     self.connection.execute(
-                        "INSERT INTO stats(date,project,runtime) VALUES (?,?,?) "
-                        "ON CONFLICT(date,project) DO UPDATE SET runtime=excluded.runtime",
-                        (day, name, json.dumps(runtime)),
+                        "INSERT INTO stats(kind,project,id,status,created_at,updated_at,runtime) "
+                        "VALUES ('run',?,?,?,?,?,?) ON CONFLICT(kind,project,id) DO UPDATE SET "
+                        "status=excluded.status,updated_at=excluded.updated_at,runtime=excluded.runtime",
+                        (
+                            name,
+                            run["run_id"],
+                            run["status"],
+                            run["started_at"],
+                            now.isoformat(),
+                            json.dumps(payload),
+                        ),
                     )
 
     def close(self):

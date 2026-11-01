@@ -62,7 +62,11 @@ class TopCommand(Command):
         """Keep the daily operator view to one table and actionable status lines."""
         active = _active_runs(status)
         lines = [_totals_line(status)]
-        starts = [run["started_at"] for run in status["runs"] if run.get("started_at")]
+        starts = (
+            [status["totals_since"]]
+            if status.get("totals_since")
+            else [run["started_at"] for run in status["runs"] if run.get("started_at")]
+        )
         if starts:
             start = min(datetime.fromisoformat(value) for value in starts).astimezone(
                 UTC
