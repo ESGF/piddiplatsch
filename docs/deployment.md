@@ -97,6 +97,7 @@ make stop
 git pull --ff-only
 make deploy
 make restart
+make status
 ```
 
 Keep your existing configuration files. If an update fails, fix the error before
@@ -169,6 +170,9 @@ make restart
 Choose the command you need. `start` and `restart` also start sync and request
 immediate publication of ready work. These commands control the current runtime;
 Ansible settings control startup at boot.
+
+`make status` lists the state of harvest, sync, log rotation, and maintenance,
+including their timers and inactive services.
 
 For backups, custom paths, older deployments, and Vagrant, see
 [Deployment reference](deployment-reference.md). For failed work, see

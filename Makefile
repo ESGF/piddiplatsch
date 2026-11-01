@@ -24,7 +24,7 @@ endef
 export PRINT_HELP_PYSCRIPT
 
 .DEFAULT_GOAL := help
-.PHONY: conda deploy play docs docs-html docs-serve docs-check pages start stop restart
+.PHONY: conda deploy play docs docs-html docs-serve docs-check pages start stop restart status
 
 help: ## print this help message. (Default)
 	@python -c "$$PRINT_HELP_PYSCRIPT" < $(MAKEFILE_LIST)
@@ -80,6 +80,12 @@ stop: ## stop deployed timers, sync, harvest, and log rotation
 restart: ## stop and start all deployed Piddi services and timers
 	$(MAKE) stop
 	$(MAKE) start
+
+status: ## show the state of all deployed Piddi services and timers
+	$(SYSTEMCTL) list-units --all --no-pager \
+		piddi.service piddi-sync.service piddi-sync.timer \
+		piddi-logrotate.service piddi-logrotate.timer \
+		piddi-maintenance.service piddi-maintenance.timer
 
 develop: ## install application with development and documentation libraries
 	@echo "Installing development requirements ..."

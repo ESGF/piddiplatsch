@@ -48,7 +48,9 @@ checkout's `custom.toml`.
 
 ## Service controls
 
-`make start`, `make stop`, and `make restart` use `sudo systemctl` by default.
+`make start`, `make stop`, `make restart`, and `make status` use `sudo systemctl`
+by default. `make status` lists all deployed Piddi services and timers, including
+inactive units. Scheduled oneshot services normally show as inactive between runs.
 
 `make start` starts harvest, sync and log rotation timers, and an immediate sync
 run. It starts sync even if the timer is disabled at boot. Ansible controls which

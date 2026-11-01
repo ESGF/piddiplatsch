@@ -4,6 +4,7 @@
 
 ### Added
 
+- `make status` lists the state of all deployed Piddi services and timers.
 - `piddi reset --project NAME` previews a processing reset; `--apply` backs up
   project output, clears its monitoring counters, and requeues its existing
   catalog items while preserving STAC records and Kafka checkpoints.
