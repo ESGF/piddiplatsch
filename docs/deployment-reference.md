@@ -51,6 +51,9 @@ checkout's `custom.toml`.
 `make start`, `make stop`, `make restart`, and `make status` use `sudo systemctl`
 by default. `make status` lists all deployed Piddi services and timers, including
 inactive units. Scheduled oneshot services normally show as inactive between runs.
+The commands hide shell command echoes. Status shows just the unit and its state:
+`running`, `waiting` (timers), `stopped`, `starting`, `stopping`, or `failed`.
+Other systemd states are shown as reported. Systemd errors remain visible.
 
 `make start` starts harvest, sync and log rotation timers, and an immediate sync
 run. It starts sync even if the timer is disabled at boot. Ansible controls which
