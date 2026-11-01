@@ -115,7 +115,7 @@ class TopCommand(Command):
         for heading in (
             "Project",
             "Catalog items",
-            "Pending entries",
+            "Pending events",
             "Prepared handles",
             "Published handles",
             "Errors",
@@ -137,7 +137,7 @@ class TopCommand(Command):
                     if heading
                     in {
                         "Catalog items",
-                        "Pending entries",
+                        "Pending events",
                         "Prepared handles",
                         "Published handles",
                         "Errors",
@@ -256,7 +256,7 @@ class TopCommand(Command):
 def _totals_line(status: dict) -> Text:
     projects = status["health"]["projects"]
     counts = [row.get("total_items") for row in projects]
-    datasets = (
+    items = (
         sum(counts) if counts and all(value is not None for value in counts) else None
     )
     generated = [
@@ -265,7 +265,7 @@ def _totals_line(status: dict) -> Text:
         if row.get("mapped_items") is not None
     ]
     return Text(
-        f"Catalog: {_count(datasets)} datasets · Mapped: {_count(sum(generated) if generated else None)} work entries (recorded)"
+        f"Catalog: {_count(items)} items · Mapped: {_count(sum(generated) if generated else None)} events"
     )
 
 

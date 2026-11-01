@@ -150,6 +150,8 @@ piddi maintain
 ```
 
 Top reads only `piddi.db`, including when `--db PATH` selects another database.
+Catalog items count distinct stored STAC items. Pending and mapped events count
+processing events; several events can refer to the same catalog item.
 Prepared and published Handle totals include dataset, file, and alias Handles.
 One retained summary per batch supplies mapped-work, prepared-Handle,
 published-Handle, and error totals, even after work retention. Pending entry counts

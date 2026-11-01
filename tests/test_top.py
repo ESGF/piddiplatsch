@@ -395,10 +395,10 @@ def test_catalog_and_generated_totals_include_all_projects():
     }
     assert (
         _totals_line(status).plain
-        == "Catalog: 1,000,000 datasets · Mapped: 750,000 work entries (recorded)"
+        == "Catalog: 1,000,000 items · Mapped: 750,000 events"
     )
     status["health"]["projects"][1]["total_items"] = None
-    assert "Catalog: — datasets" in _totals_line(status).plain
+    assert "Catalog: — items" in _totals_line(status).plain
 
 
 def test_top_explicit_database_uses_its_own_health(tmp_path, monkeypatch):
