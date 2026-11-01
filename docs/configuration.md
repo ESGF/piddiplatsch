@@ -196,7 +196,7 @@ pending change has waited one hour. Repeated changes to one item count once.
 stay together. Ready batches publish during the same sync run, even when no new
 mapping is due. Failed publication stays ready for the next run.
 
-`consumer.max_errors` limits mapping errors within a batch. Rejected items are
+`plugins.<project>.max_errors` limits mapping errors within a batch. Rejected items are
 saved in the batch's `failures.jsonl` and removed from the pending queue along
 with successful items after durable sealing. At the error limit, sync seals
 processed work, publishes valid Handles, and stops mapping that project for this
@@ -256,7 +256,7 @@ See [Logging and statistics](operations.md#logging-and-statistics) for examples.
 | Setting | Purpose |
 | --- | --- |
 | `consumer.output_dir` | Root directory for catalogs, Handle files, receipts, and diagnostic files. |
-| `consumer.max_errors` | Stop mapping at this error count. Default: `1`; `-1` removes the limit. |
+| `plugins.<name>.max_errors` | Project mapping error limit. Default: `1`; `0` also stops on the first error; `-1` removes the limit. |
 | `schema.strict_mode` | Reject incomplete or unsupported records. Default: `true`. |
 | `plugins.<name>.landing_page_url` | Base URL for Handle landing pages. |
 | `plugins.<name>.max_parts` | Limit dataset `HAS_PARTS` entries; `-1` means unlimited. |
@@ -277,12 +277,25 @@ existing Handle files before publishing with the new policy.
 
 The packaged `src/piddiplatsch/config/default.toml` lists all defaults.
 
-Production defaults use `schema.strict_mode = true` and `consumer.max_errors = 1`.
-Map and sync treat invalid assets as errors and stop the affected mapping run
-at the first error. Sync leaves the failed batch unpublished and its catalog
-changes pending. Malformed checksum errors identify the dataset and asset;
-verify the checksum against the source file, correct its STAC metadata, and
-reharvest before retrying. Other projects can continue in sync.
+Production defaults use `schema.strict_mode = true` and stop mapping on the
+first error. Configure a higher limit for just one project:
+
+```toml
+[plugins.cmip6plus]
+max_errors = 10000
+```
+
+`consumer.max_errors` is no longer supported. Move that setting into the
+appropriate `[plugins.<project>]` table; other projects default to `1`.
+Values `0` and `1` both stop at the first actual error; `-1`
+allows unlimited errors. Manual map counts errors independently for each
+selected project. Sync counts errors per project batch and pauses that project
+for the rest of the run when its limit is reached. Other projects can continue.
+
+Map and sync treat invalid assets as errors. Sync durably saves valid Handles
+and rejected inputs before advancing past processed items, including when the
+error limit stops a batch. Unprocessed items stay pending for the next run.
+Catalog harvest remains fail-fast independently of these mapping settings.
 
 ## Disk headroom
 
@@ -319,15 +332,16 @@ controlled by `catalog.version_history`, not by `[lookup]`.
 Elasticsearch lookup is no longer supported. Remove old `[elasticsearch]` settings
 and `[lookup].backend = "es"`.
 
-## Compatibility with older configuration
+## Removed configuration
 
-Old `[handle]` settings still work and take priority over named profiles, even
-with `--handle-profile`. A project's `handle_prefix` still overrides the prefix.
-Use named profiles for new configurations.
+Use `[handles]`, `[handles.defaults]`, and `[handles.profiles.<name>]` for Handle
+services, and `[plugins.<project>]` for project settings. The old `[handle]` and
+root project tables such as `[cmip6]` are rejected instead of overriding current
+settings.
 
-Old project tables such as `[cmip6]` override `[plugins.cmip6]`. Nested values such
-as `stac` replace that table rather than merge individual keys. Use
-`[plugins.<name>]` for new settings and avoid mixing both forms.
+`[consumer.transient]` and its old flat aliases are removed. Harvest owns patch
+reconstruction and stops when recovery fails; map reads full local records and
+never fetches a patch base from remote STAC. The library `force` bypass and
+failure-file retry runner are removed. Failure files remain diagnostics.
 
-`[consumer.transient]` applies only to legacy library processing. Catalog harvest
-stops when remote recovery fails; map uses local items.
+`[stats].history_minutes` is removed; `top` uses the last five minutes.

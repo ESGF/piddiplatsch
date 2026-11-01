@@ -1,11 +1,8 @@
 from __future__ import annotations
 
-from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 from urllib.parse import quote
-
-from piddiplatsch.config import config  # your TOML config loader
 
 if TYPE_CHECKING:
     from pystac import Item
@@ -53,14 +50,7 @@ def extract_version(item: Item) -> int:
     return int(item.id.split(".")[-1][1:])
 
 
-class BaseStacClient(ABC):
-    @abstractmethod
-    def get_item(self, collection_id: str, item_id: str) -> dict[str, Any]:
-        """Fetch a full STAC item."""
-        pass
-
-
-class RemoteStacClient(BaseStacClient):
+class RemoteStacClient:
     def __init__(self, base_url: str, timeout: float = 10.0):
         self.base_url = base_url.rstrip("/")
         self.timeout = timeout
@@ -72,33 +62,3 @@ class RemoteStacClient(BaseStacClient):
         resp = requests.get(url, timeout=self.timeout)
         resp.raise_for_status()
         return resp.json()
-
-
-class LocalStacClient(BaseStacClient):
-    """Dummy/local STAC client for testing."""
-
-    def get_item(self, collection_id: str, item_id: str) -> dict[str, Any]:
-        return {
-            "id": item_id,
-            "type": "Feature",
-            "collection": collection_id,
-            "properties": {},
-            "links": [],
-            "assets": {},
-        }
-
-
-def get_stac_client(project: str | None = None) -> BaseStacClient:
-    """
-    Factory function to return a STAC client based on the config.
-
-    Config example:
-    [stac]
-    base_url = "https://api.stac.esgf.ceda.ac.uk"
-    """
-    stac_cfg = config.get_stac(project)
-    base_url = stac_cfg.get("base_url")
-    timeout = float(stac_cfg.get("timeout", 10.0))
-    if not base_url:
-        return LocalStacClient()
-    return RemoteStacClient(base_url, timeout=timeout)

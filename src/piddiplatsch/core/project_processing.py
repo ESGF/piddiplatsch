@@ -4,7 +4,6 @@ import time
 from datetime import date
 from typing import Any, ClassVar
 
-import jsonpatch
 from pydantic import ValidationError
 
 from piddiplatsch.catalog.base import BaseCatalogReader
@@ -12,10 +11,8 @@ from piddiplatsch.config import config
 from piddiplatsch.core.processing import BaseProcessor
 from piddiplatsch.core.project_records import ProjectDatasetRecord, ProjectFileRecord
 from piddiplatsch.core.registry import get_plugin
-from piddiplatsch.exceptions import TransientExternalError
 from piddiplatsch.lookup.catalog import CatalogLookup
 from piddiplatsch.result import ProcessingResult
-from piddiplatsch.utils.stac import get_stac_client
 
 
 class StacProjectProcessor(BaseProcessor):
@@ -55,37 +52,6 @@ class StacProjectProcessor(BaseProcessor):
             if catalog_reader is not None
             else None
         )
-        self.stac_client = (
-            None if catalog_reader is not None else get_stac_client(self.plugin_name)
-        )
-
-    def preflight_check(self, stop_on_transient_skip: bool = True):
-        if self.catalog_reader is not None:
-            return
-        stac_cfg = config.get_stac(self.plugin_name)
-        base_url = stac_cfg.get("base_url")
-        consumer_cfg = config.get("consumer", {})
-        transient_cfg = consumer_cfg.get("transient", {})
-        preflight = bool(
-            transient_cfg.get(
-                "preflight_stac", consumer_cfg.get("preflight_stac", True)
-            )
-        )
-        timeout = float(stac_cfg.get("timeout", 10.0))
-        if not preflight or not base_url:
-            return
-        import requests
-
-        try:
-            response = requests.get(
-                base_url.rstrip("/") + "/collections?limit=1",
-                timeout=min(timeout, 3.0),
-            )
-            response.raise_for_status()
-        except Exception as exc:
-            if stop_on_transient_skip:
-                raise TransientExternalError(f"STAC preflight failed: {exc}") from exc
-            self.logger.warning("STAC preflight failed but continuing: %s", exc)
 
     def process(self, key: str, value: dict[str, Any]) -> ProcessingResult:
         self.logger.debug("%s plugin processing key=%s", self.plugin_name, key)
@@ -127,18 +93,9 @@ class StacProjectProcessor(BaseProcessor):
         result: ProcessingResult,
     ) -> ProcessingResult:
         if payload.get("method") == "PATCH":
-            if self.catalog_reader is not None:
-                raise ValueError(
-                    "Catalog mapping requires complete items; apply patches during harvest"
-                )
-            try:
-                item = self._apply_patch_to_stac_item(payload)
-                result.patched = True
-            except TransientExternalError as exc:
-                result.skipped = True
-                result.skip_reason = f"TRANSIENT external: {exc}"
-                result.transient_skip = True
-                return result
+            raise ValueError(
+                "Mapping requires complete STAC items; apply patches during harvest"
+            )
         elif isinstance(payload.get("item"), dict):
             item = payload["item"]
         else:
@@ -177,74 +134,6 @@ class StacProjectProcessor(BaseProcessor):
         )
         result.num_alias_handles = int(record.alias_record is not None)
         return result
-
-    def _apply_patch_to_stac_item(self, payload: dict[str, Any]) -> dict[str, Any]:
-        import requests
-
-        collection_id = payload["collection_id"]
-        item_id = payload["item_id"]
-        patch_data = payload["patch"]
-        # The production publisher sends the RFC 6902 operation list directly.
-        # Keep the wrapped form readable for older captured/test messages.
-        operations = (
-            patch_data.get("operations") if isinstance(patch_data, dict) else patch_data
-        )
-        if not isinstance(operations, list):
-            raise ValueError("PATCH payload requires a patch operation list")
-
-        consumer_cfg = config.get("consumer", {})
-        transient_cfg = consumer_cfg.get("transient", {})
-        retries = int(
-            transient_cfg.get(
-                "retries",
-                transient_cfg.get(
-                    "transient_retries", consumer_cfg.get("transient_retries", 3)
-                ),
-            )
-        )
-        delay = float(
-            transient_cfg.get(
-                "backoff_initial",
-                transient_cfg.get(
-                    "transient_backoff_initial",
-                    consumer_cfg.get("transient_backoff_initial", 0.5),
-                ),
-            )
-        )
-        max_delay = float(
-            transient_cfg.get(
-                "backoff_max",
-                transient_cfg.get(
-                    "transient_backoff_max",
-                    consumer_cfg.get("transient_backoff_max", 5.0),
-                ),
-            )
-        )
-
-        last_error: Exception | None = None
-        for attempt in range(1, retries + 2):
-            try:
-                item = self.stac_client.get_item(collection_id, item_id)
-                if item is None:
-                    raise requests.HTTPError(
-                        f"404 Not Found for {collection_id}/{item_id}"
-                    )
-                return jsonpatch.JsonPatch(operations).apply(item)
-            except jsonpatch.JsonPatchException:
-                raise
-            except Exception as exc:
-                last_error = exc
-                self.logger.warning(
-                    "Failed to fetch/patch STAC item (attempt %s): %s", attempt, exc
-                )
-            if attempt <= retries:
-                time.sleep(delay)
-                delay = min(delay * 2, max_delay)
-
-        raise TransientExternalError(
-            f"Failed to fetch/apply patch for {collection_id}/{item_id} "
-            f"after {retries + 1} attempts: {last_error}"
-        )
 
     def _add_records_from_item(
         self, record: ProjectDatasetRecord, item: dict[str, Any]

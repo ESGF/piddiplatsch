@@ -46,7 +46,7 @@ class Config:
         """
         Private setter for testing or dynamic overrides.
         Example:
-            config._set("cmip6", "max_parts", 5)
+            config._set("plugins", "cmip6", {"max_parts": 5})
             config._set("schema", None, {"strict_mode": True})
         """
         if key is None:
@@ -110,19 +110,15 @@ class Config:
         return value
 
     def get_plugin(self, name: str, key: str | None = None, fallback=None):
-        """Return plugin-scoped config with backwards compatibility.
+        """Return settings from the project's plugin table."""
+        if name in self.config_data:
+            raise ValueError(f"[{name}] is not supported; use [plugins.{name}]")
+        values = self.config_data.get("plugins", {}).get(name, {}) or {}
+        return values.get(key, fallback) if key else dict(values)
 
-        Merges `[plugins.<name>]` with legacy top-level `[<name>]`,
-        giving precedence to the legacy top-level for test overrides.
-        """
-        plugins = self.config_data.get("plugins", {})
-        merged: dict = dict(plugins.get(name, {}) or {})
-        legacy = self.config_data.get(name, {}) or {}
-        # Let legacy (tests/user overrides) take precedence over defaults
-        merged.update(legacy)
-        if key:
-            return merged.get(key, fallback)
-        return merged
+    def get_mapping_max_errors(self, project: str) -> int:
+        """Resolve a project's mapping limit; stop on the first error by default."""
+        return self.get_plugin(project, "max_errors", 1)
 
     def get_stac(self, project: str | None = None) -> dict:
         """Resolve global STAC settings with optional project overrides."""
@@ -134,14 +130,9 @@ class Config:
         return merged
 
     def get_handle_profile(self, project: str | None = None) -> str | None:
-        """Return the named Handle profile selected for a project.
-
-        A legacy ``[handle]`` section has no profile name and takes precedence
-        when present so existing site configuration keeps working during the
-        migration to ``[handles.profiles.*]``.
-        """
-        if self.config_data.get("handle"):
-            return None
+        """Return the named Handle profile selected for a project."""
+        if "handle" in self.config_data:
+            raise ValueError("[handle] is not supported; use [handles.profiles.<name>]")
         handles = self.config_data.get("handles", {}) or {}
         selected = self.get_plugin(project, "handle") if project else None
         return selected or handles.get("default")
@@ -154,15 +145,14 @@ class Config:
         Projects select profiles with ``plugins.<project>.handle``. Callers may
         explicitly select a profile, otherwise ``handles.default`` is used.
         A project's ``handle_prefix`` overrides the selected service's prefix,
-        including when a profile is explicitly selected or legacy config is used.
+        including when a profile is explicitly selected.
         """
         overrides = {}
         prefix = self.get_plugin(project, "handle_prefix") if project else None
         if prefix is not None:
             overrides["prefix"] = prefix
-        legacy = self.config_data.get("handle")
-        if legacy:
-            return {**legacy, **overrides}
+        if "handle" in self.config_data:
+            raise ValueError("[handle] is not supported; use [handles.profiles.<name>]")
 
         handles = self.config_data.get("handles", {}) or {}
         selected = profile or self.get_handle_profile(project)

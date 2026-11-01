@@ -433,7 +433,7 @@ class SyncWorker:
                 process_messages(
                     selected,
                     processor=_BatchMapper(target, output, manifest),
-                    max_errors=config.get("consumer", "max_errors", 1),
+                    max_errors=config.get_mapping_max_errors(project),
                     progress=self.progress,
                 )
         except MaxErrorsExceededError as exc:

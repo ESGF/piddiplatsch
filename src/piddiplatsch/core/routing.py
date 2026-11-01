@@ -109,12 +109,12 @@ class ProjectRouter:
     def __str__(self) -> str:
         return f"projects[{','.join(self.project_names)}]"
 
-    def preflight_check(self, stop_on_transient_skip: bool = True) -> None:
+    def preflight_check(self) -> None:
         for plugin in self.plugins:
             processor = self.processors[plugin.name]
             preflight = getattr(processor, "preflight_check", None)
             if callable(preflight):
-                preflight(stop_on_transient_skip=stop_on_transient_skip)
+                preflight()
 
     def plugin_name_for(self, message: dict[str, Any]) -> str | None:
         """Return the selected canonical plugin name for an event, if resolvable."""

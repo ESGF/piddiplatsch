@@ -22,7 +22,9 @@ class FailingBackend:
 
 def test_records_jsonl_before_direct_publication_failure(tmp_path):
     config._set("consumer", "output_dir", str(tmp_path))
-    config._set("handle", "prefix", "21.TEST")
+    config.config_data["handles"]["profiles"][config.get_handle_profile()][
+        "prefix"
+    ] = "21.TEST"
     primary = FailingBackend()
     backend = RecordingHandleBackend(primary, project="cmip6")
 

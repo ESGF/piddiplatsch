@@ -65,7 +65,6 @@ class HarvestCommand(KafkaCommand):
                 self.run_consumer(
                     title="harvest",
                     processor=processor,
-                    force=True,
                     idle_timeout=None if self.idle_timeout == 0 else self.idle_timeout,
                     limit=self.limit,
                     monitor_db=True,

@@ -80,7 +80,7 @@ def get_handle_backend(
         "Using Handle backend: %s (project=%s profile=%s)",
         backend_type,
         project or "default",
-        profile or "legacy",
+        profile or "default",
     )
 
     if backend_type == "rest":

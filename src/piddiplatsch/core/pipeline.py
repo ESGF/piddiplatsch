@@ -7,7 +7,7 @@ from pathlib import Path
 from piddiplatsch.config import config
 from piddiplatsch.core.messages import SourceMessage
 from piddiplatsch.core.routing import ProjectRouter
-from piddiplatsch.exceptions import MaxErrorsExceededError, StopOnTransientSkipError
+from piddiplatsch.exceptions import MaxErrorsExceededError
 from piddiplatsch.monitoring.disk import get_disk_guard
 from piddiplatsch.monitoring.progress import BaseProgress, get_progress
 from piddiplatsch.monitoring.stats import stats
@@ -74,8 +74,8 @@ class ProcessingPipeline:
         verbose=False,
         progress: BaseProgress | None = None,
         max_errors: int | None = None,
+        project_max_errors: dict[str, int] | None = None,
         publish: bool = False,
-        force: bool = False,
         failure_dir: Path | None = None,
         limit: int | None = None,
     ):
@@ -86,28 +86,12 @@ class ProcessingPipeline:
         )
         self.dump_messages = dump_messages
         self.disk_guard = get_disk_guard()
-        self.max_errors = int(
-            config.get("consumer", "max_errors", 1)
-            if max_errors is None
-            else max_errors
-        )
+        self.max_errors = 1 if max_errors is None else int(max_errors)
         if limit is not None and limit <= 0:
             raise ValueError("limit must be positive")
         self.limit = limit
-        self.force = force
+        self.project_max_errors = project_max_errors
         self.failure_dir = failure_dir
-        consumer_cfg = config.get("consumer", {})
-        transient_cfg = consumer_cfg.get("transient", {})
-        # Prefer new key `stop_on_skip`, fallback to legacy `stop_on_transient_skip`
-        self.stop_on_transient_skip = bool(
-            transient_cfg.get(
-                "stop_on_skip",
-                transient_cfg.get(
-                    "stop_on_transient_skip",
-                    consumer_cfg.get("stop_on_transient_skip", True),
-                ),
-            )
-        )
         self.stats = stats
         self._owns_progress = progress is None
         self.progress = progress or get_progress(f"{self.processor}", use_tqdm=verbose)
@@ -120,6 +104,7 @@ class ProcessingPipeline:
         skipped_before = self.stats.skipped_messages
         filtered_before = self.stats.filtered_messages
         processed = 0
+        self._project_errors = {}
         for message in self.messages:
             self.disk_guard.check()
             source_message = message if isinstance(message, SourceMessage) else None
@@ -132,6 +117,9 @@ class ProcessingPipeline:
                 source_message.acknowledge()
 
             self.stats.record_result(result)
+            project = result.plugin or result.project or "unassigned"
+            if not result.success and not result.skipped and not result.filtered:
+                self._project_errors[project] = self._project_errors.get(project, 0) + 1
 
             if result.skipped:
                 self.stats.skip(message=f"message={key}")
@@ -142,19 +130,13 @@ class ProcessingPipeline:
                 except Exception:
                     logger.exception(f"Failed to persist skipped message {key}")
 
-                if result.transient_skip:
-                    self.stats.external_fail(message=f"message={key}")
-                    if self.stop_on_transient_skip and not self.force:
-                        raise StopOnTransientSkipError(
-                            f"Transient external failure encountered (key={key}); stopping as per policy"
-                        )
             if result.patched:
                 self.stats.patch(message=f"message={key}")
 
             if self.progress:
                 self.progress.refresh()
 
-            self._check_success()
+            self._check_success(project)
             processed += 1
             if self.limit is not None and processed >= self.limit:
                 logger.info("Processing limit reached (%d messages)", self.limit)
@@ -170,10 +152,19 @@ class ProcessingPipeline:
             filtered=filtered,
         )
 
-    def _check_success(self):
-        if self.max_errors >= 0 and self.stats.errors >= self.max_errors:
+    def _check_success(self, project):
+        limit = self.max_errors
+        errors = self.stats.errors
+        suffix = ""
+        if self.project_max_errors is not None:
+            limit = self.project_max_errors.get(project, self.max_errors)
+            errors = self._project_errors.get(project, 0)
+            suffix = f" for project {project}"
+        # Zero errors tolerated means stop on the first actual error, never
+        # after a successful record. Keep 1 as the conventional default.
+        if errors > 0 and limit >= 0 and errors >= max(1, limit):
             raise MaxErrorsExceededError(
-                f"Max error limit reached ({self.stats.errors}/{self.max_errors})"
+                f"Max error limit reached ({errors}/{limit}){suffix}"
             )
 
     def _safe_process_message(self, key, value, *, source_message=None):
@@ -235,12 +226,12 @@ def process_messages(
     projects: list[str] | tuple[str, ...] | str | None = None,
     publish=False,
     failure_dir: Path | None = None,
-    force: bool = False,
     verbose: bool = False,
     progress: BaseProgress | None = None,
     handle_profile: str | None = None,
     handle_output_filename: str | None = None,
     max_errors: int | None = None,
+    project_max_errors: dict[str, int] | None = None,
 ) -> FeedResult:
     target = build_processing_target(
         processor=processor,
@@ -254,10 +245,10 @@ def process_messages(
         processor=target,
         publish=publish,
         failure_dir=failure_dir,
-        force=force,
         verbose=verbose,
         progress=progress,
         max_errors=max_errors,
+        project_max_errors=project_max_errors,
     )
 
     try:

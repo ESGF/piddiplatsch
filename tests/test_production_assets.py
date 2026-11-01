@@ -286,14 +286,11 @@ def test_batch_deployment_installs_oneshot_and_configurable_timer():
     playbook = yaml.safe_load((PROJECT_ROOT / "deploy/ansible/piddi.yml").read_text())[
         0
     ]
-    assert (
-        playbook["vars"]["piddi_enable_sync_timer"]
-        == "{{ piddi_enable_batch_timer | default(false) }}"
-    )
-    assert (
-        playbook["vars"]["piddi_sync_check_interval"]
-        == "{{ piddi_batch_check_interval | default('1min') }}"
-    )
+    assert playbook["vars"]["piddi_enable_sync_timer"] is False
+    assert playbook["vars"]["piddi_sync_check_interval"] == "1min"
+    guard = playbook["pre_tasks"][1]["ansible.builtin.assert"]["that"]
+    assert "piddi_enable_batch_timer is not defined" in guard
+    assert "piddi_batch_check_interval is not defined" in guard
     tasks = {task["name"]: task for task in playbook["tasks"]}
     assert tasks["Install scheduled sync units"]["loop"] == [
         "piddi-sync.service",

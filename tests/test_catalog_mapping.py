@@ -47,7 +47,6 @@ def test_map_predecessor_is_nearest_strictly_older_version_without_remote_lookup
     output_dir = tmp_path / "outputs"
     config._set("consumer", "output_dir", str(output_dir))
     config._set("lookup", "enabled", True)
-    config._set("consumer", "transient", {"preflight_stac": True})
     current = sample(testdata_path, project)
     item = current["data"]["payload"]["item"]
     older, later = deepcopy(current), deepcopy(current)
@@ -146,7 +145,7 @@ def test_catalog_mode_rejects_patch_envelopes_instead_of_fetching_or_reapplying(
     harvest(tmp_path, [sample(testdata_path, "cmip6")])
     with SQLiteCatalog("cmip6", tmp_path / "cmip6.sqlite", read_only=True) as catalog:
         processor = CMIP6Processor(catalog_reader=catalog)
-        assert processor.stac_client is None
+        assert not hasattr(processor, "stac_client")
         with pytest.raises(ValueError, match="apply patches during harvest"):
             processor.process("patch", {"data": {"payload": {"method": "PATCH"}}})
 
@@ -178,11 +177,26 @@ def test_cli_history_option_overrides_catalog_configuration(tmp_path, testdata_p
     assert "PREVIOUS_VERSION" not in handles(tmp_path, "cmip6")[0]["data"]
 
 
+def test_manual_map_uses_project_error_limit(tmp_path, testdata_path):
+    config._set("consumer", "output_dir", str(tmp_path))
+    config._set(
+        "plugins", "cmip6plus", {**config.get_plugin("cmip6plus"), "max_errors": 10000}
+    )
+    good = sample(testdata_path, "cmip6plus")
+    bad = deepcopy(good)
+    item = bad["data"]["payload"]["item"]
+    item["id"] = item["id"].rsplit(".", 1)[0] + ".v20000101"
+    next(iter(item["assets"].values()))["file:checksum"] = "bad"
+    harvest(tmp_path / "catalog", [bad, good])
+    result = map_catalog(projects=["cmip6plus"], input_date="all")
+    assert result.total == 2
+    assert result.failed == result.succeeded == 1
+
+
 def test_mapping_failure_is_inspectable_and_command_can_be_repeated(
     tmp_path, testdata_path, monkeypatch
 ):
     config._set("consumer", "output_dir", str(tmp_path))
-    config._set("consumer", "max_errors", 1)
     original = sample(testdata_path, "cmip6")
     older = deepcopy(original)
     older_id = (

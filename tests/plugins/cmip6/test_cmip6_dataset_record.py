@@ -104,7 +104,7 @@ def test_pid_existing(stac_item_basic):
 
 
 def test_has_parts_respects_max_parts(stac_item_complex):
-    config._set("cmip6", "max_parts", 2)
+    config._set("plugins", "cmip6", {**config.get_plugin("cmip6"), "max_parts": 2})
     record = CMIP6DatasetRecord(stac_item_complex)
     parts = record.has_parts
     assert len(parts) == 2
@@ -158,7 +158,7 @@ def test_as_handle_model_includes_expected_fields(stac_item_complex):
 
 
 def test_max_parts_limit_warning(caplog, stac_item_complex):
-    config._set("cmip6", "max_parts", 1)
+    config._set("plugins", "cmip6", {**config.get_plugin("cmip6"), "max_parts": 1})
     record = CMIP6DatasetRecord(stac_item_complex)
     _ = record.has_parts
     assert any(
@@ -169,7 +169,7 @@ def test_max_parts_limit_warning(caplog, stac_item_complex):
 
 
 def test_zero_max_parts_disables_asset_links_without_warning(caplog, stac_item_complex):
-    config._set("cmip6", "max_parts", 0)
+    config._set("plugins", "cmip6", {**config.get_plugin("cmip6"), "max_parts": 0})
     record = CMIP6DatasetRecord(stac_item_complex)
 
     assert record.has_parts == []
@@ -193,7 +193,7 @@ def test_replica_nodes_published_on_fallback(stac_item_with_alternates):
 
 
 def test_max_parts_with_exclude_keys_and_warning(caplog, stac_item_with_alternates):
-    config._set("cmip6", "max_parts", 1)
+    config._set("plugins", "cmip6", {**config.get_plugin("cmip6"), "max_parts": 1})
     record = CMIP6DatasetRecord(
         stac_item_with_alternates, exclude_keys=["reference_file"]
     )

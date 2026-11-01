@@ -283,9 +283,6 @@ def test_bad_checksum_is_quarantined_and_limit_preserves_progress(setup, caplog)
     with closing(CatalogHarvester(directory)) as harvester:
         harvester.process_with_source("bad", message, KafkaSource("corrections", 0, 0))
     put(2)
-    consumer_cfg = dict(config.get("consumer", {}))
-    consumer_cfg.pop("max_errors", None)
-    config._set("consumer", None, consumer_cfg)
     publisher = Publisher()
     worker = SyncWorker(publisher=publisher)
 
@@ -325,9 +322,10 @@ def test_worker_lock_prevents_overlapping_ticks(setup):
     assert len(worker.run()) == 1
 
 
-def test_error_limit_seals_valid_prefix_and_later_ticks_do_not_remap(setup):
+@pytest.mark.parametrize("limit", [0, 1])
+def test_error_limit_seals_valid_prefix_and_later_ticks_do_not_remap(setup, limit):
     put, directory, root = setup
-    config._set("consumer", "max_errors", 1)
+    config._set("plugins", "cmip7", {**config.get_plugin("cmip7"), "max_errors": limit})
     config._set("batch", "max_items", 100)
     db = root / "monitor.sqlite"
     config._set("stats", "enable_db", True)
@@ -387,6 +385,7 @@ def test_rejected_records_are_verified_before_crash_recovery_acknowledgement(
     setup, monkeypatch
 ):
     put, directory, root = setup
+    config._set("plugins", "cmip7", {**config.get_plugin("cmip7"), "max_errors": 2})
     message = put(1)
     item = message["data"]["payload"]["item"]
     next(iter(item["assets"].values()))["file:checksum"] = "bad"
@@ -661,7 +660,9 @@ def test_mapping_failure_below_limit_keeps_valid_items_and_advances_queue(
     setup, max_errors
 ):
     put, directory, root = setup
-    config._set("consumer", "max_errors", max_errors)
+    config._set(
+        "plugins", "cmip7", {**config.get_plugin("cmip7"), "max_errors": max_errors}
+    )
     message = put(1)
     put(2)
     item = deepcopy(message["data"]["payload"]["item"])

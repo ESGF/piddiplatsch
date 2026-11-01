@@ -116,17 +116,18 @@ Move old application settings from Ansible YAML to `custom.toml`:
 | --- | --- |
 | `piddi_kafka`, `piddi_kafka_defaults` | `[kafka]` |
 | `piddi_config_extra` | Matching TOML tables. |
-| `piddi_projects`, `piddi_topic`, `piddi_max_errors` | `[consumer]` `projects`, `topic`, `max_errors`. |
+| `piddi_projects`, `piddi_topic` | `[consumer]` `projects`, `topic`. |
+| `piddi_max_errors` | `[plugins.<project>]` `max_errors`; set separately for each affected project. |
 | `piddi_output_dir` | `[consumer]` `output_dir`. |
 | `piddi_log_level`, `piddi_log_file` | `[logging]` `level`, `file`. |
 | `piddi_stats_enable_db`, `piddi_db_path` | `[stats]` `enable_db`, `db_path`. |
 
 The playbook rejects these old YAML variables until they are moved.
 
-Ansible replaces old `piddi-batch` units with `piddi-sync` units. The old controls
-`piddi_enable_batch_timer` and `piddi_batch_check_interval` still work as fallbacks.
-Use the new `sync` names for new settings. The TOML section remains `[batch]`.
-Existing batch files remain usable.
+Ansible replaces old `piddi-batch` units with `piddi-sync` units. Use
+`piddi_enable_sync_timer` and `piddi_sync_check_interval`; the old `batch` control
+names are rejected. The TOML section remains `[batch]`. Existing batch files
+remain usable.
 
 ## Vagrant test VM
 

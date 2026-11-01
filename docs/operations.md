@@ -140,7 +140,7 @@ records instead. One catalog item can produce many Handle records.
 
 Mapping appends to daily `handles_<event-day>.jsonl` files. Repeating it can
 append the same Handles again. It does not clear the sync worker's pending queue.
-Mapping stops at `consumer.max_errors`; output already written is kept.
+Mapping stops at the selected project's `max_errors` limit; output already written is kept.
 Concurrent harvest changes become visible on the next map run.
 
 ### Link older dataset versions
@@ -192,7 +192,7 @@ Every included asset must validate. A rejected item contributes no Handles;
 its input and error are saved in the batch's `failures.jsonl`. Sync advances past
 both successful and rejected items after saving the batch durably, so timer
 ticks do not keep regenerating the same work. A later harvested update queues a
-rejected item again. Reaching `consumer.max_errors` seals the processed portion,
+rejected item again. Reaching the project's `max_errors` limit seals the processed portion,
 publishes its valid Handles, and stops mapping for that project for this run;
 unprocessed items remain pending for the next run. Increasing the limit allows
 more records to be inspected per batch. Storage errors and interruptions leave

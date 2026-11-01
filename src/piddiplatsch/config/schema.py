@@ -14,21 +14,6 @@ from pydantic import (
 )
 
 
-class TransientConfig(BaseModel):
-    model_config = ConfigDict(extra="allow", allow_inf_nan=False)
-    stop_on_skip: bool = True
-    retries: int = Field(default=3, ge=0)
-    backoff_initial: float = Field(default=0.5, ge=0)
-    backoff_max: float = Field(default=5.0, ge=0)
-    preflight_stac: bool = False
-
-    @model_validator(mode="after")
-    def _check_backoff(self):
-        if self.backoff_max < self.backoff_initial:
-            raise ValueError("backoff_max must be at least backoff_initial")
-        return self
-
-
 class StatsConfig(BaseModel):
     model_config = ConfigDict(extra="allow", allow_inf_nan=False)
     interval_seconds: float = Field(default=30, gt=0)
@@ -39,8 +24,15 @@ class StatsConfig(BaseModel):
     sample_interval_seconds: float = Field(default=15, gt=0)
     sample_retention_days: float = Field(default=30, ge=0)
     stale_after_seconds: float = Field(default=15, gt=0)
-    # Accepted for older configurations; top now uses a fixed recent interval.
-    history_minutes: float = Field(default=60, gt=0)
+
+    @model_validator(mode="before")
+    @classmethod
+    def _reject_removed_window(cls, data):
+        if isinstance(data, dict) and "history_minutes" in data:
+            raise ValueError(
+                "[stats].history_minutes is not supported; top uses the last five minutes"
+            )
+        return data
 
 
 class ConsumerConfig(BaseModel):
@@ -49,12 +41,27 @@ class ConsumerConfig(BaseModel):
     projects: list[str] | Literal["all"]
     topic: str
     output_dir: str | None = None
-    max_errors: int = Field(default=1, ge=-1)
-    transient: TransientConfig | None = None
 
     @model_validator(mode="before")
     @classmethod
-    def _reject_processor_setting(cls, data):
+    def _reject_removed_settings(cls, data):
+        if isinstance(data, dict):
+            removed = {
+                "transient",
+                "stop_on_transient_skip",
+                "transient_retries",
+                "transient_backoff_initial",
+                "transient_backoff_max",
+                "preflight_stac",
+            }
+            for key in sorted(removed & data.keys()):
+                raise ValueError(
+                    f"[consumer].{key} is not supported; harvest recovery is fail-fast"
+                )
+        if isinstance(data, dict) and "max_errors" in data:
+            raise ValueError(
+                "[consumer].max_errors is not supported; use [plugins.<project>].max_errors"
+            )
         if isinstance(data, dict) and "processor" in data:
             raise ValueError(
                 "[consumer].processor is not supported; use [consumer].projects"
@@ -273,6 +280,7 @@ class LoggingConfig(BaseModel):
 
 class ProjectPluginConfig(BaseModel):
     model_config = ConfigDict(extra="allow")
+    max_errors: int = Field(default=1, ge=-1)
     force_dataset_pid: bool = Field(default=False, strict=True)
     landing_page_url: str | None = None
     handle: str | None = None
@@ -293,8 +301,7 @@ class AppConfig(BaseModel):
 
     consumer: ConsumerConfig
     kafka: KafkaConfig
-    handle: HandleConfig | None = None
-    handles: HandlesConfig | None = None
+    handles: HandlesConfig
     stac: StacConfig | None = None
     lookup: LookupConfig | None = None
     catalog: CatalogConfig | None = None
@@ -304,6 +311,21 @@ class AppConfig(BaseModel):
     logging_config: LoggingConfig | None = Field(None, alias="logging")
     plugins: PluginsConfig | None = None
     stats: StatsConfig | None = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def _reject_removed_sections(cls, data):
+        if isinstance(data, dict):
+            if "handle" in data:
+                raise ValueError(
+                    "[handle] is not supported; use [handles.profiles.<name>]"
+                )
+            for project in ("cmip6", "cmip6plus", "cmip7", "cordex-cmip6"):
+                if project in data:
+                    raise ValueError(
+                        f"[{project}] is not supported; use [plugins.{project}]"
+                    )
+        return data
 
     @model_validator(mode="after")
     def _check_lookup_requirements(self) -> AppConfig:
@@ -315,10 +337,9 @@ class AppConfig(BaseModel):
 
     @model_validator(mode="after")
     def _check_project_handle_profiles(self) -> AppConfig:
-        # Legacy [handle] overrides named profiles for compatibility.
-        if self.handle or not self.plugins:
+        if not self.plugins:
             return self
-        available = set(self.handles.profiles) if self.handles else set()
+        available = set(self.handles.profiles)
         for field_name in self.plugins.__class__.model_fields:
             plugin = getattr(self.plugins, field_name)
             if plugin and plugin.handle and plugin.handle not in available:
@@ -376,15 +397,13 @@ def validate_config(data: dict) -> tuple[list[str], list[str]]:
     except ValueError as exc:
         return [str(exc)], warnings
     warnings.extend(_typo_warnings(cfg))
-    handle_configs = {"legacy": cfg.handle} if cfg.handle else {}
-    if cfg.handles and not cfg.handle:
-        names = {resolved.get_handle_profile(plugin.name) for plugin in selected}
-        unknown = names - cfg.handles.profiles.keys()
-        if unknown:
-            return [
-                f"Unknown selected Handle profile: {name!r}" for name in sorted(unknown)
-            ], warnings
-        handle_configs.update((name, cfg.handles.resolve(name)) for name in names)
+    names = {resolved.get_handle_profile(plugin.name) for plugin in selected}
+    unknown = names - cfg.handles.profiles.keys()
+    if unknown:
+        return [
+            f"Unknown selected Handle profile: {name!r}" for name in sorted(unknown)
+        ], warnings
+    handle_configs = {name: cfg.handles.resolve(name) for name in names}
     for name, handle_config in handle_configs.items():
         if (
             handle_config.username == "300:21.TEST/testuser"

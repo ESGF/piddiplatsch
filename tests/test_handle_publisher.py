@@ -498,7 +498,9 @@ def test_reads_all_jsonl_files_in_directory(tmp_path):
 
 def test_publishes_jsonl_backend_output(tmp_path):
     config._set("consumer", "output_dir", str(tmp_path))
-    config._set("handle", "prefix", "21.TEST")
+    config.config_data["handles"]["profiles"][config.get_handle_profile()][
+        "prefix"
+    ] = "21.TEST"
     JsonlHandleBackend(project="cmip6").add(
         "abc",
         {

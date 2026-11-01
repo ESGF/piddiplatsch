@@ -157,7 +157,7 @@ class TestHarvestCommand:
         kwargs = mock_start_consumer.call_args.kwargs
         assert isinstance(kwargs["processor"], HarvestProcessor)
         assert kwargs["dump_messages"] is True
-        assert kwargs["force"] is True
+        assert "force" not in kwargs
         assert kwargs["idle_timeout"] == 5.0
         assert kwargs["limit"] is None
         assert kwargs["monitor_db"] is True

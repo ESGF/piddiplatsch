@@ -113,28 +113,17 @@ def test_other_authentication_modes_remain_available(configured, protocol, mecha
     [
         ("stats", "heartbeat_interval_seconds", 0),
         ("stats", "sample_interval_seconds", -1),
-        ("stats", "history_minutes", float("nan")),
         ("stats", "sample_retention_days", -1),
         ("stats", "summary_interval", 0),
-        ("transient", "retries", -1),
-        ("transient", "backoff_initial", -1),
-        ("transient", "backoff_max", 0.1),
     ],
 )
 def test_invalid_tuning_is_reported(configured, section, key, value):
-    target = (
-        configured.config_data["consumer"]["transient"]
-        if section == "transient"
-        else configured.config_data[section]
-    )
+    target = configured.config_data[section]
     target[key] = value
     assert configured.validate()[0]
 
 
-def test_zero_retries_delay_and_retention_remain_valid(configured):
-    configured.config_data["consumer"]["transient"].update(
-        retries=0, backoff_initial=0, backoff_max=0
-    )
+def test_zero_retention_remains_valid(configured):
     configured._set("stats", "sample_retention_days", 0)
     assert configured.validate()[0] == []
 
@@ -174,20 +163,6 @@ def test_only_selected_profiles_and_projects_emit_warnings(configured):
     assert errors == []
     assert any("mock" in warning for warning in warnings)
     assert any("plugins.cmip6" in warning for warning in warnings)
-
-
-def test_legacy_profile_wins_for_warnings(configured):
-    configured._set(
-        "handle",
-        None,
-        {
-            "server_url": "https://handle.example.org",
-            "prefix": "21.PROD",
-            "username": "real-user",
-            "password": "real-password",
-        },
-    )
-    assert configured.validate() == ([], [])
 
 
 @pytest.mark.parametrize(

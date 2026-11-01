@@ -74,12 +74,12 @@ local predecessor lookup, but overwrite successive updates to the same item.
 - [ ] Add project-scoped cache inspection/removal with safe database closure and
   cleanup of associated journal files. Report item counts, unresolved records,
   checkpoints, and disk usage.
-- [ ] Remove retained legacy retry library helpers after compatibility review.
+- [x] Remove retained legacy retry library helpers.
 - [ ] Add an explicit harvest force option with diagnosed skip/checkpoint semantics
   for unresolved events; default harvest remains fail-fast.
 - [ ] Add a configurable publication failure limit aligned with mapping.
-- [ ] Remove remaining legacy direct-processing library paths and obsolete
-  transient configuration after compatibility review.
+- [x] Remove direct remote PATCH mapping, transient configuration, and the
+  legacy force bypass.
 - [ ] Run shared backend correctness tests for publications, consecutive patches,
   duplicate replay, interrupted transactions, missing bases, project isolation,
   predecessor selection, clean/force behavior, and independent project rebuilds.

@@ -4,6 +4,8 @@
 
 ### Added
 
+- Project-specific mapping error limits under `[plugins.<name>].max_errors`;
+  removed the consumer-level setting. Unconfigured projects stop on the first error.
 - Per-project numeric `Errors` totals in `piddi top`, including finished runs.
 - `make status` lists the state of all deployed Piddi services and timers.
 - `piddi reset --project NAME` previews a processing reset; `--apply` backs up
@@ -21,6 +23,10 @@
 
 ### Changed
 
+- Removed legacy `[handle]` and root project settings, transient mapping/force
+  options, failure-file retry helpers, the dummy STAC client, and old Ansible
+  timer aliases. Mapping consumes full records; harvest owns PATCH recovery.
+  Use named Handle profiles and `[plugins.<project>]` settings.
 - Published sync batches use UTC date directories; default sync batches now
   trigger at 1,000 and contain up to 2,000 catalog items.
 - Publication receipts also use UTC date directories under `published/`.
@@ -32,6 +38,8 @@
 
 ### Fixed
 
+- A zero error limit stops at the first actual error instead of stopping after
+  a successful record.
 - `piddi top` retains errors from the latest finished mapping run after switching
   to publication, including batches with rejected items and zero Handles.
 - Sync batches retain valid Handles and quarantine rejected items in a durable

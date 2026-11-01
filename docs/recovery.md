@@ -40,7 +40,7 @@ Rebuilding depends on retained Kafka history and available remote items.
 
 ## Repeat mapping or publication
 
-Mapping stops at `consumer.max_errors`. Fix the cause, then select the same
+Mapping stops at `plugins.<project>.max_errors`. Fix the cause, then select the same
 catalog items again:
 
 ```bash
@@ -71,7 +71,7 @@ output from a rejected item is removed. Both files are saved durably before the
 processed items leave the pending queue. Rejected items are not automatically
 retried; a later harvested update to an item queues it again.
 
-Reaching `consumer.max_errors` stops further mapping for the project in that
+Reaching the project's `max_errors` limit stops further mapping for the project in that
 sync run, but seals and publishes the processed portion first. Unprocessed items
 remain pending for the next run. Raising the limit allows more records to be
 inspected per batch; it does not require fixing previously rejected records.

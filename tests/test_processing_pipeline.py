@@ -3,12 +3,56 @@ from unittest.mock import Mock
 import pytest
 
 from piddiplatsch.core.pipeline import ProcessingPipeline, process_messages
+from piddiplatsch.exceptions import MaxErrorsExceededError
 from piddiplatsch.result import ProcessingResult
 
 
 class SuccessfulProcessor:
     def process(self, key, value):
         return ProcessingResult(key=key, success=True)
+
+
+@pytest.mark.parametrize("limit", [0, 1])
+def test_zero_tolerance_processes_successes_and_stops_at_first_error(limit):
+    visited = []
+
+    class Processor:
+        def process(self, key, value):
+            visited.append(key)
+            return ProcessingResult(
+                key=key, success=key != "bad", error="bad" if key == "bad" else None
+            )
+
+    with pytest.raises(MaxErrorsExceededError):
+        process_messages(
+            [("good", {}), ("bad", {}), ("later", {})],
+            processor=Processor(),
+            max_errors=limit,
+        )
+    assert visited == ["good", "bad"]
+
+
+def test_mapping_project_error_budgets_are_independent():
+    visited = []
+
+    class Processor:
+        def process(self, key, value):
+            visited.append(key)
+            return ProcessingResult(key=key, plugin=value["project"], error="invalid")
+
+    with pytest.raises(MaxErrorsExceededError, match=r"2/2.*cmip7"):
+        process_messages(
+            [
+                ("a", {"project": "cmip6plus"}),
+                ("b", {"project": "cmip7"}),
+                ("c", {"project": "cmip7"}),
+                ("later", {"project": "cmip6plus"}),
+            ],
+            processor=Processor(),
+            max_errors=1,
+            project_max_errors={"cmip6plus": 10000, "cmip7": 2},
+        )
+    assert visited == ["a", "b", "c"]
 
 
 def test_pipeline_is_lazy_and_limit_does_not_read_ahead():
