@@ -12,6 +12,10 @@ the current batching fix remains in place.
   migration from existing catalogs, batches, and monitoring data.
 - [ ] Make mapping/publication use saved work snapshots and processing states;
   keep generated Handles in JSONL batches linked by `batch_id`.
+- [ ] Add sequential round robin scheduling of project batches, initially capped
+  at 2,000 work entries each. Separate selection, batch execution, and scheduling
+  to allow a bounded project-worker pool later; defer parallel execution and
+  worker claims until durable recovery and ordering are established.
 - [ ] Add daily summaries and configurable cleanup of old published work without
   double counting results. Keep invalid work available for explicit retry.
 - [ ] Keep `VACUUM` an explicit supervised operation with Piddi stopped; scheduled

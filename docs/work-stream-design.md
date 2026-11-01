@@ -127,6 +127,48 @@ Handle server. This design does not promise exactly-once remote HTTP execution
 across crashes. Detailed partial-publication recovery and ordering during
 explicit retries remain implementation decisions for the next pass.
 
+### Batch scheduling and future parallelism
+
+Normal mapping selects `pending` work from the database for the selected
+projects. Date filters remain available for explicit selections; dump files are
+not the scheduling input.
+
+Use project-specific batches with a configurable ceiling, initially 2,000 work
+entries per batch. Count event snapshots, including successive updates to the
+same item, rather than distinct catalog items, Handles, or bytes. Keep all
+Handle output for one work entry together. The ceiling does not require waiting
+for a full batch; automatic-run thresholds and maximum wait times are separate
+scheduling policies.
+
+Initially execute batches sequentially, taking one eligible batch per project
+in round robin order before returning to a project with more work. Select work
+in ascending `id` order within each project. Retry older unpublished batches
+before publishing newer batches for that project. A publication failure blocks
+later publication for that project while other eligible projects can continue.
+Explicit retries of older invalid entries still need an ordering policy before
+implementation; round robin scheduling alone does not resolve stale retries.
+
+Projects never write to the same Handle. This permits future parallel execution
+across projects without cross-project Handle ordering. Defer parallel execution
+until sequential selection, durable output, and recovery are implemented and
+measured, but prepare the implementation boundaries now:
+
+- Separate database selection and durable batch membership, execution of one
+  project batch, and scheduling across projects. A batch executor receives a
+  concrete batch rather than independently selecting pending work.
+- Keep processing context and output ownership local to a project batch; avoid
+  requiring shared mutable processor or counter state between future workers.
+- Keep database transactions short, outside mapping and remote publication.
+- Retain the existing single-run ownership protection initially. Before enabling
+  parallel workers, define atomic batch claims and crash recovery so work cannot
+  be selected twice; the current work-state columns alone are not a worker claim.
+
+Future execution should use a bounded project-worker pool, with at most one
+active batch per project initially, a separate database connection per worker,
+and a global limit on concurrent Handle requests. Preserve ordering across
+batches within each project. Worker claims, recovery metadata, and concurrency
+settings are deferred; do not add speculative columns to the agreed schema now.
+
 ## Archive and error policy
 
 Kafka messages are immutable inputs; corrections arrive as new events. Error
