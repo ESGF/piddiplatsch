@@ -40,6 +40,11 @@ check_interval_seconds = 10
 # --no-catalog retains the previous raw-dump-only behavior.
 enabled = true
 backend = "sqlite"
+# false: stop harvest on an unknown project without acknowledging its event.
+# true: durably dump it to dump/unknown_projects_*.jsonl, count it as filtered,
+# and continue without creating catalog or work rows for that project.
+# Override for one run: --ignore-unknown-projects or --stop-on-unknown-projects.
+ignore_unknown_projects = false
 # Batch broker acknowledgements after durable local writes. Flush pending offsets
 # on idle, shutdown, limits, and partition revocation. Set batch size 1 for
 # per-message commits (slower on remote brokers).

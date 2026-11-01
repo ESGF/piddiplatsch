@@ -23,6 +23,23 @@ An invalid event or persistence failure stops harvest without acknowledging it.
 The dump archive preserves topic, partition, offset, key, and original payload.
 Files rotate by UTC day and `consumer.dump_max_events` (default 100,000).
 
+Unknown projects also stop harvest by default. Use
+`piddi harvest --ignore-unknown-projects` (or set
+`catalog.ignore_unknown_projects = true`) to archive them in
+`dump/unknown_projects_<day>_<part>.jsonl`, count them as filtered by project,
+and continue. Use `--stop-on-unknown-projects` to force stopping for one run.
+Every ignored event logs a warning with its source coordinates.
+`top --json` exposes the run's per-project filtered counts. No catalog or work
+entry is created for an unknown project. The archive write must succeed before
+the shared checkpoint and Kafka acknowledgement advance.
+
+The normal all-event dump is still written. Dedicated unknown archives make
+inspection and future replay easier. A crash before checkpoint commit can leave
+duplicate archive entries; use topic/partition/offset to identify unique events.
+If support is added later, replay into a fresh database: ordinary replay into
+the current database skips already checkpointed events. Missing/conflicting
+project identities and malformed envelopes remain errors in either policy.
+
 ## Map and inspect
 
 ```bash

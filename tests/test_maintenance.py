@@ -106,3 +106,13 @@ def test_maintenance_compresses_numbered_parts_only_before_today(dumps):
     assert gzip.decompress(archived.read_bytes()) == b'{"event": 1}\n'
     assert not yesterday.exists()
     assert today.exists()
+
+
+def test_maintenance_compresses_unknown_project_archives(dumps):
+    source = dumps / "unknown_projects_2026-10-29_000001.jsonl"
+    original = b'{"source":{"topic":"topic","partition":0,"offset":1},"payload":{}}\n'
+    source.write_bytes(original)
+    archived = source.with_suffix(".jsonl.gz")
+    assert archived in compress_closed_dumps()
+    assert not source.exists()
+    assert gzip.decompress(archived.read_bytes()) == original

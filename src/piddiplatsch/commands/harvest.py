@@ -24,6 +24,7 @@ class HarvestCommand(KafkaCommand):
     clean_catalog: bool = False
     clean_projects: tuple[str, ...] = ()
     archives: tuple[Path, ...] = ()
+    ignore_unknown_projects: bool | None = None
 
     def execute(self) -> None:
         catalog_cfg = config.get("catalog", {})
@@ -38,6 +39,8 @@ class HarvestCommand(KafkaCommand):
             raise click.UsageError(
                 "Catalog cleaning requires --catalog; it cannot run with catalogs disabled"
             )
+        if self.ignore_unknown_projects is not None and not enabled:
+            raise click.UsageError("Unknown-project flags require --catalog")
         clean_projects = ()
         if self.clean_catalog or self.clean_projects:
             try:
@@ -58,6 +61,7 @@ class HarvestCommand(KafkaCommand):
                     catalog_dir=directory,
                     backend=catalog_cfg.get("backend", "sqlite"),
                     clean_projects=clean_projects,
+                    ignore_unknown_projects=self.ignore_unknown_projects,
                 )
             ) as processor:
                 if clean_projects:

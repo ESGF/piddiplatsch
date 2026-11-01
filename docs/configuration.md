@@ -158,6 +158,7 @@ Map reads local catalogs and does not contact STAC.
 [catalog]
 enabled = true
 backend = "sqlite"
+ignore_unknown_projects = false # Enable to archive, count, and continue.
 version_history = false
 kafka_commit_batch_size = 100
 kafka_commit_interval_seconds = 1.0
@@ -169,6 +170,24 @@ The shared database defaults to `<consumer.output_dir>/piddi.db`. Set
 `enabled` controls catalog/work writes during harvest. Map always reads database
 work snapshots. This format requires a fresh output directory; there is no legacy
 schema migration.
+
+`ignore_unknown_projects` defaults to `false`: an unknown project stops harvest
+without advancing its checkpoint or acknowledging the event. Set it to `true` to
+archive the event in `dump/unknown_projects_<day>_<part>.jsonl`, count it as
+filtered under its project identifier, advance the shared checkpoint, and
+continue. The dedicated archive must be durable before the checkpoint advances;
+an archive failure still stops harvest. It uses the same day/count rotation and
+closed-file compression as the ordinary all-event archive.
+
+Override the boolean setting for one run with `harvest --ignore-unknown-projects`
+or `harvest --stop-on-unknown-projects`. These flags do not change the saved
+configuration and require catalog-backed harvesting.
+
+These filtered counts appear in run statistics, logs, and per-project live
+status (`top --json`), not the daily mapping/publication summary table. Unknown
+events create no catalog or work rows. Missing/conflicting project identities
+and malformed envelopes still stop harvest in both modes. Registered projects are
+harvested even when disabled for automatic mapping/publication.
 
 Keep `version_history` disabled for the first fill. Enable it to link each dataset
 to the nearest older version in the same local catalog. Map's `--version-history`

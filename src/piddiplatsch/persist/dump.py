@@ -79,11 +79,13 @@ class DumpRecorder(RecorderBase):
     LOG_LEVEL = logging.DEBUG
     DUMP_DIR: Path | None = None
 
-    def __init__(self, root_dir: Path | None = None) -> None:
+    def __init__(
+        self, root_dir: Path | None = None, *, prefix: str = "dump_messages"
+    ) -> None:
         configured_dir = (
             Path(config.get("consumer", {}).get("output_dir", "outputs")) / "dump"
         )
-        super().__init__(root_dir or self.DUMP_DIR or configured_dir, "dump_messages")
+        super().__init__(root_dir or self.DUMP_DIR or configured_dir, prefix)
         self.writer = _DumpWriter(
             self.root_dir, int(config.get("consumer", "dump_max_events", 100000))
         )

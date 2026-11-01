@@ -210,6 +210,11 @@ def reset(project: str, apply: bool) -> None:
     type=click.Path(exists=True, dir_okay=False, path_type=Path),
     help="Replay a coordinate-bearing JSONL or JSONL.gz archive instead of Kafka; repeat for parts.",
 )
+@click.option(
+    "--ignore-unknown-projects/--stop-on-unknown-projects",
+    default=None,
+    help="Ignore and archive unknown projects, or stop (default: catalog.ignore_unknown_projects, false).",
+)
 @click.pass_context
 def harvest(
     ctx: click.Context,
@@ -219,6 +224,7 @@ def harvest(
     clean_catalog: bool,
     clean_projects: tuple[str, ...],
     archives: tuple[Path, ...],
+    ignore_unknown_projects: bool | None,
 ) -> None:
     """Harvest Kafka messages into raw JSONL and local catalogs without mapping."""
     commands.HarvestCommand(
@@ -229,6 +235,7 @@ def harvest(
         clean_catalog=clean_catalog,
         clean_projects=clean_projects,
         archives=archives,
+        ignore_unknown_projects=ignore_unknown_projects,
     ).execute()
 
 

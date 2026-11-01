@@ -176,6 +176,14 @@ policy is separate from batching: either stop without acknowledging an event or
 optionally record the failure, acknowledge it, and continue. Handling harvest
 errors that prevent full STAC reconstruction is a separate policy decision.
 
+Unknown-project handling is configured separately through
+`catalog.ignore_unknown_projects`: `false` stops harvest by default; `true` requires a durable
+coordinate-bearing `unknown_projects` dump before advancing the shared
+checkpoint. Ignored events count as filtered in run/live statistics under their
+project identifier, with a warning per newly ignored event. They create no
+catalog/work rows and do not count as mapping errors in the daily summary.
+Missing/conflicting identities and malformed envelopes still stop harvest.
+
 JSONL dumps are the original event archive, not the pending work queue. Include
 topic, partition, offset, key, and the original payload, preserving per-partition
 order. Support Kafka and archived files as alternative inputs to the same flow,

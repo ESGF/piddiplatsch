@@ -77,11 +77,16 @@ def compress_closed_dumps(*, dry_run=False) -> list[Path]:
         except BlockingIOError:
             LOGGER.info("[maintenance] Skipped; another maintenance run holds the lock")
             return []
-        for path in sorted(directory.glob("dump_messages_*.jsonl")):
+        archives = (
+            *directory.glob("dump_messages_*.jsonl"),
+            *directory.glob("unknown_projects_*.jsonl"),
+        )
+        for path in sorted(archives):
             if path.is_symlink() or not path.is_file():
                 continue
             match = re.fullmatch(
-                r"dump_messages_(\d{4}-\d{2}-\d{2})(?:_\d+)?\.jsonl", path.name
+                r"(?:dump_messages|unknown_projects)_(\d{4}-\d{2}-\d{2})(?:_\d+)?\.jsonl",
+                path.name,
             )
             if match is None:
                 continue

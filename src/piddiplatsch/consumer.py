@@ -205,13 +205,23 @@ class KafkaConsumer:
 class HarvestProcessor:
     """Harvest raw dumps, optionally maintaining complete project catalogs."""
 
-    def __init__(self, *, catalog_dir=None, backend="sqlite", clean_projects=()):
+    def __init__(
+        self,
+        *,
+        catalog_dir=None,
+        backend="sqlite",
+        clean_projects=(),
+        ignore_unknown_projects=None,
+    ):
         self._harvester = None
         if catalog_dir is not None:
             from piddiplatsch.catalog.harvest import CatalogHarvester
 
             self._harvester = CatalogHarvester(
-                catalog_dir, backend=backend, clean_projects=clean_projects
+                catalog_dir,
+                backend=backend,
+                clean_projects=clean_projects,
+                ignore_unknown_projects=ignore_unknown_projects,
             )
         self.requires_kafka_source = self._harvester is not None
         self.stop_on_error = self.requires_kafka_source

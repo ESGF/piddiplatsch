@@ -39,8 +39,11 @@ Conflicting identities are rejected. `collection_id` works for full publications
 and patches. The plugin registry rejects duplicate names and overlapping project
 identifiers at startup.
 
-Harvest stores every registered project it encounters. Unknown projects and
-invalid events stop catalog harvest without acknowledging the failed event.
+Harvest stores every registered project it encounters. Unknown projects stop
+harvest by default. `catalog.ignore_unknown_projects = true` instead durably archives
+them separately, counts them as filtered, and advances the shared checkpoint
+without catalog/work rows. Invalid events and missing/conflicting project
+identities still stop harvest without acknowledging the failed event.
 
 Mapping uses `consumer.projects`, repeated `--project` options, or
 `--all-projects`. Sync uses the configured selection and can restrict it with
