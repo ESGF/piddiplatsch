@@ -59,7 +59,6 @@ def make_client(response):
 def test_shared_service_uses_plugin_prefix_for_records_and_publication(
     project, tmp_path, monkeypatch
 ):
-    config._set("handle", None, {})
     config._set(
         "handles",
         None,
@@ -212,7 +211,9 @@ def test_handle_backend_factory_defers_publication_by_default():
 
 def test_handle_backend_factory_selects_rest(monkeypatch):
     sentinel = object()
-    config._set("handle", "backend", "rest")
+    config.config_data["handles"]["profiles"][config.get_handle_profile()][
+        "backend"
+    ] = "rest"
     monkeypatch.setattr(
         "piddiplatsch.handles.rest_backend.RestHandleClient.from_config",
         lambda **_kwargs: sentinel,
@@ -225,7 +226,7 @@ def test_handle_backend_factory_selects_rest(monkeypatch):
 
 def test_handle_backend_factory_defaults_to_rest(monkeypatch):
     sentinel = object()
-    config._set("handle", None, {"prefix": "21.TEST"})
+    config.config_data["handles"]["defaults"].pop("backend", None)
     monkeypatch.setattr(
         "piddiplatsch.handles.rest_backend.RestHandleClient.from_config",
         lambda **_kwargs: sentinel,
@@ -237,13 +238,14 @@ def test_handle_backend_factory_defaults_to_rest(monkeypatch):
 
 
 def test_handle_backend_factory_rejects_unknown_backend():
-    config._set("handle", "backend", "unknown")
+    config.config_data["handles"]["profiles"][config.get_handle_profile()][
+        "backend"
+    ] = "unknown"
     with pytest.raises(ValueError, match="backend"):
         get_handle_backend(publish=True)
 
 
 def test_rest_client_uses_project_handle_profile():
-    config._set("handle", None, {})
     config._set(
         "handles",
         None,

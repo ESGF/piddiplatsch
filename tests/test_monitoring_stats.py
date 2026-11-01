@@ -339,11 +339,7 @@ def test_consumer_entrypoint_without_monitoring_opt_in_does_not_create_database(
     config._set("stats", "enable_db", True)
     config._set("stats", "db_path", str(db_path))
 
-    start_consumer(
-        processor=processor,
-        direct_messages=[("one", {"value": 1})],
-        force=True,
-    )
+    start_consumer(processor=processor, direct_messages=[("one", {"value": 1})])
 
     assert not db_path.exists()
 
@@ -358,7 +354,6 @@ def test_consumer_entrypoint_creates_configured_monitoring_database(tmp_path):
         {"group.id": "piddi-test"},
         projects=["cmip6"],
         direct_messages=[("one", {"value": 1})],
-        force=True,
         monitor_db=True,
     )
 
@@ -379,7 +374,6 @@ def test_consumer_monitoring_respects_disabled_database_config(tmp_path):
     start_consumer(
         processor=_MappingProcessor(),
         direct_messages=[("one", {"value": 1})],
-        force=True,
         monitor_db=True,
     )
 

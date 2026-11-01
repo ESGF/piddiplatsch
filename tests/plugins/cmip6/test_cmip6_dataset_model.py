@@ -68,7 +68,7 @@ def test_dataset_model_requires_hosting_node():
 
 # --- max_parts and strict_mode tests ---
 def test_max_parts_enforced():
-    config._set("cmip6", "max_parts", 2)
+    config._set("plugins", "cmip6", {**config.get_plugin("cmip6"), "max_parts": 2})
     config._set("schema", "strict_mode", True)
 
     dataset = make_dataset(has_parts=["file1.nc"])
@@ -82,7 +82,7 @@ def test_max_parts_enforced():
 
 
 def test_strict_mode_requires_parts():
-    config._set("cmip6", "max_parts", 5)
+    config._set("plugins", "cmip6", {**config.get_plugin("cmip6"), "max_parts": 5})
     config._set("schema", "strict_mode", True)
 
     with pytest.raises(ValueError):
@@ -90,7 +90,7 @@ def test_strict_mode_requires_parts():
 
 
 def test_lenient_mode_allows_empty_parts():
-    config._set("cmip6", "max_parts", 5)
+    config._set("plugins", "cmip6", {**config.get_plugin("cmip6"), "max_parts": 5})
     config._set("schema", "strict_mode", False)
 
     dataset = make_dataset(has_parts=[])

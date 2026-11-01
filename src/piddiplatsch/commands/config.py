@@ -30,12 +30,10 @@ class ConfigExplainCommand(Command):
             raise click.ClickException(str(exc)) from exc
 
         plugin = config.get_plugin(project)
-        legacy = config.get(project) or {}
         source_labels = self._source_labels()
 
         def plugin_source(key: str) -> str:
-            section = project if key in legacy else f"plugins.{project}"
-            return f"{section}.{key}"
+            return f"plugins.{project}.{key}"
 
         def show(label: str, value, source: str, path=None) -> None:
             origin = (
@@ -53,22 +51,21 @@ class ConfigExplainCommand(Command):
             click.echo(f"  {source_labels[filename]}: {filename}")
         for key in ("topic", "output_dir"):
             show(key, config.get("consumer", key), f"consumer.{key}")
+        show(
+            "Mapping max_errors",
+            config.get_mapping_max_errors(project),
+            plugin_source("max_errors"),
+        )
 
-        if config.get("handle"):
-            profile = None
-            click.echo("Handle profile: legacy [handle] (overrides named profiles)")
-        else:
-            profile = self.handle_profile or config.get_handle_profile(project)
-            source = (
-                "--handle-profile"
-                if self.handle_profile
-                else (
-                    plugin_source("handle")
-                    if plugin.get("handle")
-                    else "handles.default"
-                )
+        profile = self.handle_profile or config.get_handle_profile(project)
+        source = (
+            "--handle-profile"
+            if self.handle_profile
+            else (
+                plugin_source("handle") if plugin.get("handle") else "handles.default"
             )
-            show("Handle profile", profile, source)
+        )
+        show("Handle profile", profile, source)
 
         profile_values = config.get("handles").get("profiles", {}).get(profile, {})
         for key in ("server_url", "prefix", "backend", "verify_https", "timeout"):
@@ -76,8 +73,6 @@ class ConfigExplainCommand(Command):
                 continue
             if key == "prefix" and plugin.get("handle_prefix") is not None:
                 source = plugin_source("handle_prefix")
-            elif config.get("handle"):
-                source = f"handle.{key}"
             elif key in profile_values:
                 source = f"handles.profiles.{profile}.{key}"
             else:

@@ -8,7 +8,7 @@ import pytest
 from piddiplatsch.catalog import CatalogEntry
 from piddiplatsch.catalog.sqlite import SQLiteCatalog
 from piddiplatsch.core.pipeline import process_messages
-from piddiplatsch.exceptions import StopOnTransientSkipError
+from piddiplatsch.exceptions import MaxErrorsExceededError
 from piddiplatsch.result import ProcessingResult
 from piddiplatsch.runners.mapping import map_catalog
 
@@ -78,15 +78,13 @@ def test_map_processes_before_reading_more_and_closes_early(
 
         def skip(key, value):
             processor.count += 1
-            return ProcessingResult(
-                key=key, skipped=True, transient_skip=True, skip_reason="offline"
-            )
+            return ProcessingResult(key=key, error="invalid record")
 
         monkeypatch.setattr(processor, "process", skip)
     monkeypatch.setattr(SQLiteCatalog, "iter_items", tracked_items)
     monkeypatch.setattr(SQLiteCatalog, "close", tracked_close)
     if stop:
-        with pytest.raises(StopOnTransientSkipError):
+        with pytest.raises(MaxErrorsExceededError):
             map_catalog(directory=tmp_path, projects=["cmip6"])
         assert read_count == 1
     else:

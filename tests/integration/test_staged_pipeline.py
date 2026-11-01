@@ -51,11 +51,7 @@ def test_harvest_limit_stops_after_dumping_requested_messages(tmp_path: Path):
     config._set("consumer", "output_dir", str(tmp_path))
     messages = [(str(index), {"index": index}) for index in range(3)]
     pipeline = ProcessingPipeline(
-        messages=messages,
-        processor=HarvestProcessor(),
-        dump_messages=True,
-        force=True,
-        limit=2,
+        messages=messages, processor=HarvestProcessor(), dump_messages=True, limit=2
     )
 
     pipeline.run()
@@ -138,7 +134,6 @@ def test_map_force_dataset_pid_corrects_dataset_and_file_parent(
 def test_map_rejects_invalid_asset_instead_of_skipping_it(
     tmp_path, testdata_path, caplog
 ):
-    config._set("consumer", "max_errors", 1)
     config._set("consumer", "output_dir", str(tmp_path / "outputs"))
     message = _sample(testdata_path, "cmip7")
     item = message["data"]["payload"]["item"]

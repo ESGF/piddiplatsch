@@ -94,7 +94,7 @@ class CatalogHarvester:
     def __str__(self) -> str:
         return "harvest"
 
-    def preflight_check(self, stop_on_transient_skip: bool = True) -> None:
+    def preflight_check(self) -> None:
         return None
 
     def plugin_name_for(self, value: dict) -> str | None:

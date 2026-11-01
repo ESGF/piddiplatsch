@@ -15,9 +15,8 @@
     # Continuous catalog harvest only; mapping/publication are separate batch commands.
     piddi_enable_service: false
     # This timer publishes Handles; enable explicitly after checking the site profile.
-    # Old control names remain accepted while existing sites migrate.
-    piddi_enable_sync_timer: "{{ piddi_enable_batch_timer | default(false) }}"
-    piddi_sync_check_interval: "{{ piddi_batch_check_interval | default('1min') }}"
+    piddi_enable_sync_timer: false
+    piddi_sync_check_interval: 1min
     piddi_enable_maintenance_timer: "{{ piddi_enable_service }}"
     # Shared application settings used by manual runs and deployment.
     piddi_config_source: "{{ playbook_dir }}/../../custom.toml"
@@ -34,6 +33,8 @@
     - name: Require application settings in the shared TOML file
       ansible.builtin.assert:
         that:
+          - piddi_enable_batch_timer is not defined
+          - piddi_batch_check_interval is not defined
           - piddi_projects is not defined
           - piddi_topic is not defined
           - piddi_output_dir is not defined

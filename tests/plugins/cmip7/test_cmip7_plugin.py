@@ -107,36 +107,21 @@ def test_cmip7_rejects_only_malformed_consumed_input_shape():
         processor.process("bad-event", {"data": {"payload": []}})
 
 
-def test_cmip7_accepts_real_publisher_patch_shape(cmip7_item):
+def test_mapping_rejects_patch_inputs():
     processor = CMIP7Processor(publish=False)
-
-    class StacClient:
-        def get_item(self, collection_id, item_id):
-            assert (collection_id, item_id) == ("CMIP7", ITEM_ID)
-            return cmip7_item
-
-    processor.stac_client = StacClient()
-    patched = processor._apply_patch_to_stac_item(
-        {
-            "collection_id": "CMIP7",
-            "item_id": ITEM_ID,
-            "patch": [
-                {"op": "replace", "path": "/properties/retracted", "value": True},
-                {"op": "replace", "path": "/assets", "value": {}},
-            ],
-        }
-    )
-
-    assert patched["properties"]["retracted"] is True
-    assert patched["assets"] == {}
-    assert CMIP7DatasetRecord(patched).as_handle_model().HAS_PARTS == []
+    with pytest.raises(ValueError, match="apply patches during harvest"):
+        processor.process(
+            "patch", {"data": {"payload": {"method": "PATCH", "patch": []}}}
+        )
 
 
 @pytest.mark.parametrize("source_form", ["{pid}", "hdl:21.TEST/{pid}"])
 def test_forced_pid_alias_survives_mapping_and_rest_publication(
     cmip7_item, tmp_path, source_form
 ):
-    config._set("cmip7", "force_dataset_pid", True)
+    config._set(
+        "plugins", "cmip7", {**config.get_plugin("cmip7"), "force_dataset_pid": True}
+    )
     cmip7_item["properties"]["cmip7:pid"] = source_form.format(pid=DATASET_PID)
     original = json.dumps(cmip7_item, sort_keys=True)
     corrected_pid = item_pid(ITEM_ID)
@@ -183,7 +168,9 @@ def test_forced_pid_alias_survives_mapping_and_rest_publication(
     [(False, DATASET_PID), (True, None), (True, item_pid(ITEM_ID))],
 )
 def test_no_alias_without_a_replaced_source_pid(cmip7_item, force, source_pid):
-    config._set("cmip7", "force_dataset_pid", force)
+    config._set(
+        "plugins", "cmip7", {**config.get_plugin("cmip7"), "force_dataset_pid": force}
+    )
     cmip7_item["properties"]["cmip7:pid"] = source_pid
     record = CMIP7DatasetRecord(cmip7_item)
     assert record.alias_record is None
@@ -196,9 +183,10 @@ def test_no_alias_without_a_replaced_source_pid(cmip7_item, force, source_pid):
 
 
 def test_alias_uses_selected_handle_profile(cmip7_item):
-    config._set("handle", None, {})
     config._set("handles", "profiles", {"selected": {"prefix": "21.SELECTED"}})
-    config._set("cmip7", "force_dataset_pid", True)
+    config._set(
+        "plugins", "cmip7", {**config.get_plugin("cmip7"), "force_dataset_pid": True}
+    )
     record = CMIP7DatasetRecord(cmip7_item, handle_profile="selected")
 
     assert record.alias_record.as_record() == {
@@ -207,7 +195,9 @@ def test_alias_uses_selected_handle_profile(cmip7_item):
 
 
 def test_invalid_alias_pid_fails_before_writing_handles(cmip7_item):
-    config._set("cmip7", "force_dataset_pid", True)
+    config._set(
+        "plugins", "cmip7", {**config.get_plugin("cmip7"), "force_dataset_pid": True}
+    )
     cmip7_item["properties"]["cmip7:pid"] = "invalid-pid"
     backend = Mock()
     processor = CMIP7Processor(handle_backend=backend)

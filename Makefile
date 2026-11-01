@@ -24,7 +24,7 @@ endef
 export PRINT_HELP_PYSCRIPT
 
 .DEFAULT_GOAL := help
-.PHONY: conda deploy play docs docs-html docs-serve docs-check pages start stop restart
+.PHONY: conda deploy play docs docs-html docs-serve docs-check pages start stop restart status
 
 help: ## print this help message. (Default)
 	@python -c "$$PRINT_HELP_PYSCRIPT" < $(MAKEFILE_LIST)
@@ -69,17 +69,35 @@ play: ## deploy piddi locally using custom variables
 deploy: conda play ## prepare the Conda environment and deploy piddi locally
 
 start: ## start deployed harvest, sync, and log rotation (publishes Handles)
-	$(SYSTEMCTL) start piddi.service
-	$(SYSTEMCTL) start piddi-logrotate.timer piddi-sync.timer piddi-maintenance.timer
-	$(SYSTEMCTL) --no-block start piddi-sync.service
+	@echo "Starting Piddi ..."
+	@$(SYSTEMCTL) start piddi.service
+	@$(SYSTEMCTL) start piddi-logrotate.timer piddi-sync.timer piddi-maintenance.timer
+	@$(SYSTEMCTL) --no-block start piddi-sync.service
+	@echo "Piddi started. Sync runs in the background."
 
 stop: ## stop deployed timers, sync, harvest, and log rotation
-	$(SYSTEMCTL) stop piddi-sync.timer piddi-logrotate.timer piddi-maintenance.timer
-	$(SYSTEMCTL) stop piddi-sync.service piddi.service piddi-logrotate.service piddi-maintenance.service
+	@echo "Stopping Piddi ..."
+	@$(SYSTEMCTL) stop piddi-sync.timer piddi-logrotate.timer piddi-maintenance.timer
+	@$(SYSTEMCTL) stop piddi-sync.service piddi.service piddi-logrotate.service piddi-maintenance.service
+	@echo "Piddi stopped."
 
 restart: ## stop and start all deployed Piddi services and timers
-	$(MAKE) stop
-	$(MAKE) start
+	@$(MAKE) --no-print-directory stop
+	@$(MAKE) --no-print-directory start
+
+status: ## show the state of all deployed Piddi services and timers
+	@units="$$($(SYSTEMCTL) list-units --all --no-pager --plain --no-legend \
+		piddi.service piddi-sync.service piddi-sync.timer \
+		piddi-logrotate.service piddi-logrotate.timer \
+		piddi-maintenance.service piddi-maintenance.timer)" || exit $$?; \
+	printf '%s\n' "$$units" | awk ' \
+		BEGIN { printf "%-28s %s\n", "UNIT", "STATE" } \
+		NF { state = $$3; \
+			if (state == "active" && ($$4 == "running" || $$4 == "waiting")) state = $$4; \
+			else if (state == "inactive") state = "stopped"; \
+			else if (state == "activating") state = "starting"; \
+			else if (state == "deactivating") state = "stopping"; \
+			printf "%-28s %s\n", $$1, state }'
 
 develop: ## install application with development and documentation libraries
 	@echo "Installing development requirements ..."

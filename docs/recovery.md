@@ -40,7 +40,7 @@ Rebuilding depends on retained Kafka history and available remote items.
 
 ## Repeat mapping or publication
 
-Mapping stops at `consumer.max_errors`. Fix the cause, then select the same
+Mapping stops at `plugins.<project>.max_errors`. Fix the cause, then select the same
 catalog items again:
 
 ```bash
@@ -65,9 +65,23 @@ selection rules.
 
 ## Scheduled batch recovery
 
-Failed sync mapping leaves files under `batches/<project>/.building-*` for
-inspection. The source items stay pending. A batch becomes ready only after
-mapping succeeds.
+Sync saves rejected records and their errors in `failures.jsonl` alongside each
+batch's `handles.jsonl`. Only successful items' Handles are included; partial
+output from a rejected item is removed. Both files are saved durably before the
+processed items leave the pending queue. Rejected items are not automatically
+retried; a later harvested update to an item queues it again.
+
+Reaching the project's `max_errors` limit stops further mapping for the project in that
+sync run, but seals and publishes the processed portion first. Unprocessed items
+remain pending for the next run. Raising the limit allows more records to be
+inspected per batch; it does not require fixing previously rejected records.
+Below the limit, sync continues mapping and publishing normally.
+
+Storage errors and unexpected interruptions still leave `.building-*`
+directories for inspection and keep the unsealed batch's source items pending.
+After fixing an infrastructure problem, repeat `piddi sync`. Existing
+`.building-*` directories from older versions are diagnostic only and are not
+publication inputs. Sync does not remove old diagnostics or monitoring history.
 
 Failed publication keeps the fixed batch under `batches/<project>/ready/`.
 Fix the cause, then repeat `piddi sync`. It retries that batch before newer work
@@ -82,3 +96,37 @@ explicitly archive the old ready queue first.
 
 Back up catalogs, `.harvest-state.json`, and the batch directory together.
 Catalog progress can refer to saved batches that have not yet been published.
+
+## Reset processing from the current catalog
+
+To map one project's existing STAC records again, use `reset`. This does not
+replay Kafka or dumps, and it preserves the project's STAC records and Kafka
+checkpoints. Other projects are not reset.
+
+Stop harvest and sync first, including the sync timer. Preview the configured
+paths, then apply the reset:
+
+```bash
+piddi reset --project cmip6plus
+piddi reset --project cmip6plus --apply
+piddi sync --project cmip6plus --force-map
+```
+
+Use the same configuration and working directory as the service; pass
+`--config /etc/piddi/piddi.toml` before the command when needed. Run the commands
+as the service user so new files have the correct ownership.
+
+The reset backs up the catalog and monitoring databases using SQLite's backup
+API, archives project batches and project output, clears the project's
+monitoring counters, and marks all its catalog items pending with a fresh mapping
+generation. Backups are under
+`<output_dir>/reset-backups/<timestamp>-<project>-<id>/`. Archiving moves files;
+it does not reclaim their disk space. Shared monitoring run history and shared
+publication receipt files remain available. The reset itself does not publish
+or delete Handles on the server. The subsequent sync intentionally republishes
+the selected project's current Handles.
+
+Resume harvest and the sync timer after checking the result. If reset fails,
+leave services stopped and inspect the printed backup directory. Catalog and
+monitoring changes use separate SQLite transactions; the saved databases are
+recovery copies if the host stops during reset.

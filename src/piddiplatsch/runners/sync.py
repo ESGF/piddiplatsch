@@ -23,10 +23,11 @@ from piddiplatsch.core.pipeline import (
     process_messages,
 )
 from piddiplatsch.core.registry import get_plugins
-from piddiplatsch.exceptions import BatchError, CatalogError
+from piddiplatsch.exceptions import BatchError, CatalogError, MaxErrorsExceededError
 from piddiplatsch.monitoring.disk import check_disk_space
 from piddiplatsch.monitoring.progress import get_progress
 from piddiplatsch.monitoring.stats import stats
+from piddiplatsch.result import ProcessingResult
 from piddiplatsch.runners.publish import HandlePublisher
 
 LOGGER = logging.getLogger(__name__)
@@ -104,6 +105,75 @@ def _envelope(entry):
     )
 
 
+class _BatchMapper:
+    """Keep each item's output atomic and retain rejected inputs with the batch."""
+
+    stop_on_error = True
+
+    def __init__(self, target, output, manifest):
+        self.target = target
+        self.output = output
+        self.manifest = manifest
+
+    def plugin_name_for(self, value):
+        return self.target.plugin_name_for(value)
+
+    def process(self, key, value):
+        offset = self.output.stat().st_size
+        try:
+            result = self.target.process(key, value)
+        except Exception as exc:
+            self._rollback(offset)
+            # Storage errors can be wrapped by the Handle-writing retry loop.
+            cause = exc
+            while cause is not None:
+                if isinstance(cause, (OSError, CatalogError)):
+                    raise
+                cause = cause.__cause__ or cause.__context__
+            return self._reject(key, value, str(exc))
+        except BaseException:
+            self._rollback(offset)
+            raise
+        if not result.success or result.skipped or result.filtered:
+            self._rollback(offset)
+            return self._reject(
+                key,
+                value,
+                result.error
+                or result.skip_reason
+                or result.filtered_reason
+                or "Mapping did not produce a successful result",
+            )
+        self.manifest["succeeded_count"] += 1
+        return result
+
+    def _rollback(self, offset):
+        with self.output.open("r+b") as stream:
+            stream.truncate(offset)
+
+    def _reject(self, key, value, reason):
+        record = {
+            **value,
+            "__infos__": {
+                "project": self.manifest["project"],
+                "sequence": self.manifest["sequence"],
+                "reason": reason,
+            },
+        }
+        with (self.output.parent / "failures.jsonl").open(
+            "a", encoding="utf-8"
+        ) as stream:
+            stream.write(json.dumps(record, allow_nan=False) + "\n")
+        self.manifest["failed_count"] += 1
+        LOGGER.error("[sync/map] Rejected %s: %s", key, reason)
+        return ProcessingResult(
+            key=key,
+            project=self.manifest["project"],
+            plugin=self.manifest["project"],
+            error=reason,
+        )
+
+
 class SyncWorker:
     """Single-process coordinator; immutable payloads and crash-recoverable progress.
 
@@ -151,12 +221,14 @@ class SyncWorker:
         self.errors = []
         self.progress = progress
         self.horizons = {}
+        self.mapping_stops = {}
 
     def run(self, *, force_map=False) -> list[Path]:
         check_disk_space(force=True)
         completed = []
         self.errors = []
         self.horizons = {}
+        self.mapping_stops = {}
         with _worker_lock(self.root) as acquired:
             if not acquired:
                 LOGGER.info("[sync] Skipped | another worker holds the lock")
@@ -190,6 +262,15 @@ class SyncWorker:
                             self._publish_ready(plugin.name, project_root)
                             if not batch.exists():
                                 completed[-1] = self._published_path(batch)
+                            if plugin.name in self.mapping_stops:
+                                blocked.add(plugin.name)
+                                reason = self.mapping_stops[plugin.name]
+                                self.errors.append(f"{plugin.name}: {reason}")
+                                LOGGER.warning(
+                                    "[sync] %s | mapping paused: %s",
+                                    plugin.name,
+                                    reason,
+                                )
                     except Exception as exc:
                         blocked.add(plugin.name)
                         self.errors.append(f"{plugin.name}: {exc}")
@@ -242,6 +323,8 @@ class SyncWorker:
                 "version_history": config.get("catalog", "version_history", False),
                 "handle_profile": config.get_handle_profile(project),
                 "item_count": 0,
+                "succeeded_count": 0,
+                "failed_count": 0,
                 "handle_count": 0,
             }
             _save_manifest(staging / "manifest.json", manifest)
@@ -250,7 +333,13 @@ class SyncWorker:
                 manifest["sha256"], manifest["handle_count"] = _fingerprint(
                     staging / "handles.jsonl", sync=True
                 )
+                manifest["failures_sha256"], failure_count = _fingerprint(
+                    staging / "failures.jsonl", sync=True
+                )
+                if failure_count != manifest["failed_count"]:
+                    raise BatchError("Batch failure record count mismatch")
                 (staging / "handles.jsonl").chmod(0o440)
+                (staging / "failures.jsonl").chmod(0o440)
                 manifest["status"] = "ready"
                 _save_manifest(staging / "manifest.json", manifest)
                 ready = project_root / "ready"
@@ -268,6 +357,11 @@ class SyncWorker:
                 raise
         # The read snapshot is closed before opening the write acknowledgement.
         self._acknowledge(final, manifest)
+        if manifest.get("mapping_error"):
+            self.mapping_stops[project] = (
+                manifest["mapping_error"]
+                + "; processed items saved; remaining items will continue next sync"
+            )
         return final
 
     def _map_items(self, project, reader, staging, manifest):
@@ -292,7 +386,10 @@ class SyncWorker:
             stats.close(status="failed", error_summary=str(exc))
             raise
         else:
-            stats.close(status="completed")
+            stats.close(
+                status="failed" if manifest.get("mapping_error") else "completed",
+                error_summary=manifest.get("mapping_error"),
+            )
             summary = stats.summary()
             LOGGER.info(
                 "[sync/map] %s | complete | %s items mapped | %s Handles prepared | %s alias Handles",
@@ -301,10 +398,17 @@ class SyncWorker:
                 f"{summary['handles']:,}",
                 f"{summary['alias_handles']:,}",
             )
+            if manifest["failed_count"]:
+                LOGGER.warning(
+                    "[sync/map] %s | %d rejected items saved in batch failures.jsonl",
+                    project,
+                    manifest["failed_count"],
+                )
 
     def _write_items(self, project, reader, staging, manifest):
         output = staging / "handles.jsonl"
         output.touch()
+        (staging / "failures.jsonl").touch()
         target = build_processing_target(
             projects=(project,),
             catalogs={project: reader},
@@ -324,22 +428,21 @@ class SyncWorker:
                     manifest["item_count"] += 1
                     yield _envelope(pending.entry)
 
-        with closing(records()) as selected:
-            result = process_messages(
-                selected,
-                processor=target,
-                max_errors=config.get("consumer", "max_errors", 1),
-                progress=self.progress,
-            )
+        try:
+            with closing(records()) as selected:
+                process_messages(
+                    selected,
+                    processor=_BatchMapper(target, output, manifest),
+                    max_errors=config.get_mapping_max_errors(project),
+                    progress=self.progress,
+                )
+        except MaxErrorsExceededError as exc:
+            manifest["mapping_error"] = str(exc)
         if (
-            result.failed
-            or result.skipped
-            or result.filtered
-            or result.succeeded != manifest["item_count"]
+            manifest["succeeded_count"] + manifest["failed_count"]
+            != manifest["item_count"]
         ):
-            raise BatchError(
-                "Batch mapping did not complete successfully; catalog changes remain pending"
-            )
+            raise BatchError("Batch mapping outcomes do not match selected items")
 
     def _acknowledge(self, batch, manifest):
         if not get_catalog_path(
@@ -380,6 +483,10 @@ class SyncWorker:
             output = batch / "handles.jsonl"
             if _fingerprint(output) != (manifest["sha256"], manifest["handle_count"]):
                 raise ValueError(f"Batch checksum/count mismatch: {batch}")
+            if "failures_sha256" in manifest and _fingerprint(
+                batch / "failures.jsonl"
+            ) != (manifest["failures_sha256"], manifest["failed_count"]):
+                raise ValueError(f"Batch failure checksum/count mismatch: {batch}")
             self._acknowledge(batch, manifest)
             manifest["publication_attempts"] = (
                 manifest.get("publication_attempts", 0) + 1

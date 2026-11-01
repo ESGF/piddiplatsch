@@ -1,6 +1,5 @@
 import pytest
 
-from piddiplatsch.config import config
 from piddiplatsch.consumer import start_consumer
 from piddiplatsch.core.pipeline import ProcessingPipeline
 from piddiplatsch.core.processing import BaseProcessor
@@ -29,10 +28,6 @@ class OKProcessor(BaseProcessor):
 
 
 def test_stop_on_first_error(tmp_path):
-    # Ensure conservative setting for this test
-    consumer_cfg = dict(config.get("consumer", {}))
-    consumer_cfg["max_errors"] = 1
-    config._set("consumer", None, consumer_cfg)
     with pytest.raises(SystemExit) as exc:
         start_consumer(
             processor=BoomProcessor(publish=False),
@@ -57,10 +52,7 @@ def test_proceed_after_fix(tmp_path):
     )
 
 
-def test_pipeline_stops_on_first_error_when_setting_is_missing():
-    consumer_cfg = dict(config.get("consumer", {}))
-    consumer_cfg.pop("max_errors", None)
-    config._set("consumer", None, consumer_cfg)
+def test_pipeline_stops_on_first_error_by_default():
     visited = []
 
     def messages():

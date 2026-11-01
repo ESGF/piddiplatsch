@@ -140,7 +140,7 @@ records instead. One catalog item can produce many Handle records.
 
 Mapping appends to daily `handles_<event-day>.jsonl` files. Repeating it can
 append the same Handles again. It does not clear the sync worker's pending queue.
-Mapping stops at `consumer.max_errors`; output already written is kept.
+Mapping stops at the selected project's `max_errors` limit; output already written is kept.
 Concurrent harvest changes become visible on the next map run.
 
 ### Link older dataset versions
@@ -188,11 +188,19 @@ Handles stay together. Changes to one item count once and keep the oldest pendin
 time. Changes arriving during a sync run remain for the next run. Eligible
 projects take turns; missing catalogs are skipped until harvest creates them.
 
-Every included asset must validate. Mapping failures leave diagnostic files in
-`.building-*` directories and keep the catalog items pending. Successful mapping
-saves a fixed `handles.jsonl` and a manifest under
+Every included asset must validate. A rejected item contributes no Handles;
+its input and error are saved in the batch's `failures.jsonl`. Sync advances past
+both successful and rejected items after saving the batch durably, so timer
+ticks do not keep regenerating the same work. A later harvested update queues a
+rejected item again. Reaching the project's `max_errors` limit seals the processed portion,
+publishes its valid Handles, and stops mapping for that project for this run;
+unprocessed items remain pending for the next run. Increasing the limit allows
+more records to be inspected per batch. Storage errors and interruptions leave
+diagnostics under `.building-*` and keep the unsealed work pending.
+
+Sealing saves fixed `handles.jsonl`, `failures.jsonl`, and a manifest under
 `batches/<project>/ready/<batch-id>/`. The manifest records the project, settings,
-catalog generation, sequence bounds, counts, and checksum.
+catalog generation, sequence bounds, success/failure counts, and checksums.
 
 The mapping checkpoint advances only after the batch is saved durably. If Piddi
 stops between those steps, the next run recovers from the manifest. Publication
@@ -307,6 +315,9 @@ catalog size. Ctrl-C closes the input, progress display, and monitoring reporter
 INFO is the default log level. Local runs write to `pid.log`; deployed services
 normally write to `/var/log/piddi/piddi.log`. Use `--log PATH` to change the file
 for one command. Use `-vv` or `--debug` for individual record details.
+ERROR and CRITICAL messages also go to the adjacent `piddi.error.log` (locally,
+`pid.error.log`), including tracebacks. The deployment logrotate policy rotates
+both files. No extra setting is needed.
 
 Log summaries use labels such as `[harvest]`, `[map]`, `[publish]`, `[sync/map]`,
 and `[sync/publish]`. Harvest and mapping summaries appear every 30 seconds or
@@ -348,8 +359,13 @@ harvest window.
 `Batch progress` shows successful Handle writes in the active publication run
 against its total, for example `12,345 / 50,000`. An unknown total appears as `?`;
 projects without a single active publisher show a dash.
-`DB datasets` counts all dataset records currently stored in each catalog,
-including mapped records; `Pending datasets` is the subset awaiting mapping.
+`Catalog items` counts all dataset records currently stored in each catalog,
+including mapped records; `Pending items` is the subset awaiting mapping.
+`Errors` sums recorded failed processing attempts per project across harvest,
+mapping, and publication runs, including finished runs. Repeated failed attempts
+count separately; this is not a count of unique invalid items. A dash means no
+project counters have been recorded yet. The count covers the same recorded
+history as the Handle totals and is cleared by a project processing reset.
 The catalog and generated Handle totals are also summed in the header (restricted
 to the selected project with `--project`). Generated Handles are recorded mapping
 outputs, including repeat runs, rather than unique PIDs.
@@ -397,8 +413,9 @@ piddi maintain --dry-run
 piddi maintain
 ```
 
-Maintenance compresses `dump/dump_messages_YYYY-MM-DD.jsonl` files dated before
-today in UTC, using gzip level 1. It skips today's file, future dates, symbolic
+Maintenance compresses `dump/dump_messages_YYYY-MM-DD_NNNNNN.jsonl` parts and
+existing daily `dump_messages_YYYY-MM-DD.jsonl` files dated before today in UTC,
+using gzip level 1. It skips today's files, future dates, symbolic
 links, and files with an existing `.jsonl.gz` archive. A lock prevents overlapping
 maintenance runs. The original remains until the gzip output is complete and
 durably stored; a dump that changes during compression is preserved with an

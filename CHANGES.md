@@ -4,6 +4,18 @@
 
 ### Added
 
+- Companion error log beside the normal log (`piddi.error.log`), containing
+  ERROR/CRITICAL messages and tracebacks, with deployment log rotation.
+- Raw JSONL dump rotation by UTC day and event count (`consumer.dump_max_events`,
+  default 100,000), with numbered parts, restart continuation, and maintenance
+  compression of previous days' parts.
+- Project-specific mapping error limits under `[plugins.<name>].max_errors`;
+  removed the consumer-level setting. Unconfigured projects stop on the first error.
+- Per-project numeric `Errors` totals in `piddi top`, including finished runs.
+- `make status` lists the state of all deployed Piddi services and timers.
+- `piddi reset --project NAME` previews a processing reset; `--apply` backs up
+  project output, clears its monitoring counters, and requeues its existing
+  catalog items while preserving STAC records and Kafka checkpoints.
 - Publication batch ETA and approximate known-backlog completion estimates in
   `piddi top`, based on recent Handle throughput and observed mapping ratios.
 - Configurable disk-space warning/stop guards, daily maintenance for closed raw
@@ -16,6 +28,10 @@
 
 ### Changed
 
+- Removed legacy `[handle]` and root project settings, transient mapping/force
+  options, failure-file retry helpers, the dummy STAC client, and old Ansible
+  timer aliases. Mapping consumes full records; harvest owns PATCH recovery.
+  Use named Handle profiles and `[plugins.<project>]` settings.
 - Published sync batches use UTC date directories; default sync batches now
   trigger at 1,000 and contain up to 2,000 catalog items.
 - Publication receipts also use UTC date directories under `published/`.
@@ -27,6 +43,15 @@
 
 ### Fixed
 
+- A zero error limit stops at the first actual error instead of stopping after
+  a successful record.
+- `piddi top` retains errors from the latest finished mapping run after switching
+  to publication, including batches with rejected items and zero Handles.
+- Sync batches retain valid Handles and quarantine rejected items in a durable
+  `failures.jsonl`, advancing past both instead of repeatedly generating partial
+  batches. Reaching `max_errors` seals processed work before stopping the pass;
+  later ticks continue with remaining items. Failed items are retried on a later
+  harvested update. Partial Handles from rejected items are removed.
 - Keep prepared/published Handle totals visible in `piddi top` alongside harvest,
   and persist live publication progress and heartbeats.
 - Explain malformed asset checksums, including duplicated SHA-256 multihash

@@ -176,10 +176,5 @@ def create_app(
 app = create_app()
 
 
-def _reset_handles(flask_app: Flask = app) -> None:
-    """Reset an app's store; retained for compatibility with existing tests."""
-    flask_app.extensions["handle_store"].reset()
-
-
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=8000)

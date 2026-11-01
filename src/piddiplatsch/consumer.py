@@ -11,7 +11,7 @@ from enum import StrEnum
 from piddiplatsch.config import config
 from piddiplatsch.core.messages import KafkaSource, SourceMessage
 from piddiplatsch.core.pipeline import ProcessingPipeline, build_processing_target
-from piddiplatsch.exceptions import MaxErrorsExceededError, StopOnTransientSkipError
+from piddiplatsch.exceptions import MaxErrorsExceededError
 from piddiplatsch.monitoring.progress import BaseProgress
 from piddiplatsch.monitoring.stats import CounterKey, stats
 from piddiplatsch.result import ProcessingResult
@@ -35,7 +35,6 @@ class StopCause(StrEnum):
     SIGINT = "sigint"
     KEYBOARD_INTERRUPT = "keyboard_interrupt"
     MAX_ERRORS = "max_errors_exceeded"
-    TRANSIENT_EXTERNAL = "transient_external_failure"
 
 
 class KafkaConsumer:
@@ -231,7 +230,7 @@ class HarvestProcessor:
     def __str__(self) -> str:
         return "harvest"
 
-    def preflight_check(self, stop_on_transient_skip: bool = True) -> None:
+    def preflight_check(self) -> None:
         return None
 
     def process(self, key: str, value: dict) -> ProcessingResult:
@@ -258,7 +257,7 @@ def _stop_pipeline(pipeline: ProcessingPipeline, cause: StopCause = StopCause.MA
         f"handles: {pipeline.stats[CounterKey.HANDLES]}, skipped: {pipeline.stats.skipped_messages}, "
         f"filtered: {pipeline.stats.filtered_messages}"
     )
-    failed = cause in {StopCause.MAX_ERRORS, StopCause.TRANSIENT_EXTERNAL}
+    failed = cause == StopCause.MAX_ERRORS
     pipeline.stats.close(
         status="failed" if failed else "stopped",
         error_summary=cause.value if failed else None,
@@ -275,14 +274,12 @@ def start_consumer(
     verbose=False,
     direct_messages=None,
     publish: bool = False,
-    force: bool = False,
     progress: BaseProgress | None = None,
     idle_timeout: float | None = None,
     limit: int | None = None,
     monitor_db: bool = False,
     handle_profile: str | None = None,
 ):
-    max_errors = config.get("consumer", {}).get("max_errors", 1)
     # Build processor instance to run preflight and pass into pipeline
     proc_instance = build_processing_target(
         processor=processor,
@@ -315,26 +312,14 @@ def start_consumer(
         sample_interval_seconds=stats_config.get("sample_interval_seconds", 15),
         sample_retention_days=stats_config.get("sample_retention_days", 30),
     )
-    # Optional STAC preflight
+    # Plugins may provide a local preflight; remote patch recovery belongs to harvest.
     try:
-        if not force:
-            consumer_cfg = config.get("consumer", {})
-            transient_cfg = consumer_cfg.get("transient", {})
-            stop_on_transient_skip = bool(
-                transient_cfg.get(
-                    "stop_on_skip",
-                    transient_cfg.get(
-                        "stop_on_transient_skip",
-                        consumer_cfg.get("stop_on_transient_skip", True),
-                    ),
-                )
-            )
-            proc_instance.preflight_check(stop_on_transient_skip=stop_on_transient_skip)
-    except Exception as e:
-        logger.error(str(e))
-        stats.close(status="failed", error_summary=str(e))
-        # Stop as transient external failure
-        sys.exit(1)
+        preflight = getattr(proc_instance, "preflight_check", None)
+        if callable(preflight):
+            preflight()
+    except Exception as exc:
+        stats.close(status="failed", error_summary=str(exc))
+        raise
 
     # Subscribe only after project selection, plugin construction, and preflight
     # have succeeded. Invalid selections must not create an orphaned consumer.
@@ -372,9 +357,7 @@ def start_consumer(
             dump_messages=dump_messages,
             verbose=verbose,
             progress=progress,
-            max_errors=max_errors,
             publish=publish,
-            force=force,
             limit=limit,
         )
 
@@ -392,10 +375,6 @@ def start_consumer(
         except MaxErrorsExceededError as e:
             logger.error(str(e))
             _stop_pipeline(pipeline, cause=StopCause.MAX_ERRORS)
-            sys.exit(1)
-        except StopOnTransientSkipError as e:
-            logger.error(str(e))
-            _stop_pipeline(pipeline, cause=StopCause.TRANSIENT_EXTERNAL)
             sys.exit(1)
         except KeyboardInterrupt:
             logger.warning("Consumer interrupted.")

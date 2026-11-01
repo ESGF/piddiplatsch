@@ -92,6 +92,9 @@ max_parts = 0
 max_parts = 0
 
 [plugins.cmip6plus]
+# Mapping error limit for this project only. Default: 1; 0 also stops at the
+# first error; -1 allows unlimited errors. Harvest is independently fail-fast.
+# max_errors = 10000
 max_parts = 0
 
 [plugins.cmip7]

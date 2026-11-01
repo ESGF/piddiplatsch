@@ -4,6 +4,7 @@ import fcntl
 import gzip
 import logging
 import os
+import re
 import tempfile
 from datetime import date
 from pathlib import Path
@@ -78,8 +79,13 @@ def compress_closed_dumps(*, dry_run=False) -> list[Path]:
         for path in sorted(directory.glob("dump_messages_*.jsonl")):
             if path.is_symlink() or not path.is_file():
                 continue
+            match = re.fullmatch(
+                r"dump_messages_(\d{4}-\d{2}-\d{2})(?:_\d+)?\.jsonl", path.name
+            )
+            if match is None:
+                continue
             try:
-                day = date.fromisoformat(path.stem.removeprefix("dump_messages_"))
+                day = date.fromisoformat(match[1])
             except ValueError:
                 continue
             if day >= today or path.with_suffix(".jsonl.gz").exists():

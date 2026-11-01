@@ -1,6 +1,7 @@
 """Durable pending changes, sealed batches, triggers, and publication recovery."""
 
 import json
+import sqlite3
 from contextlib import closing
 from copy import deepcopy
 from datetime import UTC, datetime, timedelta
@@ -272,7 +273,7 @@ def test_failed_mapping_never_seals_or_advances_pending_progress(setup, monkeypa
     assert not recovered.errors
 
 
-def test_bad_checksum_stops_first_item_and_keeps_batch_unpublished(setup, caplog):
+def test_bad_checksum_is_quarantined_and_limit_preserves_progress(setup, caplog):
     put, directory, root = setup
     message = put(1)
     asset_key = next(iter(message["data"]["payload"]["item"]["assets"]))
@@ -282,23 +283,31 @@ def test_bad_checksum_stops_first_item_and_keeps_batch_unpublished(setup, caplog
     with closing(CatalogHarvester(directory)) as harvester:
         harvester.process_with_source("bad", message, KafkaSource("corrections", 0, 0))
     put(2)
-    consumer_cfg = dict(config.get("consumer", {}))
-    consumer_cfg.pop("max_errors", None)
-    config._set("consumer", None, consumer_cfg)
     publisher = Publisher()
     worker = SyncWorker(publisher=publisher)
 
-    assert worker.run() == []
+    paths = worker.run()
+    assert len(paths) == 1
     assert worker.errors
-    assert not publisher.calls
-    assert pending(directory).count == 2
-    failed = next(root.glob("batches/cmip7/.building-*/manifest.json"))
-    assert json.loads(failed.read_text())["item_count"] == 1
+    assert pending(directory).count == 1
+    batch, manifest = manifests(root)[0]
+    assert manifest["item_count"] == manifest["failed_count"] == 1
+    assert manifest["succeeded_count"] == manifest["handle_count"] == 0
+    assert (batch / "handles.jsonl").read_bytes() == b""
+    rejected = json.loads((batch / "failures.jsonl").read_text())
+    assert rejected["data"]["payload"]["item"] == message["data"]["payload"]["item"]
+    assert rejected["__infos__"]["sequence"] == manifest["sequence"]
+    assert "Max error limit reached" in manifest["mapping_error"]
+    assert not list(root.glob("batches/cmip7/.building-*"))
     assert asset_key in caplog.text
     assert "32-byte digest but contains 34 bytes" in caplog.text
     assert "prefix appears to have been added twice" in caplog.text
     assert "reharvest before retrying" in caplog.text
     assert "CHECKSUM_METHOD is not allowed: unknown" not in caplog.text
+    recovered = SyncWorker(publisher=publisher)
+    assert len(recovered.run(force_map=True)) == 1
+    assert not recovered.errors
+    assert pending(directory).count == 0
 
 
 def test_worker_lock_prevents_overlapping_ticks(setup):
@@ -311,6 +320,129 @@ def test_worker_lock_prevents_overlapping_ticks(setup):
         assert worker.run() == []
     assert pending(directory).count == 2
     assert len(worker.run()) == 1
+
+
+@pytest.mark.parametrize("limit", [0, 1])
+def test_error_limit_seals_valid_prefix_and_later_ticks_do_not_remap(setup, limit):
+    put, directory, root = setup
+    config._set("plugins", "cmip7", {**config.get_plugin("cmip7"), "max_errors": limit})
+    config._set("batch", "max_items", 100)
+    db = root / "monitor.sqlite"
+    config._set("stats", "enable_db", True)
+    config._set("stats", "db_path", str(db))
+    put(1)
+    bad = put(2)
+    asset = next(iter(bad["data"]["payload"]["item"]["assets"].values()))
+    asset["file:checksum"] = "12201220" + "ab" * 32
+    with closing(CatalogHarvester(directory)) as harvester:
+        harvester.process_with_source("bad", bad, KafkaSource("corrections", 0, 0))
+    put(3)
+    publisher = Publisher()
+    worker = SyncWorker(publisher=publisher)
+    paths = worker.run()
+    assert len(paths) == 1
+    assert "Max error limit reached" in worker.errors[0]
+    assert pending(directory).count == 1
+    manifest = json.loads((paths[0] / "manifest.json").read_text())
+    assert manifest["item_count"] == 2
+    assert manifest["succeeded_count"] == manifest["failed_count"] == 1
+    assert (
+        manifest["handle_count"] == 2
+    )  # Failed item's dataset Handle was rolled back.
+    first_payload = (paths[0] / "handles.jsonl").read_bytes()
+    next_tick = SyncWorker(publisher=publisher)
+    later = next_tick.run(force_map=True)
+    assert len(later) == 1
+    assert not next_tick.errors
+    assert pending(directory).count == 0
+    assert (paths[0] / "handles.jsonl").read_bytes() == first_payload
+
+    def counters():
+        with closing(sqlite3.connect(db)) as connection:
+            return connection.execute(
+                "SELECT COUNT(*), SUM(p.handles) FROM monitor_project_stats p "
+                "JOIN monitor_runs r USING (run_id) WHERE r.command = 'sync'"
+            ).fetchone()
+
+    assert counters() == (2, 4)
+    files = {path: path.read_bytes() for path in root.rglob("*.json*")}
+    for _ in range(3):
+        assert SyncWorker(publisher=publisher).run(force_map=True) == []
+    assert counters() == (2, 4)
+    assert files == {path: path.read_bytes() for path in root.rglob("*.json*")}
+    assert len(publisher.calls) == 2
+
+    # A later harvested update makes the quarantined item eligible again.
+    put(2)
+    updated = SyncWorker(publisher=publisher)
+    assert len(updated.run(force_map=True)) == 1
+    assert not updated.errors
+    assert pending(directory).count == 0
+    assert counters() == (3, 6)
+
+
+def test_rejected_records_are_verified_before_crash_recovery_acknowledgement(
+    setup, monkeypatch
+):
+    put, directory, root = setup
+    config._set("plugins", "cmip7", {**config.get_plugin("cmip7"), "max_errors": 2})
+    message = put(1)
+    item = message["data"]["payload"]["item"]
+    next(iter(item["assets"].values()))["file:checksum"] = "bad"
+    with closing(CatalogHarvester(directory)) as harvester:
+        harvester.process_with_source("bad", message, KafkaSource("corrections", 0, 0))
+    put(2)
+    worker = SyncWorker(publisher=Publisher())
+
+    def crash(*args):
+        raise RuntimeError("crash before ack")
+
+    monkeypatch.setattr(worker, "_acknowledge", crash)
+    worker.run()
+    assert worker.errors
+    batch, manifest = manifests(root)[0]
+    assert manifest["failed_count"] == 1
+    assert pending(directory).count == 2
+    failures = batch / "failures.jsonl"
+    original = failures.read_bytes()
+    failures.chmod(0o640)
+    failures.write_bytes(b"")
+    recovered = SyncWorker(publisher=Publisher())
+    recovered.run()
+    assert "failure checksum/count mismatch" in recovered.errors[0]
+    assert pending(directory).count == 2
+    failures.write_bytes(original)
+    publisher = Publisher()
+    fixed = SyncWorker(publisher=publisher)
+    assert fixed.run() == []
+    assert not fixed.errors
+    assert pending(directory).count == 0
+    assert len(publisher.calls) == 1
+    assert len(manifests(root)) == 1
+
+
+def test_wrapped_storage_error_does_not_quarantine_or_advance_items(setup, monkeypatch):
+    from piddiplatsch.handles.jsonl_backend import JsonlHandleBackend
+
+    put, directory, root = setup
+    put(1)
+    put(2)
+
+    def fail(*args):
+        raise OSError("disk write failed")
+
+    monkeypatch.setattr(JsonlHandleBackend, "add", fail)
+    publisher = Publisher()
+    worker = SyncWorker(publisher=publisher)
+    assert worker.run() == []
+    assert worker.errors
+    assert pending(directory).count == 2
+    assert not publisher.calls
+    assert manifests(root) == []
+    failed = next(root.glob("batches/cmip7/.building-*/manifest.json"))
+    manifest = json.loads(failed.read_text())
+    assert manifest["failed_count"] == 0
+    assert manifest["status"] == "failed"
 
 
 def test_clean_generation_rejects_stale_ready_batch(setup):
@@ -523,8 +655,14 @@ def test_identical_harvest_does_not_schedule_another_batch(setup):
     assert len(manifests(root)) == 1
 
 
-def test_mapping_failure_writes_diagnostic_item_and_preserves_queue(setup):
+@pytest.mark.parametrize("max_errors", [100, -1])
+def test_mapping_failure_below_limit_keeps_valid_items_and_advances_queue(
+    setup, max_errors
+):
     put, directory, root = setup
+    config._set(
+        "plugins", "cmip7", {**config.get_plugin("cmip7"), "max_errors": max_errors}
+    )
     message = put(1)
     put(2)
     item = deepcopy(message["data"]["payload"]["item"])
@@ -542,13 +680,15 @@ def test_mapping_failure_writes_diagnostic_item_and_preserves_queue(setup):
     publisher = Publisher()
     worker = SyncWorker(publisher=publisher)
     worker.run()
-    assert worker.errors
-    assert not publisher.calls
-    assert pending(directory).count == 2
-    assert manifests(root) == []
-    diagnostics = list(root.glob("cmip7/failures/r0/*.jsonl"))
-    assert diagnostics
-    assert item["id"] in diagnostics[0].read_text()
+    assert not worker.errors
+    assert len(publisher.calls) == 1
+    assert pending(directory).count == 0
+    batch, manifest = manifests(root)[0]
+    assert manifest["item_count"] == 2
+    assert manifest["succeeded_count"] == manifest["failed_count"] == 1
+    assert manifest["handle_count"] == 2
+    assert item["id"] in (batch / "failures.jsonl").read_text()
+    assert not list(root.glob("batches/cmip7/.building-*"))
 
 
 @pytest.mark.parametrize(

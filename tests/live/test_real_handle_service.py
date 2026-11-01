@@ -25,7 +25,9 @@ def _required_env(name: str) -> str:
 @pytest.fixture
 def live_client() -> RestHandleClient:
     prefix = _required_env("PIDDI_LIVE_HANDLE_PREFIX")
-    config._set("handle", "prefix", prefix)
+    config.config_data["handles"]["profiles"][config.get_handle_profile()][
+        "prefix"
+    ] = prefix
     return RestHandleClient(
         server_url=_required_env("PIDDI_LIVE_HANDLE_SERVER_URL"),
         prefix=prefix,

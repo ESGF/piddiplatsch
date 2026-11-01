@@ -6,6 +6,7 @@ from piddiplatsch.config.schema import (
     ConsumerConfig,
     LoggingConfig,
     LookupConfig,
+    ProjectPluginConfig,
     validate_config,
 )
 from piddiplatsch.core.models import strict_mode
@@ -17,12 +18,17 @@ from piddiplatsch.lookup.stac import STACLookup
 def _base_config():
     return {
         "consumer": {"projects": ["cmip6"], "topic": "CMIP6"},
-        "handle": {
-            "backend": "rest",
-            "server_url": "https://handles.example.test",
-            "prefix": "21.TEST",
-            "username": "300:21.TEST/testuser",
-            "password": "testpass",
+        "handles": {
+            "default": "test",
+            "profiles": {
+                "test": {
+                    "backend": "rest",
+                    "server_url": "https://handles.example.test",
+                    "prefix": "21.TEST",
+                    "username": "300:21.TEST/testuser",
+                    "password": "testpass",
+                }
+            },
         },
         # Disable lookups unless explicitly tested
         "lookup": {"enabled": False},
@@ -30,8 +36,59 @@ def _base_config():
 
 
 def test_production_defaults_stop_on_first_error():
-    assert Config().get("consumer", "max_errors") == 1
-    assert ConsumerConfig(projects=["cmip7"], topic="CMIP7").max_errors == 1
+    assert "max_errors" not in Config().get("consumer")
+    assert "max_errors" not in ConsumerConfig.model_fields
+    assert ProjectPluginConfig().max_errors == 1
+    assert Config().get_mapping_max_errors("cmip6plus") == 1
+
+
+@pytest.mark.parametrize("limit", [-1, 0, 1, 10000])
+def test_project_mapping_error_limit_is_project_specific(limit):
+    settings = Config()
+    settings._set("plugins", "cmip6plus", {"max_errors": limit})
+    assert settings.get_mapping_max_errors("cmip6plus") == limit
+    assert settings.get_mapping_max_errors("cmip6") == 1
+    assert ProjectPluginConfig(max_errors=limit).max_errors == limit
+
+
+def test_project_mapping_error_limit_rejects_invalid_negative_value():
+    with pytest.raises(ValueError):
+        ProjectPluginConfig(max_errors=-2)
+
+
+def test_consumer_error_limit_is_rejected_with_migration_guidance():
+    data = _base_config()
+    data["consumer"]["max_errors"] = 10000
+    errors, _warnings = validate_config(data)
+    assert any("[consumer].max_errors is not supported" in error for error in errors)
+    assert any("[plugins.<project>].max_errors" in error for error in errors)
+
+
+@pytest.mark.parametrize(
+    "section, value, message",
+    [
+        ("handle", {"prefix": "21.OLD"}, "handles.profiles"),
+        ("cmip6", {"max_parts": 3}, "plugins.cmip6"),
+        ("stats", {"history_minutes": 60}, "history_minutes is not supported"),
+    ],
+)
+def test_removed_sections_and_monitoring_option_are_rejected(section, value, message):
+    data = _base_config()
+    data["kafka"] = {"bootstrap.servers": "localhost:9092"}
+    data[section] = value
+    errors, _ = validate_config(data)
+    assert any(message in error for error in errors)
+
+
+@pytest.mark.parametrize(
+    "key", ["transient", "stop_on_transient_skip", "transient_retries"]
+)
+def test_removed_transient_options_are_rejected(key):
+    data = _base_config()
+    data["kafka"] = {"bootstrap.servers": "localhost:9092"}
+    data["consumer"][key] = {} if key == "transient" else 1
+    errors, _ = validate_config(data)
+    assert any(f"[consumer].{key} is not supported" in error for error in errors)
 
 
 def test_config_layers_merge_defaults_then_site_then_local(tmp_path):
@@ -122,11 +179,11 @@ def test_stac_lookup_uses_project_collection():
 
 def test_jsonl_is_not_a_selectable_publication_backend():
     cfg = _base_config()
-    cfg["handle"]["backend"] = "jsonl"
+    cfg["handles"]["profiles"]["test"]["backend"] = "jsonl"
 
     errors, _ = validate_config(cfg)
 
-    assert any("handle.backend" in error for error in errors)
+    assert any("handles" in error for error in errors)
 
 
 def test_invalid_bootstrap_servers_format():
@@ -214,7 +271,6 @@ def test_schema_is_strict_by_default():
 
 def test_named_handle_profiles_can_be_selected_per_project():
     cfg = _base_config()
-    del cfg["handle"]
     cfg["kafka"] = {"bootstrap.servers": "localhost:39092"}
     cfg["handles"] = {
         "default": "mock",
@@ -242,7 +298,6 @@ def test_named_handle_profiles_can_be_selected_per_project():
 
 def test_project_rejects_unknown_handle_profile():
     cfg = _base_config()
-    del cfg["handle"]
     cfg["kafka"] = {"bootstrap.servers": "localhost:39092"}
     cfg["handles"] = {
         "default": "mock",
@@ -263,7 +318,6 @@ def test_project_rejects_unknown_handle_profile():
 
 
 def test_handle_profile_resolution_uses_project_selection():
-    config._set("handle", None, {})
     config._set(
         "handles",
         None,
@@ -291,7 +345,6 @@ def test_handle_profile_resolution_uses_project_selection():
 
 def test_handle_profile_validation_applies_common_defaults():
     cfg = _base_config()
-    del cfg["handle"]
     cfg["kafka"] = {"bootstrap.servers": "localhost:39092"}
     cfg["handles"] = {
         "default": "mock",
@@ -311,11 +364,9 @@ def test_handle_profile_validation_applies_common_defaults():
     assert errors == []
 
 
-@pytest.mark.parametrize("legacy", [False, True])
 @pytest.mark.parametrize("profile", [None, "alternate"])
-def test_plugins_share_handle_service_with_distinct_prefixes(legacy, profile):
-    shared = _base_config()["handle"]
-    config._set("handle", None, shared if legacy else {})
+def test_plugins_share_handle_service_with_distinct_prefixes(profile):
+    shared = _base_config()["handles"]["profiles"]["test"]
     config._set(
         "handles",
         None,
@@ -342,11 +393,7 @@ def test_plugins_share_handle_service_with_distinct_prefixes(legacy, profile):
     assert cmip6["prefix"] == "21.CMIP6"
     assert cmip7["prefix"] == "21.CMIP7"
     assert cmip6["username"] == cmip7["username"] == shared["username"]
-    expected_url = (
-        "https://alternate.example.test"
-        if profile and not legacy
-        else shared["server_url"]
-    )
+    expected_url = "https://alternate.example.test" if profile else shared["server_url"]
     assert cmip6["server_url"] == cmip7["server_url"] == expected_url
     assert config.get_handle()["prefix"] == "21.TEST"
     assert config.get_handle(project="cmip6plus")["prefix"] == "21.TEST"
@@ -369,7 +416,7 @@ def test_plugin_handle_prefix_validation():
     cfg["kafka"] = {"bootstrap.servers": "localhost:39092"}
     cfg["handles"] = {
         "default": "shared",
-        "profiles": {"shared": cfg.pop("handle")},
+        "profiles": {"shared": cfg["handles"]["profiles"]["test"]},
     }
     cfg["plugins"] = {
         "cmip6": {"handle_prefix": "21.CMIP6"},

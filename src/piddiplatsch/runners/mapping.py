@@ -149,7 +149,9 @@ def map_catalog(
             verbose=verbose,
             progress=progress,
             handle_profile=handle_profile,
-            max_errors=config.get("consumer", "max_errors", 1),
+            project_max_errors={
+                name: config.get_mapping_max_errors(name) for name in catalogs
+            },
         )
 
 

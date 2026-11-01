@@ -8,7 +8,6 @@ from piddiplatsch.persist.recovery import FailureRecorder
 from piddiplatsch.persist.skipped import SkipRecorder
 from piddiplatsch.plugins.cmip6.record import CMIP6DatasetRecord
 from piddiplatsch.result import ProcessingResult
-from piddiplatsch.runners.retry import RetryRunner
 
 
 class FailingProcessor(BaseProcessor):
@@ -68,6 +67,7 @@ def test_nested_retry_count_selects_failure_subdirectory(tmp_path):
         [("key", value)],
         FailingProcessor(),
         failure_dir=tmp_path / "failures",
+        max_errors=-1,
     )
 
     pipeline.run()
@@ -81,6 +81,7 @@ def test_pipeline_persists_resolved_project_on_failure(tmp_path):
     pipeline = ProcessingPipeline(
         [("key", {"data": {}})],
         ProjectAwareFailingProcessor(),
+        max_errors=-1,
     )
 
     pipeline.run()
@@ -92,10 +93,7 @@ def test_pipeline_persists_resolved_project_on_failure(tmp_path):
 def test_skipped_message_is_not_reported_as_success(tmp_path):
     config._set("consumer", "output_dir", str(tmp_path))
     result = process_messages(
-        [("key", {})],
-        processor=SkippingProcessor(),
-        failure_dir=tmp_path / "failures",
-        force=True,
+        [("key", {})], processor=SkippingProcessor(), failure_dir=tmp_path / "failures"
     )
 
     assert result.total == 1
@@ -104,27 +102,6 @@ def test_skipped_message_is_not_reported_as_success(tmp_path):
     assert result.skipped == 1
     skipped_file = next((tmp_path / "cmip6" / "skipped").glob("*.jsonl"))
     assert json.loads(skipped_file.read_text())["__infos__"]["project"] == "cmip6"
-
-
-def test_malformed_retry_input_is_retained(tmp_path):
-    source = tmp_path / "retry.jsonl"
-    source.write_text(json.dumps({"key": "valid"}) + "\n{broken\n", encoding="utf-8")
-    runner = RetryRunner(
-        projects=["cmip6"],
-        failure_dir=tmp_path / "failures",
-        delete_after=True,
-        publish=False,
-    )
-
-    result = runner.run_file(source)
-
-    assert result.succeeded == 0
-    assert result.total == 2
-    assert result.filtered == 1
-    assert result.failed == 2
-    assert result.errors
-    assert "line 2" in result.errors[0]
-    assert source.exists()
 
 
 def test_record_repr_handles_cached_pid(tmp_path):

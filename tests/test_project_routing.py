@@ -17,8 +17,8 @@ class RecordingProcessor:
         self.calls = calls
         self.kwargs = kwargs
 
-    def preflight_check(self, stop_on_transient_skip: bool = True) -> None:
-        self.calls.append((self.name, "preflight", stop_on_transient_skip))
+    def preflight_check(self) -> None:
+        self.calls.append((self.name, "preflight"))
 
     def process(self, key: str, value: dict[str, Any]) -> ProcessingResult:
         self.calls.append((self.name, "process", key))
@@ -128,9 +128,9 @@ def test_router_preflights_only_selected_plugins(isolated_registry):
     register_recording_plugin("disabled-test", "DISABLED-TEST", calls)
     router = ProjectRouter(["selected-test"], publish=False)
 
-    router.preflight_check(stop_on_transient_skip=False)
+    router.preflight_check()
 
-    assert calls == [("selected-test", "preflight", False)]
+    assert calls == [("selected-test", "preflight")]
 
 
 def test_registry_rejects_overlapping_project_identifiers(isolated_registry):

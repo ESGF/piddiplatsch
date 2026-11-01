@@ -56,15 +56,12 @@ def test_explain_profile_override_keeps_project_prefix(explained_config):
     assert cfg.get_handle("cmip6", "other")["prefix"] == "21.PROJECT"
 
 
-def test_explain_legacy_precedence(explained_config):
+def test_explain_rejects_removed_handle_section(explained_config):
     cfg = explained_config
-    cfg._set("handle", None, {"prefix": "21.LEGACY", "backend": "rest"})
-    cfg._set("cmip6", None, {"handle_prefix": "21.OLD", "stac": {"collection": "OLD"}})
-    result = explain("--handle-profile", "unknown")
-    assert result.exit_code == 0, result.output
-    assert "legacy [handle]" in result.output
-    assert 'Handle prefix: "21.OLD"  <- cmip6.handle_prefix' in result.output
-    assert 'STAC collection: "OLD"  <- cmip6.stac.collection' in result.output
+    cfg._set("handle", None, {"prefix": "21.OLD"})
+    result = explain()
+    assert result.exit_code == 1
+    assert "[handle] is not supported" in result.output
 
 
 def test_explain_unknown_profile(explained_config):

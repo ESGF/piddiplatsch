@@ -102,9 +102,9 @@ def cli(
             "must name an existing configuration file", param_hint="--config"
         )
     config.load_config_layers(config_file)
-    # Inspection must work even when the configured production log is not
-    # writable, and validation should report logging errors through its schema.
-    if ctx.invoked_subcommand == "config":
+    # Inspection/reset must work without opening a possibly unwritable log.
+    # Validation reports logging errors through its schema.
+    if ctx.invoked_subcommand in {"config", "reset"}:
         return
     try:
         config.configure_logging(verbosity=verbosity, debug=debug, log=log)
@@ -152,6 +152,23 @@ def sync(
         retries=retries,
         force_map=force_map,
     ).execute()
+
+
+@cli.command("reset")
+@click.option(
+    "--project", required=True, help="Project whose processing should be reset."
+)
+@click.option(
+    "--apply",
+    is_flag=True,
+    help="Back up output, clear project counters, and requeue catalog items; default is a preview.",
+)
+def reset(project: str, apply: bool) -> None:
+    """Reset project processing, preserving STAC records and Kafka checkpoints.
+
+    Stop harvest and sync before using --apply. This command does not publish.
+    """
+    commands.ResetCommand(project=project, apply=apply).execute()
 
 
 # command harvest

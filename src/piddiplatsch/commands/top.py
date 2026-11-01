@@ -92,9 +92,19 @@ class TopCommand(Command):
             total = sum(
                 row.get("consumed", 0) for run in harvest for row in run["projects"]
             )
+            harvest_starts = [
+                datetime.fromisoformat(run["started_at"]).astimezone(UTC)
+                for run in harvest
+                if run.get("started_at")
+            ]
+            since = (
+                f"since {min(harvest_starts):%Y-%m-%d %H:%M} UTC"
+                if harvest_starts
+                else "since run start"
+            )
             lines.append(
                 Text(
-                    f"Harvest: {state} · {rate} events/s (5m avg) · {total:,} events since run start"
+                    f"Harvest: {state} · {rate} events/s (5m avg) · {total:,} events {since}"
                 )
             )
         else:
@@ -102,10 +112,11 @@ class TopCommand(Command):
         table = Table(box=None, padding=(0, 1))
         for heading in (
             "Project",
-            "DB datasets",
-            "Pending datasets",
+            "Catalog items",
+            "Pending items",
             "Generated handles",
             "Published handles",
+            "Errors",
             "Activity",
             "Harvest/s",
             "Harvest trend →",
@@ -123,10 +134,11 @@ class TopCommand(Command):
                     "right"
                     if heading
                     in {
-                        "DB datasets",
-                        "Pending datasets",
+                        "Catalog items",
+                        "Pending items",
                         "Generated handles",
                         "Published handles",
+                        "Errors",
                         "Harvest/s",
                         "Handles/s",
                     }
@@ -136,8 +148,14 @@ class TopCommand(Command):
         health = {row["project"]: row for row in status["health"]["projects"]}
         totals = {row["project"]: row for row in status.get("handle_totals", [])}
         names = set(health) | set(totals)
+        error_totals = {}
         for run in status["runs"]:
-            names.update(row["project"] for row in run["projects"])
+            for project in run["projects"]:
+                name = project["project"]
+                names.add(name)
+                error_totals[name] = error_totals.get(name, 0) + project.get(
+                    "failed", 0
+                )
         alerts = []
         for name in sorted(names):
             row = health.get(name, {})
@@ -163,11 +181,15 @@ class TopCommand(Command):
                 activity = "mapping"
             if publishers:
                 activity = "publishing"
-            if row.get("failed_batches") or any(
-                p.get("failed", 0)
-                for run in runs
-                for p in run["projects"]
-                if p["project"] == name
+            if (
+                row.get("failed_batches")
+                or _latest_mapping_has_errors(name, status["runs"])
+                or any(
+                    p.get("failed", 0)
+                    for run in runs
+                    for p in run["projects"]
+                    if p["project"] == name
+                )
             ):
                 activity += " · errors"
                 alerts.append(
@@ -199,6 +221,10 @@ class TopCommand(Command):
                 _count(row.get("pending_items")),
                 _count(counts.get("prepared")),
                 _count(counts.get("published")),
+                Text(
+                    _count(error_totals.get(name)),
+                    style="red" if error_totals.get(name) else "",
+                ),
                 activity,
                 f"{harvest_rates[name]:,.1f}" if name in harvest_rates else "—",
                 _harvest_trend(harvest, name),
@@ -293,6 +319,24 @@ def _run_projects(run: dict) -> set[str]:
     return {row["project"] for row in run.get("projects", [])} or set(
         run.get("selected_projects", [])
     )
+
+
+def _latest_mapping_has_errors(project: str, runs: list[dict]) -> bool:
+    # read_status returns newest heartbeats first. Publication starts a separate
+    # run, including for zero Handles; it must not hide the preceding map errors.
+    for run in runs:
+        if (
+            run["command"] not in {"sync", "map"}
+            or run.get("status") == "running"
+            or project not in _run_projects(run)
+        ):
+            continue
+        return run.get("state") == "failed" or any(
+            row.get("failed", 0)
+            for row in run.get("projects", [])
+            if row["project"] == project
+        )
+    return False
 
 
 def _active_runs(status: dict) -> list[dict]:

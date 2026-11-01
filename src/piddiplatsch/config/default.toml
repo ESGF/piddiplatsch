@@ -24,9 +24,8 @@
 projects = ["cmip6"]
 topic = "CMIP6"
 output_dir = "outputs"
-# Maximum number of errors before stopping; -1 = unlimited.
-# Map/sync stop on first error. Catalog harvest always stops on any error.
-max_errors = 1
+# Split raw archives by UTC day and by this many events per file.
+dump_max_events = 100000
 
 [disk]
 enabled = true
@@ -69,21 +68,8 @@ publish_retries = 3
 # INFO shows progress summaries. Use -vv/--debug for per-record details.
 level = "INFO"
 # Set to an empty string to log to the terminal instead of a file.
+# File logging also writes ERROR/CRITICAL messages to a sibling .error.log file.
 file = "pid.log"
-
-[consumer.transient]
-# --- Transient External Failures (STAC/network) ---
-# Stop consumption on transient failures after bounded retries.
-# These options remain for legacy processor library compatibility only.
-# Catalog harvest recovery is fail-fast; there is no consume or --force command.
-stop_on_skip = true
-# Retry attempts for transient STAC fetch/patch failures.
-retries = 3
-# Exponential backoff for transient retries (seconds).
-backoff_initial = 0.5  # seconds
-backoff_max = 5.0      # seconds cap
-# Probe STAC health at startup when remote STAC integration is enabled.
-preflight_stac = false
 
 [kafka]
 # Set site-specific brokers, group, and credentials in an override file.
@@ -153,6 +139,9 @@ strict_mode = true
 # Project Handle profiles are optional. Every plugin inherits [handles].default.
 # Uncomment `handle` in a plugin table to override it for that project.
 [plugins.cmip6]
+# Mapping error limit; catalog harvest independently stops on any error.
+# 0 and 1 stop on the first error; -1 allows unlimited errors.
+max_errors = 1
 # handle = "profile-name"
 # Ignore source dataset PIDs and generate from the full STAC item ID (instance_id).
 # File tracking IDs are preserved; file parent links use the generated dataset PID.
@@ -170,6 +159,7 @@ excluded_asset_keys = ["reference_file", "globus", "thumbnail", "quicklook"]
 collection = "CMIP6"
 
 [plugins.cmip7]
+max_errors = 1
 # handle = "profile-name"
 force_dataset_pid = false
 # CMIP7 currently shares the Handle output schema and STAC mapping workflow
@@ -182,6 +172,7 @@ excluded_asset_keys = ["reference_file", "globus", "thumbnail", "quicklook"]
 collection = "CMIP7"
 
 [plugins.cordex-cmip6]
+max_errors = 1
 # handle = "profile-name"
 force_dataset_pid = false
 landing_page_url = "https://handle-esgf.dkrz.de/lp"
@@ -192,6 +183,9 @@ excluded_asset_keys = ["reference_file", "globus", "thumbnail", "quicklook"]
 collection = "CORDEX-CMIP6"
 
 [plugins.cmip6plus]
+# Override mapping errors for this project without changing other projects.
+# max_errors = 10000
+max_errors = 1
 # handle = "profile-name"
 force_dataset_pid = false
 landing_page_url = "https://handle-esgf.dkrz.de/lp"

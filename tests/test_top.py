@@ -4,6 +4,7 @@ from io import StringIO
 from types import SimpleNamespace
 from unittest.mock import patch
 
+import pytest
 from click.testing import CliRunner
 from rich.console import Console
 
@@ -132,6 +133,115 @@ def test_top_once_filters_project(tmp_path):
     assert result.exit_code == 0
     assert "cmip7" in result.output
     assert "cmip6" not in result.output
+
+
+def test_top_error_column_counts_finished_and_active_attempts_per_project(tmp_path):
+    db = tmp_path / "monitor.db"
+    config._set("stats", "enable_db", True)
+    config._set("stats", "db_path", str(db))
+    stats = Stats()
+    for command, project, errors in (
+        ("sync", "cmip6plus", 12),
+        ("map", "cmip6plus", 3),
+        ("sync", "cmip6", 2),
+    ):
+        stats.configure_for_run(
+            enable_db=True,
+            db_path=str(db),
+            command=command,
+            selected_projects=(project,),
+        )
+        for number in range(errors):
+            stats.record_result(
+                ProcessingResult(key=str(number), plugin=project, error="bad item")
+            )
+        stats.close(status="failed")
+    with publication_monitor("cmip6plus"):
+        pass  # A finished empty publication must not hide mapping failures.
+    stats.configure_for_run(
+        enable_db=True,
+        db_path=str(db),
+        command="sync",
+        selected_projects=("cmip6plus",),
+    )
+    stats.record_result(
+        ProcessingResult(key="new", plugin="cmip6plus", error="bad item")
+    )
+    stats._heartbeat_once(force_sample=True)
+
+    def render(project=None):
+        status = read_status(db, project=project)
+        status["health"] = {"projects": [], "storage": []}
+        stream = StringIO()
+        Console(file=stream, width=250).print(TopCommand._overview(status))
+        return stream.getvalue()
+
+    text = render()
+    assert "Errors" in text
+    cmip6plus = next(
+        line for line in text.splitlines() if line.lstrip().startswith("cmip6plus ")
+    )
+    cmip6 = next(
+        line for line in text.splitlines() if line.lstrip().startswith("cmip6 ")
+    )
+    assert "16" in cmip6plus.split()
+    assert "2" in cmip6.split()
+    stats.close(status="failed")
+    text = render("cmip6plus")
+    assert "16" in text.split()
+    assert "cmip6 " not in text
+
+
+@pytest.mark.parametrize("mapping_status", ["failed", "completed"])
+def test_finished_mapping_errors_survive_empty_publication_and_clear_after_clean_map(
+    tmp_path,
+    mapping_status,
+):
+    db = tmp_path / "monitor.db"
+    config._set("stats", "enable_db", True)
+    config._set("stats", "db_path", str(db))
+    config._set("consumer", "projects", ["cmip6plus"])
+    catalog_dir = tmp_path / "outputs/catalog"
+    catalog_dir.mkdir(parents=True)
+    with sqlite3.connect(catalog_dir / "cmip6plus.sqlite") as connection:
+        connection.execute("CREATE TABLE items (id INTEGER)")
+        connection.execute("CREATE TABLE pending_items (id INTEGER)")
+        connection.execute("INSERT INTO pending_items VALUES (1)")
+    stats = Stats()
+    stats.configure_for_run(
+        enable_db=True,
+        db_path=str(db),
+        command="sync",
+        selected_projects=("cmip6plus",),
+    )
+    stats.record_result(
+        ProcessingResult(key="bad", plugin="cmip6plus", error="invalid checksum")
+    )
+    stats.close(status=mapping_status, error_summary="Rejected item")
+    with publication_monitor("cmip6plus"):
+        pass  # The failure-only batch publishes zero Handles successfully.
+    result = CliRunner().invoke(cli, ["top", "--db", str(db), "--once"])
+    assert result.exit_code == 0, result.output
+    assert "pending" in result.output
+    assert "· errors" in result.output
+    assert "cmip6plus: errors recorded" in result.output
+
+    # Activity clears the old alert after a later successful mapping pass.
+    stats.configure_for_run(
+        enable_db=True,
+        db_path=str(db),
+        command="sync",
+        selected_projects=("cmip6plus",),
+    )
+    stats.record_result(
+        ProcessingResult(key="good", plugin="cmip6plus", success=True, num_handles=2)
+    )
+    stats.close(status="completed")
+    result = CliRunner().invoke(cli, ["top", "--db", str(db), "--once"])
+    assert result.exit_code == 0, result.output
+    assert "pending" in result.output
+    assert "errors recorded" not in result.output
+    assert "· errors" not in result.output
 
 
 def test_top_missing_database_is_clear(tmp_path):
@@ -303,6 +413,7 @@ def test_compact_overview_keeps_eta_and_actionable_warnings():
     assert "Rate windows" not in rendered
     assert "(5m avg)" in rendered
     assert "Harvest: running · 123.4 events/s" in rendered
+    assert "0 events since 2026-10-30 20:00 UTC" in rendered
     assert "Harvest/s" in rendered
     assert "Harvest trend" in rendered
     assert "▁▅█" in rendered
