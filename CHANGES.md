@@ -27,6 +27,11 @@
 
 ### Fixed
 
+- Sync batches retain valid Handles and quarantine rejected items in a durable
+  `failures.jsonl`, advancing past both instead of repeatedly generating partial
+  batches. Reaching `max_errors` seals processed work before stopping the pass;
+  later ticks continue with remaining items. Failed items are retried on a later
+  harvested update. Partial Handles from rejected items are removed.
 - Keep prepared/published Handle totals visible in `piddi top` alongside harvest,
   and persist live publication progress and heartbeats.
 - Explain malformed asset checksums, including duplicated SHA-256 multihash

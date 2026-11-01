@@ -196,6 +196,14 @@ pending change has waited one hour. Repeated changes to one item count once.
 stay together. Ready batches publish during the same sync run, even when no new
 mapping is due. Failed publication stays ready for the next run.
 
+`consumer.max_errors` limits mapping errors within a batch. Rejected items are
+saved in the batch's `failures.jsonl` and removed from the pending queue along
+with successful items after durable sealing. At the error limit, sync seals
+processed work, publishes valid Handles, and stops mapping that project for this
+run. The next run continues with unprocessed items. A harvested update queues a
+rejected item again. Raising the error limit allows more records to be inspected
+without requiring repairs to earlier rejected items.
+
 These limits count catalog items, not Handles or bytes. With ten Handles per
 item, a full default batch contains about 20,000 Handles and takes roughly
 80 seconds to publish at 250 Handles per second, plus mapping time. Larger batches reduce

@@ -188,11 +188,19 @@ Handles stay together. Changes to one item count once and keep the oldest pendin
 time. Changes arriving during a sync run remain for the next run. Eligible
 projects take turns; missing catalogs are skipped until harvest creates them.
 
-Every included asset must validate. Mapping failures leave diagnostic files in
-`.building-*` directories and keep the catalog items pending. Successful mapping
-saves a fixed `handles.jsonl` and a manifest under
+Every included asset must validate. A rejected item contributes no Handles;
+its input and error are saved in the batch's `failures.jsonl`. Sync advances past
+both successful and rejected items after saving the batch durably, so timer
+ticks do not keep regenerating the same work. A later harvested update queues a
+rejected item again. Reaching `consumer.max_errors` seals the processed portion,
+publishes its valid Handles, and stops mapping for that project for this run;
+unprocessed items remain pending for the next run. Increasing the limit allows
+more records to be inspected per batch. Storage errors and interruptions leave
+diagnostics under `.building-*` and keep the unsealed work pending.
+
+Sealing saves fixed `handles.jsonl`, `failures.jsonl`, and a manifest under
 `batches/<project>/ready/<batch-id>/`. The manifest records the project, settings,
-catalog generation, sequence bounds, counts, and checksum.
+catalog generation, sequence bounds, success/failure counts, and checksums.
 
 The mapping checkpoint advances only after the batch is saved durably. If Piddi
 stops between those steps, the next run recovers from the manifest. Publication

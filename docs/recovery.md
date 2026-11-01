@@ -65,9 +65,23 @@ selection rules.
 
 ## Scheduled batch recovery
 
-Failed sync mapping leaves files under `batches/<project>/.building-*` for
-inspection. The source items stay pending. A batch becomes ready only after
-mapping succeeds.
+Sync saves rejected records and their errors in `failures.jsonl` alongside each
+batch's `handles.jsonl`. Only successful items' Handles are included; partial
+output from a rejected item is removed. Both files are saved durably before the
+processed items leave the pending queue. Rejected items are not automatically
+retried; a later harvested update to an item queues it again.
+
+Reaching `consumer.max_errors` stops further mapping for the project in that
+sync run, but seals and publishes the processed portion first. Unprocessed items
+remain pending for the next run. Raising the limit allows more records to be
+inspected per batch; it does not require fixing previously rejected records.
+Below the limit, sync continues mapping and publishing normally.
+
+Storage errors and unexpected interruptions still leave `.building-*`
+directories for inspection and keep the unsealed batch's source items pending.
+After fixing an infrastructure problem, repeat `piddi sync`. Existing
+`.building-*` directories from older versions are diagnostic only and are not
+publication inputs. Sync does not remove old diagnostics or monitoring history.
 
 Failed publication keeps the fixed batch under `batches/<project>/ready/`.
 Fix the cause, then repeat `piddi sync`. It retries that batch before newer work
