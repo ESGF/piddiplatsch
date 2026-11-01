@@ -225,6 +225,48 @@ incoming data exceeds the space freed.
 Never run `VACUUM` unsupervised. File shrinking is an explicit operation with
 Piddi stopped, a database backup, and sufficient free disk space checked.
 
+### Future task: daily statistics rollup
+
+Deferred, not implemented. Keep the current four-table design until measured
+growth of batch summaries justifies a rollup. The future option should be
+disabled by default and independent of published-work and run-history retention.
+
+Add a fifth application table, `daily_stats`, inside the same `piddi.db`, rather
+than a separate database. Retain recent batch summaries and all unfinished or
+failed batches in `stats`. Older fully published batches become eligible only
+after publication/archive recovery is complete. Invalid-only batches need an
+explicit finalization policy before they can be included.
+
+Implementation tasks:
+
+- Let `piddi maintain`, including the scheduled maintenance service, own the
+  rollup. Mapping and publication continue updating batch rows; heartbeats
+  continue updating run rows. Support a dry run and configurable retention age.
+- Aggregate eligible batches by project and UTC date. Preserve mapped/rejected
+  item counts, prepared Handles, the alias subset, published Handles, and errors.
+  Attribute mapping counts to `mapped_at` and publication counts to
+  `published_at`, including batches spanning midnight. Define error-date
+  attribution explicitly: existing batch totals do not retain individual failed
+  publication attempt timestamps.
+- Add daily aggregates and remove exactly the included batch summaries in one
+  transaction, coordinated with the batch-worker lock. An interrupted or repeated
+  maintenance run must neither lose results nor count them twice. Exclude run
+  rows from the rollup and keep their existing cleanup policy.
+- Make `top` combine rolled-up totals with remaining batch summaries, using one
+  read-only database snapshot. Preserve the totals start date and last-publication
+  information after detailed summaries disappear.
+- Preserve minimal completion information so archived-batch recovery cannot
+  recreate a rolled-up batch or republish its Handles. Keep the conservative
+  invalid-retry guard aware of successful publication recorded in either table.
+  Project reset must clear that project's batch and daily totals together.
+- Verify cross-day batches, aliases, publication failures/retries, crash recovery,
+  repeated rollup, concurrent monitoring, project isolation, reset, and unchanged
+  totals after work/run cleanup.
+
+Rollup reduces retained detail and allows SQLite to reuse pages. It does not
+automatically shrink the database file; physical compaction remains the separate
+supervised operation described above.
+
 ## Implementation details and limits
 
 The database lives at `<consumer.output_dir>/piddi.db`, or under

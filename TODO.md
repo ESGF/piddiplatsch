@@ -15,7 +15,7 @@ archive replay requirements, and retention decisions. This format requires a fre
   at 2,000 work entries each. Separate selection, batch execution, and scheduling
   to allow a bounded project-worker pool later; defer parallel execution and
   worker claims until durable recovery and ordering are established.
-- [x] Add daily summaries and configurable cleanup of old published work without
+- [x] Add retained batch summaries and configurable cleanup of old published work without
   double counting results. Cleanup stays disabled by default; keep all work for
   now and invalid work available for explicit retry.
 - [x] Keep `VACUUM` an explicit supervised operation with Piddi stopped; scheduled
@@ -98,6 +98,11 @@ evaluate optional Parquet import/export separately if measurements justify it.
 
 ## Monitoring
 
+- [ ] When measured statistics growth warrants it, implement the deferred
+  [daily statistics rollup](docs/work-stream-design.md#future-task-daily-statistics-rollup):
+  maintenance aggregates older finalized batches into `daily_stats` in `piddi.db`,
+  transactionally removes included summaries, and keeps `top`, recovery, retry
+  guards, and project reset correct. Leave it disabled by default.
 - [ ] Record deferred publication runs, including project, input batch, start and
   completion times, receipt path, counts, outcome, and concise error details.
 - [ ] Derive publication backlog and output storage usage, with configurable
