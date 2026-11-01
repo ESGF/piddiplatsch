@@ -135,6 +135,63 @@ def test_top_once_filters_project(tmp_path):
     assert "cmip6" not in result.output
 
 
+def test_top_error_column_counts_finished_and_active_attempts_per_project(tmp_path):
+    db = tmp_path / "monitor.db"
+    config._set("stats", "enable_db", True)
+    config._set("stats", "db_path", str(db))
+    stats = Stats()
+    for command, project, errors in (
+        ("sync", "cmip6plus", 12),
+        ("map", "cmip6plus", 3),
+        ("sync", "cmip6", 2),
+    ):
+        stats.configure_for_run(
+            enable_db=True,
+            db_path=str(db),
+            command=command,
+            selected_projects=(project,),
+        )
+        for number in range(errors):
+            stats.record_result(
+                ProcessingResult(key=str(number), plugin=project, error="bad item")
+            )
+        stats.close(status="failed")
+    with publication_monitor("cmip6plus"):
+        pass  # A finished empty publication must not hide mapping failures.
+    stats.configure_for_run(
+        enable_db=True,
+        db_path=str(db),
+        command="sync",
+        selected_projects=("cmip6plus",),
+    )
+    stats.record_result(
+        ProcessingResult(key="new", plugin="cmip6plus", error="bad item")
+    )
+    stats._heartbeat_once(force_sample=True)
+
+    def render(project=None):
+        status = read_status(db, project=project)
+        status["health"] = {"projects": [], "storage": []}
+        stream = StringIO()
+        Console(file=stream, width=250).print(TopCommand._overview(status))
+        return stream.getvalue()
+
+    text = render()
+    assert "Errors" in text
+    cmip6plus = next(
+        line for line in text.splitlines() if line.lstrip().startswith("cmip6plus ")
+    )
+    cmip6 = next(
+        line for line in text.splitlines() if line.lstrip().startswith("cmip6 ")
+    )
+    assert "16" in cmip6plus.split()
+    assert "2" in cmip6.split()
+    stats.close(status="failed")
+    text = render("cmip6plus")
+    assert "16" in text.split()
+    assert "cmip6 " not in text
+
+
 @pytest.mark.parametrize("mapping_status", ["failed", "completed"])
 def test_finished_mapping_errors_survive_empty_publication_and_clear_after_clean_map(
     tmp_path,

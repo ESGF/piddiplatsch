@@ -356,8 +356,13 @@ harvest window.
 `Batch progress` shows successful Handle writes in the active publication run
 against its total, for example `12,345 / 50,000`. An unknown total appears as `?`;
 projects without a single active publisher show a dash.
-`DB datasets` counts all dataset records currently stored in each catalog,
-including mapped records; `Pending datasets` is the subset awaiting mapping.
+`Catalog items` counts all dataset records currently stored in each catalog,
+including mapped records; `Pending items` is the subset awaiting mapping.
+`Errors` sums recorded failed processing attempts per project across harvest,
+mapping, and publication runs, including finished runs. Repeated failed attempts
+count separately; this is not a count of unique invalid items. A dash means no
+project counters have been recorded yet. The count covers the same recorded
+history as the Handle totals and is cleared by a project processing reset.
 The catalog and generated Handle totals are also summed in the header (restricted
 to the selected project with `--project`). Generated Handles are recorded mapping
 outputs, including repeat runs, rather than unique PIDs.

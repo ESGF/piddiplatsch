@@ -102,10 +102,11 @@ class TopCommand(Command):
         table = Table(box=None, padding=(0, 1))
         for heading in (
             "Project",
-            "DB datasets",
-            "Pending datasets",
+            "Catalog items",
+            "Pending items",
             "Generated handles",
             "Published handles",
+            "Errors",
             "Activity",
             "Harvest/s",
             "Harvest trend →",
@@ -123,10 +124,11 @@ class TopCommand(Command):
                     "right"
                     if heading
                     in {
-                        "DB datasets",
-                        "Pending datasets",
+                        "Catalog items",
+                        "Pending items",
                         "Generated handles",
                         "Published handles",
+                        "Errors",
                         "Harvest/s",
                         "Handles/s",
                     }
@@ -136,8 +138,14 @@ class TopCommand(Command):
         health = {row["project"]: row for row in status["health"]["projects"]}
         totals = {row["project"]: row for row in status.get("handle_totals", [])}
         names = set(health) | set(totals)
+        error_totals = {}
         for run in status["runs"]:
-            names.update(row["project"] for row in run["projects"])
+            for project in run["projects"]:
+                name = project["project"]
+                names.add(name)
+                error_totals[name] = error_totals.get(name, 0) + project.get(
+                    "failed", 0
+                )
         alerts = []
         for name in sorted(names):
             row = health.get(name, {})
@@ -203,6 +211,10 @@ class TopCommand(Command):
                 _count(row.get("pending_items")),
                 _count(counts.get("prepared")),
                 _count(counts.get("published")),
+                Text(
+                    _count(error_totals.get(name)),
+                    style="red" if error_totals.get(name) else "",
+                ),
                 activity,
                 f"{harvest_rates[name]:,.1f}" if name in harvest_rates else "—",
                 _harvest_trend(harvest, name),

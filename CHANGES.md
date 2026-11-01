@@ -4,6 +4,7 @@
 
 ### Added
 
+- Per-project numeric `Errors` totals in `piddi top`, including finished runs.
 - `make status` lists the state of all deployed Piddi services and timers.
 - `piddi reset --project NAME` previews a processing reset; `--apply` backs up
   project output, clears its monitoring counters, and requeues its existing
