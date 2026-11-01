@@ -51,7 +51,7 @@ def publication_progress(run: dict, samples, now: datetime) -> dict:
     return result
 
 
-def _handles_per_item(runs, project):
+def _handles_per_item(runs, project, totals):
     handles = items = count = 0
     for run in runs:
         if run["command"] not in {"map", "sync"}:
@@ -63,32 +63,77 @@ def _handles_per_item(runs, project):
                 count += 1
         if count >= 5:
             break
-    return handles / items if items and handles else None
+    if items and handles:
+        return handles / items
+    for row in totals:
+        if (
+            row["project"] == project
+            and row.get("mapped_items")
+            and row.get("prepared")
+        ):
+            return row["prepared"] / row["mapped_items"]
+    return None
 
 
 def _remaining_work(status, usable):
     remaining = 0
     covered = set()
+    estimated = set()
+    unestimated = {}
     for project in status["health"]["projects"]:
-        pending = project["pending_items"] or 0
+        name = project["project"]
+        pending = project.get("pending_items")
         ready = project.get("ready_handles")
-        ratio = _handles_per_item(status["runs"], project["project"])
-        if project["errors"] or ready is None or (pending and ratio is None):
-            return None
+        if project.get("errors") or ready is None:
+            unestimated[name] = dict(
+                project=name,
+                pending_events=pending,
+                reason="backlog counts unavailable",
+            )
+            continue
         batch_ids = project.get("ready_batch_ids", [])
         covered.update(batch_ids)
         for run in usable:
             if run.get("batch_id") in batch_ids:
                 ready = max(0, ready - run["publication"]["published_handles"])
-        remaining += ready + pending * (ratio or 0)
+        work = ready
+        ratio = _handles_per_item(status["runs"], name, status.get("handle_totals", []))
+        if pending is None:
+            unestimated[name] = dict(
+                project=name,
+                pending_events=None,
+                reason="pending event count unavailable",
+            )
+        elif pending and ratio is None:
+            unestimated[name] = dict(
+                project=name, pending_events=pending, reason="no mapping history yet"
+            )
+        else:
+            work += (pending or 0) * (ratio or 0)
+        remaining += work
+        if work:
+            estimated.add(name)
     for run in usable:
         if run.get("batch_id") in covered:
             continue
         work = run["publication"]["remaining_handles"]
+        names = [row["project"] for row in run["projects"]]
         if work is None:
-            return None
-        remaining += work
-    return remaining
+            for name in names:
+                unestimated[name] = dict(
+                    project=name,
+                    pending_events=None,
+                    reason="active batch size unavailable",
+                )
+        else:
+            remaining += work
+            if work:
+                estimated.update(names)
+    return (
+        remaining,
+        sorted(estimated),
+        [unestimated[name] for name in sorted(unestimated)],
+    )
 
 
 def backlog_estimate(status: dict) -> dict:
@@ -103,6 +148,9 @@ def backlog_estimate(status: dict) -> dict:
         "eta_seconds": None,
         "estimated_end": None,
         "approximate": True,
+        "partial": False,
+        "estimated_projects": [],
+        "unestimated_projects": [],
         "reason": "waiting for active publication",
     }
     if any(
@@ -119,10 +167,17 @@ def backlog_estimate(status: dict) -> dict:
         and run.get("publication", {}).get("handles_per_second")
     ]
     if not usable:
+        if active:
+            result["reason"] = "waiting for a healthy publisher with speed samples"
         return result
-    remaining = _remaining_work(status, usable)
-    if remaining is None:
-        result["reason"] = "waiting for complete backlog counts and mapping ratio"
+    remaining, estimated, unestimated = _remaining_work(status, usable)
+    result.update(
+        partial=bool(unestimated),
+        estimated_projects=estimated,
+        unestimated_projects=unestimated,
+    )
+    if not remaining and unestimated:
+        result["reason"] = "waiting for estimable backlog counts or mapping history"
         return result
     rate = sum(run["publication"]["handles_per_second"] for run in usable)
     seconds = remaining / rate

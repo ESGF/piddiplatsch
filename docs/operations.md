@@ -173,6 +173,19 @@ is the last heartbeat snapshot, rather than a fresh filesystem check by top.
 without deleting batch summaries. Last publication comes from the latest
 published batch row.
 
+The overall publication ETA appears below the table and covers only the current
+backlog, using recent Handle-write speed and observed Handles per mapped event.
+Recent mapping runs supply that ratio; retained batch totals provide a fallback
+when run history has been cleaned up. Future harvest arrivals and mapping time
+are not forecast. If some pending work lacks a ratio or counts are unavailable,
+`top` shows a **partial** estimate for the known portion and names the unestimated
+projects, their pending event counts when known, and the reason. Known ready
+Handles remain included even when that project's pending events cannot be
+estimated. Idle projects do not block the estimate. When publication is inactive,
+speed samples are unavailable, or errors prevent an estimate, the overall ETA
+line displays the reason instead of disappearing. JSON exposes `partial`,
+`estimated_projects`, and `unestimated_projects` alongside the estimate.
+
 Maintain compresses closed dump files. Database work cleanup is prepared but
 disabled by default (`batch.retention_days = 0`), so all work rows remain.
 To enable it later, set a positive period, such as 30 days. Cleanup then removes

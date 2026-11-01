@@ -239,19 +239,38 @@ class TopCommand(Command):
                 _batch_progress(publishers),
                 eta,
             )
-        backlog = status.get("backlog_estimate", {})
-        if backlog.get("eta_seconds") is not None:
-            end = datetime.fromisoformat(backlog["estimated_end"]).astimezone(UTC)
-            alerts.append(
-                Text(
-                    f"Overall publish ETA: ~{_eta_duration(backlog['eta_seconds'])} ({end:%Y-%m-%d %H:%M} UTC) · current backlog only"
-                )
-            )
+        alerts.extend(_backlog_eta_lines(status.get("backlog_estimate", {})))
         return Group(
             *lines,
             table,
             *alerts,
         )
+
+
+def _backlog_eta_lines(backlog):
+    label = (
+        "Overall publish ETA (partial)"
+        if backlog.get("partial")
+        else "Overall publish ETA"
+    )
+    if backlog.get("eta_seconds") is not None:
+        end = datetime.fromisoformat(backlog["estimated_end"]).astimezone(UTC)
+        lines = [
+            Text(
+                f"{label}: ~{_eta_duration(backlog['eta_seconds'])} ({end:%Y-%m-%d %H:%M} UTC) · current backlog only"
+            )
+        ]
+    else:
+        reason = backlog.get("reason") or "waiting for an estimate"
+        lines = [Text(f"{label}: unavailable · {reason}", style="dim")]
+    missing = []
+    for project in backlog.get("unestimated_projects", []):
+        pending = project.get("pending_events")
+        count = f"{pending:,} pending events; " if pending is not None else ""
+        missing.append(f"{project['project']} ({count}{project['reason']})")
+    if missing:
+        lines.append(Text("Not estimated: " + "; ".join(missing)))
+    return lines
 
 
 def _totals_line(status: dict) -> Text:

@@ -373,7 +373,7 @@ def test_compact_overview_keeps_eta_and_actionable_warnings():
     assert "3m 6s (21:28 UTC)" in " ".join(rendered.split())
     assert "errors recorded" in rendered
     assert "cmip7: map heartbeat is stale (100s)" in rendered
-    assert "waiting for complete counts" not in rendered
+    assert "Overall publish ETA: unavailable · waiting for complete counts" in rendered
 
 
 def test_harvest_sparkline_covers_whole_history():
