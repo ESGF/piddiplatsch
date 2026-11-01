@@ -1,5 +1,22 @@
 # TODO
 
+## Agreed catalog and work-stream design
+
+See [the design agreed on 2026-11-01](docs/work-stream-design.md) for the proposed
+single `piddi.db` with `catalog_items`, `work_items`, `kafka_checkpoints`, and
+`stats`. It records the exact columns, snapshot/state rules, JSONL output,
+archive replay requirements, and retention decisions. This is future work;
+the current batching fix remains in place.
+
+- [ ] Implement the agreed schema and transactional harvest handoff, including
+  migration from existing catalogs, batches, and monitoring data.
+- [ ] Make mapping/publication use saved work snapshots and processing states;
+  keep generated Handles in JSONL batches linked by `batch_id`.
+- [ ] Add daily summaries and configurable cleanup of old published work without
+  double counting results. Keep invalid work available for explicit retry.
+- [ ] Keep `VACUUM` an explicit supervised operation with Piddi stopped; scheduled
+  maintenance only deletes expired work.
+
 ## Handle service
 
 - [ ] Test REST publication against a disposable real Handle prefix.
@@ -19,6 +36,22 @@
 
 ## Recovery and Kafka
 
+- [ ] Archive each Kafka event to JSONL before further processing, including
+  topic, partition, offset, key, and the original message payload. Keep archived
+  events unchanged regardless of processing outcome and preserve ordering
+  within each partition.
+- [ ] Rotate dump files by a configurable event count as well as by day. The
+  initial harvest can contain the complete retained history and produce several
+  GB in one day. Split a day's archive into numbered parts with deterministic
+  replay ordering; preserve every event across rotation and restart.
+- [ ] Support Kafka and archived JSONL files as alternative inputs to the same
+  processing flow, including rebuilding the STAC catalog after Kafka retention
+  has removed old events. Dumps are an archive, not the batch pending queue.
+  Current gap: dumps contain payloads without attached Kafka coordinates.
+- [ ] Keep event error policy separate from batching: either stop without
+  acknowledging an invalid event, or optionally record the failure, acknowledge
+  it, and continue. Never modify an original event; a later correction on Kafka
+  is a new event.
 - [ ] Define and test Kafka acknowledgement behavior across persistence errors,
   automatic commits, transient failures, and restarts.
 
@@ -33,11 +66,8 @@ local predecessor lookup, but overwrite successive updates to the same item.
   partitions or topics, including shared-project checkpoint durability.
 - [ ] Define catalog compaction and journal growth controls and minimize redundant
   indexes and checkpoint metadata.
-- [ ] Add the DuckDB backend alongside SQLite with configurable backend and path.
-  Use one database file per project so projects can be removed, rebuilt, and
-  compacted independently; scope item identity by collection and item ID.
-  Document backend concurrency constraints, including sequential harvest/map
-  access for separate processes using a conventional local DuckDB file.
+- [ ] Defer alternative database backends and the older per-project database
+  proposal until after the agreed single-SQLite work-stream design is evaluated.
 - [ ] Define and add force-refresh semantics that never blindly reapply already
   processed, potentially non-idempotent patches. Add completeness reporting
   beyond the existing per-item remote current-state recovery.
@@ -53,10 +83,10 @@ local predecessor lookup, but overwrite successive updates to the same item.
 - [ ] Run shared backend correctness tests for publications, consecutive patches,
   duplicate replay, interrupted transactions, missing bases, project isolation,
   predecessor selection, clean/force behavior, and independent project rebuilds.
-- [ ] Benchmark SQLite and DuckDB on production-like STAC records, including large
+- [ ] Benchmark the agreed SQLite design on production-like STAC records, including large
   asset lists: total disk usage after initial filling and repeated updates,
   harvest throughput, exact/predecessor lookup latency, decompression cost, and
-  complete mapping throughput. Choose the default from measured results.
+  complete mapping throughput.
 
 Deferred: PostgreSQL backend for several instances, including coordinated Kafka
 consumption and update ownership. Retain JSONL dumps and Handle spools initially;
