@@ -61,6 +61,7 @@ Full event snapshots and their processing progress.
 | `updated_at` | When its state last changed |
 | `batch_id` | Saved Handle batch; empty before mapping |
 | `message` | Processing note or error explanation; empty when unnecessary |
+| `handle_count` | Prepared Handles for this work entry, including any alias; zero before mapping |
 
 Primary key: `id`.
 
@@ -95,6 +96,9 @@ Daily summaries retained independently of completed work entries.
 | `project` | Project |
 | `items` | Successfully mapped items |
 | `handles` | Successfully published Handles |
+| `prepared_handles` | Successfully prepared Handles, including aliases |
+| `runtime` | JSON run snapshots and bounded rate samples, keyed by run ID |
+| `last_publication` | Last completed batch summary for this project/day |
 | `errors` | Failed processing attempts |
 
 Primary key: `(date, project)`. All dates and timestamps use UTC. Weekly and
@@ -257,9 +261,16 @@ retention. Harvest a correction as a new event, or use an explicit whole-project
 reset to replay all retained snapshots in order. Reset does not recover work
 already removed by retention.
 
-Live heartbeats and recent speed samples are atomic JSON files under `status/`
-beside the database; they do not create monitoring tables. Daily summaries remain
-in `stats`. Harvest checkpoints are shared by topic/partition: a harvest clean
+Live heartbeats and recent speed samples are stored in `stats.runtime`. Each
+run stores a project-specific snapshot in its start-date/project row. Concurrent
+commands merge their run IDs transactionally without changing daily totals.
+Runtime-only rows have zero daily counters. Each run retains up to one hour of
+samples; maintenance prunes expired completed runs. `top` reads one database
+snapshot for live activity, prepared/published Handle totals, and work backlog.
+It does not inspect output manifests or status files. Prepared counts are committed
+with batch acknowledgement, and include aliases. Daily totals and the last
+publication summary survive work retention. Database schema version 2 and batch
+manifest version 3 require a fresh start; no migration is provided. Harvest checkpoints are shared by topic/partition: a harvest clean
 must include every stored project. Project processing reset preserves checkpoints
 and only requeues that project's retained work.
 

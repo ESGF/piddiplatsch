@@ -14,7 +14,6 @@ from rich.table import Table
 from rich.text import Text
 
 from piddiplatsch.monitoring.eta import backlog_estimate
-from piddiplatsch.monitoring.health import read_health
 from piddiplatsch.monitoring.status import read_status
 
 from .base import Command
@@ -41,7 +40,6 @@ class TopCommand(Command):
                     stale_after_seconds=self.stale_after_seconds,
                     history_seconds=300,
                 )
-                status["health"] = read_health(self.project)
                 status["backlog_estimate"] = backlog_estimate(status)
             except (FileNotFoundError, ValueError) as exc:
                 raise click.ClickException(str(exc)) from exc
@@ -114,7 +112,7 @@ class TopCommand(Command):
             "Project",
             "Catalog items",
             "Pending entries",
-            "Mapped entries",
+            "Prepared handles",
             "Published handles",
             "Errors",
             "Activity",
@@ -136,7 +134,7 @@ class TopCommand(Command):
                     in {
                         "Catalog items",
                         "Pending entries",
-                        "Mapped entries",
+                        "Prepared handles",
                         "Published handles",
                         "Errors",
                         "Harvest/s",
@@ -223,7 +221,7 @@ class TopCommand(Command):
                 name,
                 _count(row.get("total_items")),
                 _count(row.get("pending_items")),
-                _count(counts.get("mapped_items")),
+                _count(counts.get("prepared")),
                 _count(counts.get("published")),
                 Text(
                     _count(error_totals.get(name)),

@@ -399,3 +399,25 @@ def test_catalog_and_generated_totals_include_all_projects():
     )
     status["health"]["projects"][1]["total_items"] = None
     assert "Catalog: — datasets" in _totals_line(status).plain
+
+
+def test_top_explicit_database_uses_its_own_health(tmp_path, monkeypatch):
+    database = tmp_path / "piddi.db"
+    _monitoring_db(database)
+    config._set("catalog", "directory", str(tmp_path / "unrelated"))
+    monkeypatch.setattr(
+        "piddiplatsch.monitoring.disk.disk_status",
+        lambda: pytest.fail("top must only read its database"),
+    )
+    result = CliRunner().invoke(
+        cli,
+        ["--log", str(tmp_path / "test.log"), "top", "--db", str(database), "--json"],
+    )
+    assert result.exit_code == 0, result.output
+    status = json.loads(result.output)
+    assert {row["project"] for row in status["health"]["projects"]} == {
+        "cmip6",
+        "cmip7",
+    }
+    assert all(not row["errors"] for row in status["health"]["projects"])
+    assert not (tmp_path / "unrelated").exists()

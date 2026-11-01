@@ -4,6 +4,7 @@ import logging
 import os
 import re
 import socket
+import sqlite3
 import threading
 import time
 import uuid
@@ -117,11 +118,7 @@ class ConsoleReporter(StatsReporter):
 
 
 class StatusReporter(StatsReporter):
-    """Atomic live-status files; durable totals belong to piddi.db transactions.
-
-    Runtime heartbeats and short rate histories are expendable monitoring data,
-    not extra database tables or a second processing queue.
-    """
+    """Live heartbeats and bounded rate histories in the shared stats table."""
 
     def __init__(
         self, db_path=None, sample_interval_seconds=15.0, sample_retention_days=30.0
@@ -134,8 +131,7 @@ class StatusReporter(StatsReporter):
         database = Path(db_path) if db_path else get_catalog_directory() / "piddi.db"
         with SQLiteCatalog("_monitor", database):
             pass
-        self.directory = database.parent / "status"
-        self.directory.mkdir(parents=True, exist_ok=True)
+        self.connection = sqlite3.connect(database, timeout=5, check_same_thread=False)
         self._lock = threading.RLock()
         self._closed = False
         self.samples = []
@@ -146,12 +142,9 @@ class StatusReporter(StatsReporter):
         self.heartbeat(summary)
 
     def heartbeat(self, summary, *, force_sample=False):
-        import tempfile
-        from pathlib import Path
-
-        if self._closed or not summary.get("run"):
-            return
         with self._lock:
+            if self._closed or not summary.get("run"):
+                return
             now = datetime.datetime.now(datetime.UTC)
             run = dict(summary["run"])
             run["heartbeat_at"] = now.isoformat()
@@ -171,16 +164,43 @@ class StatusReporter(StatsReporter):
                 self._last_sample = time.monotonic()
             cutoff = (now - datetime.timedelta(hours=1)).isoformat()
             self.samples = [row for row in self.samples if row["sampled_at"] >= cutoff]
-            payload = dict(run=run, projects=projects, samples=self.samples)
-            with tempfile.NamedTemporaryFile(
-                mode="w", dir=self.directory, suffix=".tmp", delete=False
-            ) as stream:
-                temporary = stream.name
-                json.dump(payload, stream)
-            Path(temporary).replace(self.directory / (run["run_id"] + ".json"))
+            # Serialize only monitoring JSON here; processing transactions update
+            # the numeric columns independently. IMMEDIATE prevents concurrent
+            # harvest/publish heartbeats from overwriting each other's runs.
+            from piddiplatsch.monitoring.disk import disk_status
+
+            storage = disk_status()
+            with self.connection:
+                self.connection.execute("BEGIN IMMEDIATE")
+                for row in projects or [{"project": ""}]:
+                    name = row["project"]
+                    day = run["started_at"][:10]
+                    previous = self.connection.execute(
+                        "SELECT runtime FROM stats WHERE date=? AND project=?",
+                        (day, name),
+                    ).fetchone()
+                    runtime = json.loads(previous[0]) if previous else {}
+                    runtime[run["run_id"]] = dict(
+                        run=run,
+                        storage=storage,
+                        projects=[row] if name else [],
+                        samples=[
+                            sample
+                            for sample in self.samples
+                            if sample["project"] == name
+                        ],
+                    )
+                    self.connection.execute(
+                        "INSERT INTO stats(date,project,runtime) VALUES (?,?,?) "
+                        "ON CONFLICT(date,project) DO UPDATE SET runtime=excluded.runtime",
+                        (day, name, json.dumps(runtime)),
+                    )
 
     def close(self):
-        self._closed = True
+        with self._lock:
+            if not self._closed:
+                self._closed = True
+                self.connection.close()
 
 
 # -----------------------

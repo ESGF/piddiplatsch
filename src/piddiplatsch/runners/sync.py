@@ -150,7 +150,11 @@ class _BatchMapper:
                 or "Mapping did not produce a successful result",
             )
         self.manifest["outcomes"].append(
-            {"id": self.manifest["last_work_id"], "error": None}
+            {
+                "id": self.manifest["last_work_id"],
+                "error": None,
+                "handle_count": result.num_handles,
+            }
         )
         self.manifest["succeeded_count"] += 1
         return result
@@ -411,7 +415,7 @@ class SyncWorker:
             staging.mkdir()
             _sync_directory(project_root)
             manifest = {
-                "schema_version": 2,
+                "schema_version": 3,
                 "batch_id": batch_id,
                 "project": project,
                 "created_at": self.now().isoformat(),
@@ -580,7 +584,7 @@ class SyncWorker:
         for batch in self._ready_batches(project_root):
             manifest_path = batch / "manifest.json"
             manifest = json.loads(manifest_path.read_text())
-            if manifest["project"] != project or manifest.get("schema_version") != 2:
+            if manifest["project"] != project or manifest.get("schema_version") != 3:
                 raise ValueError(f"Invalid batch manifest: {manifest_path}")
             if manifest["status"] == "published":
                 self._record_publication(manifest)

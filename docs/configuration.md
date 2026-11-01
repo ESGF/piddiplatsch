@@ -271,15 +271,15 @@ always includes ERROR and CRITICAL, even if the normal level is CRITICAL.
 Terminal-only logging does not create a companion file.
 
 Statistics log every 30 seconds or 10,000 messages as results arrive. Daily mapped
-work, published Handle, and failed-attempt totals always live in `piddi.db.stats`.
-`enable_db` enables live status files under `status/` beside that database; it does
-not create extra tables or a separate monitoring database.
+work, prepared Handle, published Handle, and failed-attempt totals always live in `piddi.db.stats`.
+`enable_db` enables live heartbeats and rate histories in the same `stats` table.
+No extra tables or separate monitoring database are created.
 `piddi top` reads live harvest, mapping, and publication status. Publication
 results also appear in logs and JSONL receipts.
 
 Heartbeats update every five seconds, even when Kafka is idle. Unfinished runs
 become stale after 15 seconds without a heartbeat. Each live run retains up to one hour of rate samples; top shows the last five
-minutes. `sample_retention_days` controls completed status-file retention; zero
+minutes. `sample_retention_days` controls completed run-history retention; zero
 disables that cleanup. See [Monitoring and maintenance](operations.md#monitoring-and-maintenance).
 
 ## Raw dump files

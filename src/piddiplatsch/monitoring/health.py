@@ -1,109 +1,91 @@
-"""Read-only storage and backlog checks; no catalog migrations or archive scans."""
+"""Read-only backlog checks from the shared database."""
 
 import json
 import sqlite3
 from contextlib import closing
-from pathlib import Path
 
 from piddiplatsch.config import config
-from piddiplatsch.monitoring.disk import disk_status
 
 
-def read_health(project: str | None = None) -> dict:
-    output = Path(config.get("consumer", "output_dir", "outputs"))
-    from piddiplatsch.catalog.api import get_catalog_directory
-
-    catalogs = get_catalog_directory()
-    batches = Path(config.get("batch", "directory") or output / "batches")
-    selected = config.get("consumer", "projects", [])
-    names = set(selected) if isinstance(selected, list) else set()
-    database = catalogs / "piddi.db"
-    if database.is_file():
-        try:
-            with closing(
-                sqlite3.connect(database.resolve().as_uri() + "?mode=ro", uri=True)
-            ) as connection:
-                names.update(
-                    row[0]
-                    for row in connection.execute(
-                        "SELECT DISTINCT project FROM catalog_items UNION SELECT DISTINCT project FROM work_items"
-                    )
-                )
-        except sqlite3.Error:
-            pass  # Per-project rows below report the storage error.
-    if batches.is_dir():
-        names.update(path.name for path in batches.iterdir() if path.is_dir())
+def database_health(connection, project=None):
+    """Read processing health from the caller's database snapshot."""
+    names = {
+        row[0]
+        for row in connection.execute(
+            "SELECT project FROM catalog_items UNION SELECT project FROM work_items "
+            "UNION SELECT project FROM stats WHERE project<>''"
+        )
+    }
     if project:
         names = {project.casefold()}
     projects = []
     for name in sorted(names):
-        if Path(name).name != name or name in {".", ".."}:
-            continue
-        row = {
-            "project": name,
-            "total_items": None,
-            "pending_items": None,
-            "invalid_items": None,
-            "ready_batches": 0,
-            "failed_batches": 0,
-            "last_publication": None,
-            "ready_handles": 0,
-            "ready_batch_ids": [],
-            "errors": [],
-        }
-        catalog = database
-        if catalog.is_file():
-            try:
-                with closing(
-                    sqlite3.connect(
-                        catalog.resolve().as_uri() + "?mode=ro", uri=True, timeout=0.2
-                    )
-                ) as connection:
-                    row["total_items"], row["pending_items"], row["invalid_items"] = (
-                        connection.execute(
-                            "SELECT (SELECT COUNT(*) FROM catalog_items WHERE project=?), "
-                            "(SELECT COUNT(*) FROM work_items WHERE project=? AND state='pending'), "
-                            "(SELECT COUNT(*) FROM work_items WHERE project=? AND state='invalid')",
-                            (name, name, name),
-                        ).fetchone()
-                    )
-            except sqlite3.Error as exc:
-                row["errors"].append(f"Catalog status unavailable: {exc}")
-        _batch_health(batches / name, row)
-        projects.append(row)
-    return {"storage": disk_status(), "projects": projects}
+        total, pending, invalid = connection.execute(
+            "SELECT (SELECT COUNT(*) FROM catalog_items WHERE project=?), "
+            "(SELECT COUNT(*) FROM work_items WHERE project=? AND state='pending'), "
+            "(SELECT COUNT(*) FROM work_items WHERE project=? AND state='invalid')",
+            (name, name, name),
+        ).fetchone()
+        batches = connection.execute(
+            "SELECT batch_id,SUM(handle_count),MAX(message IS NOT NULL) FROM work_items "
+            "WHERE project=? AND state='mapped' GROUP BY batch_id ORDER BY MIN(id)",
+            (name,),
+        ).fetchall()
+        publications = [
+            json.loads(row[0])
+            for row in connection.execute(
+                "SELECT last_publication FROM stats WHERE project=? AND last_publication IS NOT NULL",
+                (name,),
+            )
+        ]
+        projects.append(
+            dict(
+                project=name,
+                total_items=total,
+                pending_items=pending,
+                invalid_items=invalid,
+                ready_batches=len(batches),
+                failed_batches=sum(row[2] for row in batches),
+                ready_handles=sum(row[1] for row in batches),
+                ready_batch_ids=[row[0] for row in batches],
+                last_publication=max(
+                    publications, key=lambda row: row["published_at"], default=None
+                ),
+                errors=[],
+            )
+        )
+    return {"storage": [], "projects": projects}
 
 
-def _batch_health(root: Path, row: dict):
+def read_health(project: str | None = None) -> dict:
+    from piddiplatsch.catalog.api import get_catalog_directory
+
+    database = get_catalog_directory() / "piddi.db"
     try:
-        for path in (root / "ready").glob("*"):
-            if not path.is_dir():
-                continue
-            row["ready_batches"] += 1
-            try:
-                manifest = json.loads((path / "manifest.json").read_text())
-                if manifest.get("status") != "published":
-                    row["ready_batch_ids"].append(path.name)
-                    handles = manifest.get("handle_count")
-                    if not isinstance(handles, int) or handles < 0:
-                        row["ready_handles"] = None
-                    elif row["ready_handles"] is not None:
-                        row["ready_handles"] += handles
-                if manifest.get("publication_error"):
-                    row["failed_batches"] += 1
-            except (OSError, ValueError, AttributeError) as exc:
-                row["errors"].append(f"Batch status unavailable: {exc}")
-        for path in root.glob(".building-*/manifest.json"):
-            try:
-                if json.loads(path.read_text()).get("status") == "failed":
-                    row["failed_batches"] += 1
-            except (OSError, ValueError, AttributeError) as exc:
-                row["errors"].append(f"Batch status unavailable: {exc}")
-        marker = root / "last-publication.json"
-        if marker.is_file():
-            value = json.loads(marker.read_text())
-            if not isinstance(value, dict):
-                raise ValueError(f"Invalid publication status: {marker}")
-            row["last_publication"] = value
-    except (OSError, ValueError) as exc:
-        row["errors"].append(str(exc))
+        with closing(
+            sqlite3.connect(database.resolve().as_uri() + "?mode=ro", uri=True)
+        ) as connection:
+            connection.execute("BEGIN")
+            return database_health(connection, project)
+    except sqlite3.Error as exc:
+        names = (
+            [project.casefold()] if project else config.get("consumer", "projects", [])
+        )
+        return dict(
+            storage=[],
+            projects=[
+                dict(
+                    project=name,
+                    total_items=None,
+                    pending_items=None,
+                    invalid_items=None,
+                    ready_batches=0,
+                    failed_batches=0,
+                    last_publication=None,
+                    ready_handles=0,
+                    ready_batch_ids=[],
+                    errors=[f"Catalog status unavailable: {exc}"],
+                )
+                for name in sorted(names)
+            ],
+        )

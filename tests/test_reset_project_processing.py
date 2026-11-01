@@ -26,7 +26,7 @@ def seed(tmp_path, testdata_path):
                 "seed", message, KafkaSource("topic", 0, offset)
             )
     with SQLiteCatalog("cmip6plus", tmp_path / "piddi.db") as writer:
-        writer.seal_batch("saved", [{"id": 1, "error": None}])
+        writer.seal_batch("saved", [{"id": 1, "error": None, "handle_count": 2}])
         writer.publish_batch("saved", 2)
     old = tmp_path / "batches/cmip6plus/published/saved"
     old.mkdir(parents=True)
@@ -44,8 +44,8 @@ def test_reset_requeues_retained_snapshots_without_touching_shared_checkpoints(
         assert len(list(reader.iter_items())) == 1
         assert reader.pending_work().count == 1
         assert reader._execute(
-            "SELECT batch_id,message FROM work_items WHERE project='cmip6plus'"
-        ).fetchone() == (None, None)
+            "SELECT batch_id,message,handle_count FROM work_items WHERE project='cmip6plus'"
+        ).fetchone() == (None, None, 0)
         assert reader._execute(
             "SELECT state FROM work_items WHERE project='cmip7'"
         ).fetchone() == ("pending",)

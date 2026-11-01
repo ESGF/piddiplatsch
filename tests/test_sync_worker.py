@@ -107,7 +107,7 @@ def test_count_trigger_seals_and_publishes_then_empty_tick_does_nothing(setup):
 
 @pytest.mark.parametrize("force", [False, True])
 def test_sync_map_info_reports_force_setting_and_alias_summary(setup, caplog, force):
-    put, _directory, _root = setup
+    put, directory, _root = setup
     config._set(
         "plugins", "cmip7", {**config.get_plugin("cmip7"), "force_dataset_pid": force}
     )
@@ -129,6 +129,18 @@ def test_sync_map_info_reports_force_setting_and_alias_summary(setup, caplog, fo
         f"{2 if force else 0} alias Handles"
     ) in caplog.messages
     assert "Prepared dataset alias Handle" not in caplog.text
+    from piddiplatsch.monitoring.status import read_status
+
+    status = read_status(directory / "piddi.db")
+    assert status["handle_totals"] == [
+        dict(
+            project="cmip7",
+            mapped_items=2,
+            prepared=6 if force else 4,
+            published=6 if force else 4,
+            errors=0,
+        )
+    ]
 
 
 def test_hour_trigger_preserves_successive_event_snapshots(setup):

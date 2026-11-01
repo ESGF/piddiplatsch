@@ -6,7 +6,7 @@ from piddiplatsch.commands.base import Command
 from piddiplatsch.config import config
 from piddiplatsch.maintenance import (
     clean_published_work,
-    clean_status_files,
+    clean_status_history,
     compress_closed_dumps,
 )
 
@@ -19,7 +19,7 @@ class MaintainCommand(Command):
         try:
             paths = compress_closed_dumps(dry_run=self.dry_run)
             removed = clean_published_work(dry_run=self.dry_run)
-            clean_status_files(dry_run=self.dry_run)
+            clean_status_history(dry_run=self.dry_run)
         except (OSError, ValueError) as exc:
             raise click.ClickException(str(exc)) from exc
         if self.dry_run:

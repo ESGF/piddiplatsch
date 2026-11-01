@@ -145,28 +145,39 @@ def clean_published_work(*, dry_run=False):
                 ).rowcount
 
 
-def clean_status_files(*, dry_run=False):
-    """Remove expired completed heartbeat files; never remove active/stale runs."""
+def clean_status_history(*, dry_run=False):
+    """Prune expired completed runs in stats without touching daily totals."""
+    import sqlite3
+    from contextlib import closing
     from datetime import UTC, datetime, timedelta
 
     from piddiplatsch.catalog.api import get_catalog_directory
 
     days = config.get("stats", "sample_retention_days", 30)
-    if not days:
+    database = get_catalog_directory() / "piddi.db"
+    if not days or not database.is_file():
         return 0
-    cutoff = datetime.now(UTC) - timedelta(days=days)
+    cutoff = (datetime.now(UTC) - timedelta(days=days)).isoformat()
     count = 0
-    for path in (get_catalog_directory() / "status").glob("*.json"):
-        try:
-            run = json.loads(path.read_text())["run"]
-            finished = run.get("finished_at")
-            if run.get("status") == "running" or not finished:
-                continue
-            if datetime.fromisoformat(finished) >= cutoff:
-                continue
-            if not dry_run:
-                path.unlink()
-            count += 1
-        except (OSError, ValueError, KeyError, TypeError):
-            LOGGER.warning("Could not inspect status file %s", path)
+    with closing(sqlite3.connect(database, timeout=5)) as connection, connection:
+        connection.execute("BEGIN IMMEDIATE")
+        for day, project, encoded in connection.execute(
+            "SELECT date,project,runtime FROM stats"
+        ).fetchall():
+            runtime = json.loads(encoded)
+            expired = [
+                identity
+                for identity, payload in runtime.items()
+                if payload["run"].get("status") != "running"
+                and payload["run"].get("finished_at")
+                and payload["run"]["finished_at"] < cutoff
+            ]
+            count += len(expired)
+            if expired and not dry_run:
+                for identity in expired:
+                    del runtime[identity]
+                connection.execute(
+                    "UPDATE stats SET runtime=? WHERE date=? AND project=?",
+                    (json.dumps(runtime), day, project),
+                )
     return count

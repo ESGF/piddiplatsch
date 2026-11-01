@@ -149,9 +149,15 @@ piddi maintain --dry-run
 piddi maintain
 ```
 
-Top reads the shared database and live status files beside it. Daily mapped-work,
-published-Handle, and error totals are independent of retained work. Live heartbeat
-and rate samples are expendable monitoring data.
+Top reads only `piddi.db`, including when `--db PATH` selects another database.
+Prepared and published Handle totals include dataset, file, and alias Handles.
+Daily mapped-work, prepared-Handle, published-Handle, and error totals survive work
+retention. Pending entries and ready batch counts come from work rows. Publication
+failures remain ready; mapping failures appear as invalid work or failed runs.
+Live heartbeats and rate samples share the `stats` table. Disk space is the last
+heartbeat snapshot, rather than a fresh filesystem check by top.
+`maintain` prunes completed run histories according to `stats.sample_retention_days`
+without deleting daily totals or last-publication summaries.
 
 Maintain compresses closed dump files. Database work cleanup is prepared but
 disabled by default (`batch.retention_days = 0`), so all work rows remain.

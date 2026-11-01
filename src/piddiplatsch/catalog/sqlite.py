@@ -16,7 +16,7 @@ from piddiplatsch.catalog.models import (
 )
 from piddiplatsch.exceptions import CatalogError
 
-_SCHEMA_VERSION = 1
+_SCHEMA_VERSION = 2
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS catalog_items (
     project TEXT NOT NULL, collection_id TEXT NOT NULL, item_id TEXT NOT NULL,
@@ -32,7 +32,7 @@ CREATE TABLE IF NOT EXISTS work_items (
     offset INTEGER NOT NULL, stac_blob BLOB NOT NULL,
     state TEXT NOT NULL DEFAULT 'pending' CHECK(state IN ('pending','mapped','invalid','published')),
     created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
-    batch_id TEXT, message TEXT,
+    batch_id TEXT, message TEXT, handle_count INTEGER NOT NULL DEFAULT 0,
     UNIQUE(topic, partition, offset)
 );
 CREATE INDEX IF NOT EXISTS work_selection ON work_items(project, state, id);
@@ -44,7 +44,8 @@ CREATE TABLE IF NOT EXISTS kafka_checkpoints (
 CREATE TABLE IF NOT EXISTS stats (
     date TEXT NOT NULL, project TEXT NOT NULL,
     items INTEGER NOT NULL DEFAULT 0, handles INTEGER NOT NULL DEFAULT 0,
-    errors INTEGER NOT NULL DEFAULT 0, PRIMARY KEY(date, project)
+    errors INTEGER NOT NULL DEFAULT 0, prepared_handles INTEGER NOT NULL DEFAULT 0,
+    runtime TEXT NOT NULL DEFAULT '{}', last_publication TEXT, PRIMARY KEY(date, project)
 );
 """
 
@@ -142,7 +143,7 @@ class SQLiteCatalog(BaseCatalog):
                 self._execute("PRAGMA journal_mode=WAL")
                 self._execute("PRAGMA synchronous=FULL")
                 self._require_connection().executescript(
-                    "BEGIN IMMEDIATE;\n" + _SCHEMA + "\nPRAGMA user_version=1;\nCOMMIT;"
+                    "BEGIN IMMEDIATE;\n" + _SCHEMA + "\nPRAGMA user_version=2;\nCOMMIT;"
                 )
         except (OSError, sqlite3.Error, CatalogError) as exc:
             self.close()
@@ -348,16 +349,23 @@ class SQLiteCatalog(BaseCatalog):
             raise CatalogError(f"Work entry {identity} is missing")
         return WorkItem(_decode(row[0]), identity)
 
-    def _summary(self, items=0, handles=0, errors=0):
+    def _summary(
+        self, items=0, handles=0, errors=0, prepared_handles=0, last_publication=None
+    ):
         self._execute(
-            "INSERT INTO stats VALUES (?,?,?,?,?) ON CONFLICT(date,project) DO UPDATE SET "
-            "items=items+excluded.items, handles=handles+excluded.handles, errors=errors+excluded.errors",
+            "INSERT INTO stats(date,project,items,handles,errors,prepared_handles,last_publication) "
+            "VALUES (?,?,?,?,?,?,?) ON CONFLICT(date,project) DO UPDATE SET "
+            "items=items+excluded.items, handles=handles+excluded.handles, errors=errors+excluded.errors, "
+            "prepared_handles=prepared_handles+excluded.prepared_handles, "
+            "last_publication=COALESCE(excluded.last_publication,stats.last_publication)",
             (
                 datetime.now(UTC).date().isoformat(),
                 self.project,
                 items,
                 handles,
                 errors,
+                prepared_handles,
+                last_publication,
             ),
         )
 
@@ -379,11 +387,25 @@ class SQLiteCatalog(BaseCatalog):
                     continue
                 if row != ("pending", None):
                     raise CatalogError("Work already belongs to another batch or state")
+                handles = outcome.get("handle_count") if error is None else 0
+                if type(handles) is not int or handles < 0:
+                    raise CatalogError("Missing or invalid prepared Handle count")
                 self._execute(
-                    "UPDATE work_items SET state=?,batch_id=?,message=?,updated_at=? WHERE id=?",
-                    (desired, batch_id, error, _now(), identity),
+                    "UPDATE work_items SET state=?,batch_id=?,message=?,updated_at=?,handle_count=? WHERE id=?",
+                    (
+                        desired,
+                        batch_id,
+                        error,
+                        _now(),
+                        handles,
+                        identity,
+                    ),
                 )
-                self._summary(items=int(error is None), errors=int(error is not None))
+                self._summary(
+                    items=int(error is None),
+                    errors=int(error is not None),
+                    prepared_handles=handles,
+                )
 
     def publish_batch(self, batch_id, handle_count, *, error=None):
         with self.transaction():
@@ -403,7 +425,16 @@ class SQLiteCatalog(BaseCatalog):
                     "WHERE project=? AND batch_id=? AND state='mapped'",
                     (_now(), self.project, batch_id),
                 )
-                self._summary(handles=handle_count)
+                self._summary(
+                    handles=handle_count,
+                    last_publication=json.dumps(
+                        dict(
+                            batch_id=batch_id,
+                            published_at=_now(),
+                            handle_count=handle_count,
+                        )
+                    ),
+                )
 
     def retry_invalid(self, identities):
         with self.transaction():

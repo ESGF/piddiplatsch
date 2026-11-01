@@ -124,7 +124,7 @@ Move old application settings from Ansible YAML to `custom.toml`:
 | `piddi_max_errors` | `[plugins.<project>]` `max_errors`; set separately for each affected project. |
 | `piddi_output_dir` | `[consumer]` `output_dir`. |
 | `piddi_log_level`, `piddi_log_file` | `[logging]` `level`, `file`. |
-| `piddi_stats_enable_db` | `[stats]` `enable_db` for live status files. |
+| `piddi_stats_enable_db` | `[stats]` `enable_db` for live heartbeats and rate samples in `piddi.db`. |
 
 The playbook rejects these old YAML variables until they are moved.
 

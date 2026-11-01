@@ -5,6 +5,7 @@ from __future__ import annotations
 import datetime
 import json
 import sqlite3
+from contextlib import closing
 from itertools import pairwise
 from pathlib import Path
 
@@ -24,23 +25,46 @@ def read_status(
         raise FileNotFoundError(f"Monitoring database does not exist: {path}")
 
     now = datetime.datetime.now(datetime.UTC)
-    with sqlite3.connect(path.resolve().as_uri() + "?mode=ro", uri=True) as connection:
+    with closing(
+        sqlite3.connect(path.resolve().as_uri() + "?mode=ro", uri=True)
+    ) as connection:
+        connection.execute("BEGIN")
         connection.row_factory = sqlite3.Row
         try:
             handle_totals = connection.execute(
-                "SELECT project, SUM(items) AS mapped_items, SUM(handles) AS published, SUM(errors) AS errors FROM stats "
-                "WHERE (? IS NULL OR lower(project)=lower(?)) GROUP BY project ORDER BY project",
+                "SELECT project, SUM(items) AS mapped_items, SUM(handles) AS published, "
+                "SUM(prepared_handles) AS prepared, SUM(errors) AS errors FROM stats "
+                "WHERE (? IS NULL OR lower(project)=lower(?)) GROUP BY project "
+                "HAVING SUM(items)+SUM(handles)+SUM(errors)+SUM(prepared_handles)>0 ORDER BY project",
                 (project, project),
             ).fetchall()
         except sqlite3.Error as exc:
             raise ValueError(f"{path} is not a valid piddi database") from exc
-        # Prepared Handles remain in immutable batch files; stats intentionally
-        # counts mapped work entries and published Handles, not prepared Handles.
+        from piddiplatsch.monitoring.health import database_health
+
+        health = database_health(connection, project)
+        payloads = {}
+        latest = None
+        for row in connection.execute("SELECT runtime FROM stats"):
+            for identity, fragment in json.loads(row[0]).items():
+                if (
+                    latest is None
+                    or fragment["run"]["heartbeat_at"] > latest["run"]["heartbeat_at"]
+                ):
+                    latest = fragment
+                payload = payloads.setdefault(
+                    identity, dict(run=fragment["run"], projects=[], samples=[])
+                )
+                if fragment["run"]["heartbeat_at"] > payload["run"]["heartbeat_at"]:
+                    payload["run"] = fragment["run"]
+                payload["projects"].extend(fragment["projects"])
+                payload["samples"].extend(fragment["samples"])
+        if latest:
+            health["storage"] = latest.get("storage", [])
         result_runs = []
         cutoff = (now - datetime.timedelta(seconds=history_seconds)).isoformat()
-        for filename in (path.parent / "status").glob("*.json"):
+        for payload in payloads.values():
             try:
-                payload = json.loads(filename.read_text())
                 run = payload["run"]
                 selected = run.get("selected_projects", [])
                 rows = [
@@ -64,6 +88,7 @@ def read_status(
                         or row["project"].casefold() == project.casefold()
                     )
                 ]
+                samples.sort(key=lambda row: row["sampled_at"])
                 heartbeat = datetime.datetime.fromisoformat(run["heartbeat_at"])
                 age = max(0.0, (now - heartbeat).total_seconds())
                 state = run["status"]
@@ -89,6 +114,7 @@ def read_status(
         "stale_after_seconds": stale_after_seconds,
         "history_seconds": history_seconds,
         "runs": result_runs,
+        "health": health,
         "handle_totals": [dict(row) for row in handle_totals],
     }
 

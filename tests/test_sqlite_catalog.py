@@ -428,16 +428,19 @@ def test_work_snapshots_and_summary_acknowledgement_are_transactional(catalog):
         "original",
         "updated",
     ]
-    outcomes = [{"id": work[0].id, "error": None}]
+    outcomes = [{"id": work[0].id, "error": None, "handle_count": 2}]
     catalog.seal_batch("batch", outcomes)
     catalog.seal_batch("batch", outcomes)
     assert catalog.pending_work().count == 1
     catalog.publish_batch("batch", 2)
     catalog.publish_batch("batch", 2)
-    assert catalog._execute("SELECT items,handles,errors FROM stats").fetchone() == (
+    assert catalog._execute(
+        "SELECT items,handles,errors,prepared_handles FROM stats"
+    ).fetchone() == (
         1,
         2,
         0,
+        2,
     )
 
 

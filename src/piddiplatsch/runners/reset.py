@@ -55,7 +55,7 @@ def reset_processing(settings, project):
                         source.rename(archived)
                         moved.append((source, archived))
                 connection.execute(
-                    "UPDATE work_items SET state='pending',batch_id=NULL,message=NULL,updated_at=? WHERE project=?",
+                    "UPDATE work_items SET state='pending',batch_id=NULL,message=NULL,handle_count=0,updated_at=? WHERE project=?",
                     (datetime.now(UTC).isoformat(), project),
                 )
                 connection.execute("DELETE FROM stats WHERE project=?", (project,))

@@ -97,9 +97,9 @@ def test_cleanup_uses_published_timestamp_and_preserves_summaries(
     seed(tmp_path, testdata_path, projects=("cmip6",), count=4)
     path = tmp_path / "piddi.db"
     with SQLiteCatalog("cmip6", path) as writer:
-        writer.seal_batch("old", [{"id": 1, "error": None}])
+        writer.seal_batch("old", [{"id": 1, "error": None, "handle_count": 2}])
         writer.publish_batch("old", 2)
-        writer.seal_batch("recent", [{"id": 2, "error": None}])
+        writer.seal_batch("recent", [{"id": 2, "error": None, "handle_count": 2}])
         writer.publish_batch("recent", 2)
         writer.seal_batch("invalid", [{"id": 3, "error": "bad mapping"}])
         expired = (datetime.now(UTC) - timedelta(days=31)).isoformat()
@@ -173,7 +173,7 @@ def test_retry_preserves_snapshot_and_refuses_stale_publication(
             "SELECT state,stac_blob,batch_id FROM work_items WHERE id=1"
         ).fetchone() == ("pending", original, None)
         writer.seal_batch("invalid-again", [{"id": 1, "error": "software bug"}])
-        writer.seal_batch("newer", [{"id": 2, "error": None}])
+        writer.seal_batch("newer", [{"id": 2, "error": None, "handle_count": 2}])
         with pytest.raises(CatalogError, match="newer snapshot"):
             writer.retry_invalid([1])
         writer.publish_batch("newer", 2)
@@ -184,7 +184,7 @@ def test_retry_preserves_snapshot_and_refuses_stale_publication(
 def test_missing_saved_output_blocks_newer_mapping(tmp_path, testdata_path):
     seed(tmp_path, testdata_path, projects=("cmip6",), count=2)
     with SQLiteCatalog("cmip6", tmp_path / "piddi.db") as writer:
-        writer.seal_batch("missing", [{"id": 1, "error": None}])
+        writer.seal_batch("missing", [{"id": 1, "error": None, "handle_count": 2}])
     publisher = Publisher()
     worker = SyncWorker(publisher=publisher)
     assert worker.run(force_map=True) == []
