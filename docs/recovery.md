@@ -96,3 +96,37 @@ explicitly archive the old ready queue first.
 
 Back up catalogs, `.harvest-state.json`, and the batch directory together.
 Catalog progress can refer to saved batches that have not yet been published.
+
+## Reset processing from the current catalog
+
+To map one project's existing STAC records again, use `reset`. This does not
+replay Kafka or dumps, and it preserves the project's STAC records and Kafka
+checkpoints. Other projects are not reset.
+
+Stop harvest and sync first, including the sync timer. Preview the configured
+paths, then apply the reset:
+
+```bash
+piddi reset --project cmip6plus
+piddi reset --project cmip6plus --apply
+piddi sync --project cmip6plus --force-map
+```
+
+Use the same configuration and working directory as the service; pass
+`--config /etc/piddi/piddi.toml` before the command when needed. Run the commands
+as the service user so new files have the correct ownership.
+
+The reset backs up the catalog and monitoring databases using SQLite's backup
+API, archives project batches and project output, clears the project's
+monitoring counters, and marks all its catalog items pending with a fresh mapping
+generation. Backups are under
+`<output_dir>/reset-backups/<timestamp>-<project>-<id>/`. Archiving moves files;
+it does not reclaim their disk space. Shared monitoring run history and shared
+publication receipt files remain available. The reset itself does not publish
+or delete Handles on the server. The subsequent sync intentionally republishes
+the selected project's current Handles.
+
+Resume harvest and the sync timer after checking the result. If reset fails,
+leave services stopped and inspect the printed backup directory. Catalog and
+monitoring changes use separate SQLite transactions; the saved databases are
+recovery copies if the host stops during reset.

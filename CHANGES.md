@@ -4,6 +4,9 @@
 
 ### Added
 
+- `piddi reset --project NAME` previews a processing reset; `--apply` backs up
+  project output, clears its monitoring counters, and requeues its existing
+  catalog items while preserving STAC records and Kafka checkpoints.
 - Publication batch ETA and approximate known-backlog completion estimates in
   `piddi top`, based on recent Handle throughput and observed mapping ratios.
 - Configurable disk-space warning/stop guards, daily maintenance for closed raw
