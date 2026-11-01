@@ -413,6 +413,7 @@ def test_compact_overview_keeps_eta_and_actionable_warnings():
     assert "Rate windows" not in rendered
     assert "(5m avg)" in rendered
     assert "Harvest: running · 123.4 events/s" in rendered
+    assert "0 events since 2026-10-30 20:00 UTC" in rendered
     assert "Harvest/s" in rendered
     assert "Harvest trend" in rendered
     assert "▁▅█" in rendered

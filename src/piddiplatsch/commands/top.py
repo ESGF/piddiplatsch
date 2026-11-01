@@ -92,9 +92,19 @@ class TopCommand(Command):
             total = sum(
                 row.get("consumed", 0) for run in harvest for row in run["projects"]
             )
+            harvest_starts = [
+                datetime.fromisoformat(run["started_at"]).astimezone(UTC)
+                for run in harvest
+                if run.get("started_at")
+            ]
+            since = (
+                f"since {min(harvest_starts):%Y-%m-%d %H:%M} UTC"
+                if harvest_starts
+                else "since run start"
+            )
             lines.append(
                 Text(
-                    f"Harvest: {state} · {rate} events/s (5m avg) · {total:,} events since run start"
+                    f"Harvest: {state} · {rate} events/s (5m avg) · {total:,} events {since}"
                 )
             )
         else:
