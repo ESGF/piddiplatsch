@@ -90,10 +90,6 @@
           owner: "{{ piddi_user }}"
           group: "{{ piddi_group }}"
           mode: "0750"
-        - path: /var/lib/piddi/catalog
-          owner: "{{ piddi_user }}"
-          group: "{{ piddi_group }}"
-          mode: "0750"
         - path: /var/lib/piddi/batches
           owner: "{{ piddi_user }}"
           group: "{{ piddi_group }}"

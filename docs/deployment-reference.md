@@ -29,7 +29,6 @@ pending catalog items into separate batches and publishes them.
 | `/opt/piddiplatsch/.conda` | Application environment. |
 | `/etc/piddi/piddi.toml` | Installed configuration. |
 | `/var/lib/piddi/.harvest-state.json` | Harvest replay generation and clean progress. |
-| `/var/lib/piddi/status` | Atomic live heartbeats and recent rate samples. |
 | `/var/lib/piddi/batches` | Ready and published sync batches. |
 | `/var/lib/piddi/piddi.db` | Catalog, work stream, shared checkpoints, retained batch summaries. |
 | `/var/lib/piddi/published` | Publication receipts. |

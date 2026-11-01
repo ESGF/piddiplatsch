@@ -37,6 +37,13 @@ class JsonlHandleBackend(HandleBackend):
         if project:
             dump_dir /= project
         dump_dir /= "handles"
+        if output_filename:
+            output_path = Path(output_filename)
+            if output_path.is_absolute() or output_path.parent != Path():
+                # Explicit batch paths own their output directory. Do not create
+                # an unused project/handles directory beside the batch spool.
+                dump_dir = output_path.parent
+                self.output_filename = output_path.name
         # Use shared JSONL writer for daily rotation and append semantics
         self.writer = DailyJsonlWriter(Path(dump_dir))
 

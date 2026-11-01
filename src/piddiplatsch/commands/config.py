@@ -102,7 +102,7 @@ class ConfigExplainCommand(Command):
             "catalog.directory" if catalog_directory else "consumer.output_dir"
         )
         catalog_directory = catalog_directory or str(
-            Path(config.get("consumer", "output_dir", "outputs")) / "catalog"
+            Path(config.get("consumer", "output_dir", "outputs"))
         )
         show("Catalog directory", catalog_directory, directory_source)
         click.echo(

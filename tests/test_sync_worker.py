@@ -98,7 +98,7 @@ def test_count_trigger_seals_and_publishes_then_empty_tick_does_nothing(setup):
     assert manifest["item_count"] == 2
     assert manifest["sha256"]
     assert pending(directory).count == 0
-    assert not list(root.glob("cmip7/handles/handles_*.jsonl"))
+    assert not (root / "cmip7" / "handles").exists()
     original = (batch / "handles.jsonl").read_bytes()
     assert SyncWorker(publisher=publisher).run() == []
     assert len(publisher.calls) == 1
