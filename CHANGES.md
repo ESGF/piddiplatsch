@@ -31,6 +31,8 @@
 
 ### Fixed
 
+- `piddi top` retains errors from the latest finished mapping run after switching
+  to publication, including batches with rejected items and zero Handles.
 - Sync batches retain valid Handles and quarantine rejected items in a durable
   `failures.jsonl`, advancing past both instead of repeatedly generating partial
   batches. Reaching `max_errors` seals processed work before stopping the pass;

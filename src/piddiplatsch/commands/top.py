@@ -163,11 +163,15 @@ class TopCommand(Command):
                 activity = "mapping"
             if publishers:
                 activity = "publishing"
-            if row.get("failed_batches") or any(
-                p.get("failed", 0)
-                for run in runs
-                for p in run["projects"]
-                if p["project"] == name
+            if (
+                row.get("failed_batches")
+                or _latest_mapping_has_errors(name, status["runs"])
+                or any(
+                    p.get("failed", 0)
+                    for run in runs
+                    for p in run["projects"]
+                    if p["project"] == name
+                )
             ):
                 activity += " · errors"
                 alerts.append(
@@ -293,6 +297,24 @@ def _run_projects(run: dict) -> set[str]:
     return {row["project"] for row in run.get("projects", [])} or set(
         run.get("selected_projects", [])
     )
+
+
+def _latest_mapping_has_errors(project: str, runs: list[dict]) -> bool:
+    # read_status returns newest heartbeats first. Publication starts a separate
+    # run, including for zero Handles; it must not hide the preceding map errors.
+    for run in runs:
+        if (
+            run["command"] not in {"sync", "map"}
+            or run.get("status") == "running"
+            or project not in _run_projects(run)
+        ):
+            continue
+        return run.get("state") == "failed" or any(
+            row.get("failed", 0)
+            for row in run.get("projects", [])
+            if row["project"] == project
+        )
+    return False
 
 
 def _active_runs(status: dict) -> list[dict]:
