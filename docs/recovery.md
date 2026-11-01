@@ -55,8 +55,9 @@ Finish its original saved batch first. Otherwise harvest a correction as a new
 event or explicitly reset the whole project's retained processing history.
 
 `reset --project NAME` previews an ordered project replay. With `--apply`, after
-harvest and all batch commands are stopped, it backs up the shared database,
-archives project output, clears project summaries, and requeues retained work.
+harvest and all batch commands are stopped, it updates work in place without
+copying the database, archives project output under `reset-archives/`, clears
+project summaries, and requeues retained work.
 Catalog records and shared checkpoints remain intact. Retention-deleted work
 requires original archive replay into a fresh database.
 

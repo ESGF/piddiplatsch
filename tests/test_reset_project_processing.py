@@ -1,4 +1,4 @@
-"""Explicit ordered replay preserves source data and backs up the shared database."""
+"""Project replay updates work in place without copying the shared database."""
 
 import json
 from contextlib import closing
@@ -37,12 +37,15 @@ def test_reset_requeues_retained_snapshots_without_touching_shared_checkpoints(
     tmp_path, testdata_path
 ):
     seed(tmp_path, testdata_path)
-    count, backup = reset_processing(config, "cmip6plus")
+    count, archive = reset_processing(config, "cmip6plus")
     assert count == 1
     with SQLiteCatalog("cmip6plus", tmp_path / "piddi.db", read_only=True) as reader:
         assert reader.get_checkpoint("topic", 0).next_offset == 2
         assert len(list(reader.iter_items())) == 1
         assert reader.pending_work().count == 1
+        assert reader._execute(
+            "SELECT batch_id,message FROM work_items WHERE project='cmip6plus'"
+        ).fetchone() == (None, None)
         assert reader._execute(
             "SELECT state FROM work_items WHERE project='cmip7'"
         ).fetchone() == ("pending",)
@@ -52,12 +55,10 @@ def test_reset_requeues_retained_snapshots_without_touching_shared_checkpoints(
             ).fetchone()[0]
             == 0
         )
-    with SQLiteCatalog("cmip6plus", backup / "piddi.db", read_only=True) as reader:
-        assert reader._execute(
-            "SELECT state FROM work_items WHERE id=1"
-        ).fetchone() == ("published",)
+    assert archive.parent == tmp_path / "reset-archives"
+    assert not list(archive.rglob("*.db"))
     assert (
-        backup / "output-0/published/saved/handles.jsonl"
+        archive / "output-0/published/saved/handles.jsonl"
     ).read_text() == "saved output\n"
     assert not (tmp_path / "batches/cmip6plus").exists()
 

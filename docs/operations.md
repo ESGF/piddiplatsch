@@ -96,9 +96,10 @@ piddi reset --project cmip6
 piddi reset --project cmip6 --apply
 ```
 
-Reset backs up the shared database and archives that project's old output. It
-preserves catalog records and Kafka checkpoints, clears that project's daily
-summaries, and requeues all retained event snapshots. Work already removed by
+Reset updates work rows in place without copying the shared database. It moves
+that project's old output into `reset-archives/<timestamp-id>/`, clears that
+project's daily summaries, and requeues all retained event snapshots. Catalog
+records and Kafka checkpoints stay unchanged. Work already removed by
 retention cannot be recovered by this reset.
 
 Original archives are an alternative harvest input:

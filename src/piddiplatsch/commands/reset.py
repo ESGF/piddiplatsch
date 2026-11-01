@@ -31,9 +31,9 @@ class ResetCommand(Command):
                     "Preview only. Stop harvest and sync, then add --apply to perform the reset."
                 )
                 return
-            count, backup = reset_processing(config, project)
+            count, archive = reset_processing(config, project)
         except (CatalogError, ValueError, OSError, RuntimeError, sqlite3.Error) as exc:
             raise click.ClickException(str(exc)) from exc
         click.echo(
-            f"Queued {count:,} retained {project} work entries. Backups: {backup}"
+            f"Queued {count:,} retained {project} work entries. Output archive: {archive}"
         )

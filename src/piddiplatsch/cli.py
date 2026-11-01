@@ -161,7 +161,7 @@ def sync(
 @click.option(
     "--apply",
     is_flag=True,
-    help="Back up output, clear project summaries, and requeue retained work; default is a preview.",
+    help="Archive project output, clear project summaries, and requeue retained work; default is a preview.",
 )
 def reset(project: str, apply: bool) -> None:
     """Reset project processing, preserving STAC records and Kafka checkpoints.
