@@ -136,8 +136,10 @@ Top reads the shared database and live status files beside it. Daily mapped-work
 published-Handle, and error totals are independent of retained work. Live heartbeat
 and rate samples are expendable monitoring data.
 
-Maintain compresses closed dump files and removes only expired published work,
-using the time it entered published state (`updated_at`). The default retention
-is 30 days. It keeps pending, mapped, invalid, catalog, summary, and output data.
+Maintain compresses closed dump files. Database work cleanup is prepared but
+disabled by default (`batch.retention_days = 0`), so all work rows remain.
+To enable it later, set a positive period, such as 30 days. Cleanup then removes
+only expired published work, using the time it entered published state
+(`updated_at`). It keeps pending, mapped, invalid, catalog, summary, and output data.
 It never runs `VACUUM`. Physical shrinking requires a separate supervised offline
 operation with a database backup and sufficient free disk space.

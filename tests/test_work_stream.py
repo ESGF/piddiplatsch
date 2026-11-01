@@ -109,6 +109,12 @@ def test_cleanup_uses_published_timestamp_and_preserves_summaries(
                 "UPDATE work_items SET updated_at=? WHERE id IN (1,3,4)", (expired,)
             )
         before = writer._execute("SELECT * FROM stats").fetchall()
+    # Retain even expired published work until cleanup is explicitly enabled.
+    assert clean_published_work(dry_run=True) == 0
+    assert clean_published_work() == 0
+    with SQLiteCatalog("cmip6", path, read_only=True) as reader:
+        assert reader._execute("SELECT COUNT(*) FROM work_items").fetchone()[0] == 4
+    config._set("batch", "retention_days", 30)
     assert clean_published_work(dry_run=True) == 1
     assert clean_published_work() == 1
     assert clean_published_work() == 0

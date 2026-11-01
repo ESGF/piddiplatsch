@@ -189,8 +189,10 @@ Event-count rotation is implemented through `consumer.dump_max_events` (default
 
 ## Retention and compaction
 
-Allow manual or scheduled maintenance to delete completed `published` work older
-than a configurable retention period, initially discussed as 30 days. Use the
+Keep work cleanup implemented but disabled by default (`batch.retention_days = 0`).
+All work remains until a positive retention period is explicitly configured.
+Manual or scheduled maintenance can then delete completed `published` work older
+than that period, for example 30 days. Use the
 time the entry entered `published` (`updated_at`), not its original creation
 time. Retain pending, mapped-but-unpublished, and invalid work. Summaries must
 already account for results before their work entries are deleted.

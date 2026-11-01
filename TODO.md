@@ -16,7 +16,8 @@ archive replay requirements, and retention decisions. This format requires a fre
   to allow a bounded project-worker pool later; defer parallel execution and
   worker claims until durable recovery and ordering are established.
 - [x] Add daily summaries and configurable cleanup of old published work without
-  double counting results. Keep invalid work available for explicit retry.
+  double counting results. Cleanup stays disabled by default; keep all work for
+  now and invalid work available for explicit retry.
 - [x] Keep `VACUUM` an explicit supervised operation with Piddi stopped; scheduled
   maintenance only deletes expired work.
 

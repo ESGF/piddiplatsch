@@ -3,6 +3,7 @@ from dataclasses import dataclass
 import click
 
 from piddiplatsch.commands.base import Command
+from piddiplatsch.config import config
 from piddiplatsch.maintenance import (
     clean_published_work,
     clean_status_files,
@@ -26,5 +27,8 @@ class MaintainCommand(Command):
                 click.echo(str(path))
         action = "Would compress" if self.dry_run else "Compressed"
         click.echo(f"{action} {len(paths)} closed dump file(s).")
-        action = "Would delete" if self.dry_run else "Deleted"
-        click.echo(f"{action} {removed} expired published work entries.")
+        if config.get("batch", "retention_days", 0) == 0:
+            click.echo("Database work cleanup disabled (batch.retention_days = 0).")
+        else:
+            action = "Would delete" if self.dry_run else "Deleted"
+            click.echo(f"{action} {removed} expired published work entries.")

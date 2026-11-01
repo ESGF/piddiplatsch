@@ -61,8 +61,9 @@ max_items = 2000
 # Ready batches publish immediately during the sync tick, in project order.
 publish_workers = 4
 publish_retries = 3
-# Delete only published work after this many days; retain catalog and summaries.
-retention_days = 30
+# Database cleanup is disabled by default. Set a positive number of days to
+# expire published work; retain catalog records and summaries.
+retention_days = 0
 # Default: <consumer.output_dir>/batches. Must be shared by all worker invocations.
 # directory = "/var/lib/piddi/batches"
 

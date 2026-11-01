@@ -245,7 +245,7 @@ class BatchConfig(BaseModel):
     max_items: int = Field(default=2000, ge=1, strict=True)
     publish_workers: int = Field(default=4, ge=1, strict=True)
     publish_retries: int = Field(default=3, ge=0, strict=True)
-    retention_days: int = Field(default=30, ge=1, strict=True)
+    retention_days: int = Field(default=0, ge=0, strict=True)
 
 
 class DiskConfig(BaseModel):

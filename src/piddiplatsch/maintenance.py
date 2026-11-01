@@ -120,6 +120,8 @@ def clean_published_work(*, dry_run=False):
     if not path.is_file():
         return 0
     settings = BatchConfig.model_validate(config.get("batch", {}))
+    if settings.retention_days == 0:
+        return 0
     cutoff = (datetime.now(UTC) - timedelta(days=settings.retention_days)).isoformat()
     with _worker_lock(directory) as acquired:
         if not acquired:

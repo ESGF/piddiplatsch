@@ -187,7 +187,7 @@ max_wait_seconds = 3600
 max_items = 2000
 publish_workers = 4
 publish_retries = 3
-retention_days = 30
+retention_days = 0 # Disabled; set e.g. 30 to enable published-work cleanup.
 # directory = "/var/lib/piddi/batches"
 ```
 
@@ -214,9 +214,11 @@ work and failed older publication prevent newer output from overtaking it within
 the same project. Other projects continue. Database acknowledgements and daily
 summaries commit together, so recovery cannot double count them.
 
-`retention_days` defaults to 30. `piddi maintain` removes only work that entered
-published state before that cutoff. Pending, mapped, invalid, catalog, and summary
-rows remain. Maintenance never runs `VACUUM` or deletes JSONL output.
+`retention_days` defaults to 0, disabling database work cleanup. All work rows
+remain until you explicitly set a positive period, such as 30 days. Once enabled,
+`piddi maintain` removes only work that entered published state before that
+cutoff. Pending, mapped, invalid, catalog, and summary rows remain. Maintenance
+never runs `VACUUM` or deletes JSONL output.
 
 The batch directory defaults to `<consumer.output_dir>/batches`. Keep it paired
 with its database. All batch commands use a shared lock beside `piddi.db`, even
