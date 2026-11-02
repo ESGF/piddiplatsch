@@ -49,6 +49,8 @@
 
 ### Fixed
 
+- Sync's mapped-batch validation uses the project/state index, avoiding a scan
+  of pending and completed work before preparing each new batch.
 - `piddi top` retains a batch activity heartbeat through preparation, mapping,
   sealing, verification, publication, and finalization, displaying each phase
   instead of appearing pending between mapping and publishing.

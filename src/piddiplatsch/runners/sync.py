@@ -469,7 +469,10 @@ class SyncWorker:
             batch_ids = [
                 row[0]
                 for row in reader._execute(
-                    "SELECT DISTINCT batch_id FROM work_items WHERE project=? AND state='mapped'",
+                    # DISTINCT otherwise favors work_batches to avoid sorting,
+                    # reading the whole project history just to filter its state.
+                    "SELECT DISTINCT batch_id FROM work_items INDEXED BY work_selection "
+                    "WHERE project=? AND state='mapped'",
                     (project,),
                 )
             ]

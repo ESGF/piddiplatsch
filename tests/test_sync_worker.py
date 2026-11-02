@@ -164,6 +164,59 @@ def test_batch_scheduling_cost_is_bounded_by_threshold(setup, monkeypatch, force
     assert repeated <= small + 100
 
 
+@pytest.mark.parametrize("mapped", [False, True])
+@pytest.mark.parametrize("unrelated_state", ["pending", "published", "invalid"])
+def test_mapped_batch_validation_ignores_unrelated_backlog(
+    setup, monkeypatch, mapped, unrelated_state
+):
+    """Validation cost must depend on mapped work, not the whole project history."""
+    from piddiplatsch.runners import sync
+
+    put, directory, root = setup
+    put(1)
+    project_root = root / "batches/cmip7"
+    if mapped:
+        with SQLiteCatalog("cmip7", directory / "piddi.db") as catalog:
+            catalog.seal_batch("existing", [{"id": 1, "handle_count": 2}])
+        ready = project_root / "ready/existing"
+        ready.mkdir(parents=True)
+        (ready / "manifest.json").write_text("{}")
+    instructions = 0
+    original_open = sync.open_catalog
+
+    def count_instructions():
+        nonlocal instructions
+        instructions += 1
+        return 0
+
+    def instrumented_open(*args, **kwargs):
+        reader = original_open(*args, **kwargs)
+        reader._require_connection().set_progress_handler(count_instructions, 1)
+        return reader
+
+    monkeypatch.setattr(sync, "open_catalog", instrumented_open)
+    worker = SyncWorker(publisher=Publisher())
+    worker._check_mapped_batches("cmip7", project_root)
+    small = instructions
+    with closing(sqlite3.connect(directory / "piddi.db")) as connection:
+        connection.execute(
+            "WITH RECURSIVE extra(n) AS (SELECT 1 UNION ALL SELECT n+1 FROM extra WHERE n<10000) "
+            "INSERT INTO work_items(project,topic,partition,offset,stac_blob,event_type,state,created_at,updated_at) "
+            "SELECT project,topic,partition,n,stac_blob,event_type,?,created_at,updated_at "
+            "FROM work_items CROSS JOIN extra WHERE id=1",
+            (unrelated_state,),
+        )
+        connection.commit()
+    instructions = 0
+    worker._check_mapped_batches("cmip7", project_root)
+    assert instructions <= small + 100
+    if mapped:
+        # Indexed validation must still detect missing output for actual mapped work.
+        (project_root / "ready/existing/manifest.json").unlink()
+        with pytest.raises(sync.BatchError, match="Mapped batch output is missing"):
+            worker._check_mapped_batches("cmip7", project_root)
+
+
 @pytest.fixture
 def priority_scheduler(setup, monkeypatch):
     """Keep real scheduling, replacing batch publication with finite queues."""
