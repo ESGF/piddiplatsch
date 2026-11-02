@@ -25,6 +25,11 @@ temporary JSONL spools support mapping; the resulting files remain audit exports
 It stays offline and validates the fields and Handle records it needs rather
 than the entire STAC schema. Publication retries use immutable database payloads
 and committed per-Handle progress. No database transaction spans an HTTP request.
+Acknowledgements queued during a commit share the next transaction without an
+added batching delay. SQLite retains `synchronous=FULL`; every worker waits for
+its acknowledgement to commit before publishing a newer update to that Handle.
+If a grouped transaction fails, all of its acknowledgements roll back and their
+workers fail rather than advancing to newer updates.
 Sync runs
 one project batch at a time, selected by eligible projects' priority weights and
 capped at 2,000 work entries by default. Weights default to 100; zero disables sync.

@@ -4,6 +4,10 @@
 
 ### Added
 
+- `top` shows combined harvest/mapping (events/s) and publication (Handles/s)
+  averages over 10 minutes, 30 minutes, and one hour, using existing samples
+  weighted by active processing time across batches/projects without extra DB
+  writes, displayed together on one compact line.
 - `top` displays the configured batch event trigger, maximum wait, and batch size.
 - `piddi admin clean` removes completed outbox records without rebuilding work
   history; `--apply` performs cleanup and optional `--vacuum` reclaims file space.
@@ -40,6 +44,10 @@
 
 ### Changed
 
+- Publication acknowledgements waiting behind a SQLite commit share the next
+  transaction, reducing disk syncs under contention. Workers still wait for
+  their own durable acknowledgement before the next update to the same Handle;
+  `synchronous=FULL` and crash-recovery ordering are unchanged.
 - `top` distinguishes `waiting` (below both batch triggers), `ready` (eligible
   for mapping), and `queued` (mapped and awaiting publication), using configured
   thresholds. Priority-zero projects with work show `disabled`.

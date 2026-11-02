@@ -4,9 +4,12 @@ import hashlib
 import json
 import shutil
 import sqlite3
+import threading
+from concurrent.futures import ThreadPoolExecutor
 from contextlib import closing
 from copy import deepcopy
 from datetime import UTC, datetime
+from types import SimpleNamespace
 
 import pytest
 
@@ -305,3 +308,113 @@ def test_publication_rejects_conflicting_file_selectors_for_database_queue(queue
             HandlePublisher(Backend()).run(
                 [], limit=1, record_source=journal.records(), journal=journal
             )
+
+
+@pytest.mark.parametrize("failure", [None, "invalid", "commit"])
+def test_waiting_acknowledgements_share_a_durable_atomic_commit(
+    queue, monkeypatch, failure
+):
+    records = [dict(payloads()[0], handle=f"21.TEST/{index}") for index in range(4)]
+    manifest = enqueue(queue, records)
+    first_started = threading.Event()
+    release_first = threading.Event()
+    group_started = threading.Event()
+    release_group = threading.Event()
+    groups = []
+    statements = []
+    with closing(OutboxJournal(queue, "cmip7", manifest["batch_id"])) as journal:
+        assert journal.connection.execute("PRAGMA synchronous").fetchone() == (2,)
+        journal.connection.set_trace_callback(statements.append)
+        original = journal._record_group
+
+        def pause_commit(pending):
+            groups.append(len(pending))
+            started, release = (
+                (first_started, release_first)
+                if len(groups) == 1
+                else (group_started, release_group)
+            )
+            started.set()
+            assert release.wait(5), "test did not release acknowledgement group"
+            return original(pending)
+
+        monkeypatch.setattr(journal, "_record_group", pause_commit)
+        outcomes = [
+            SimpleNamespace(handle=row["handle"], line_number=index, error=None)
+            for index, row in enumerate(records, start=1)
+        ]
+        if failure == "invalid":
+            outcomes[-1].handle = "21.TEST/mismatched"
+        with ThreadPoolExecutor(max_workers=4) as executor:
+            try:
+                first = executor.submit(journal.record, outcomes[0])
+                assert first_started.wait(5)
+                waiting = [
+                    executor.submit(journal.record, outcome) for outcome in outcomes[1:]
+                ]
+                with journal._acknowledgements:
+                    assert journal._acknowledgements.wait_for(
+                        lambda: len(journal._pending) == 3, timeout=5
+                    )
+                assert not first.done()
+                assert not any(future.done() for future in waiting)
+                release_first.set()
+                first.result(timeout=5)
+                assert group_started.wait(5)
+                assert not any(future.done() for future in waiting)
+                with closing(sqlite3.connect(queue)) as reader:
+                    assert reader.execute(
+                        "SELECT published FROM handle_outbox ORDER BY position"
+                    ).fetchall() == [(1,), (0,), (0,), (0,)]
+                if failure == "commit":
+
+                    def deny_commit(action, operation, *args):
+                        if (
+                            action == sqlite3.SQLITE_TRANSACTION
+                            and operation == "COMMIT"
+                        ):
+                            return sqlite3.SQLITE_DENY
+                        return sqlite3.SQLITE_OK
+
+                    journal.connection.set_authorizer(deny_commit)
+                release_group.set()
+                for future in waiting:
+                    if failure:
+                        exception = (
+                            ValueError
+                            if failure == "invalid"
+                            else sqlite3.DatabaseError
+                        )
+                        with pytest.raises(exception):
+                            future.result(timeout=5)
+                    else:
+                        future.result(timeout=5)
+            finally:
+                release_first.set()
+                release_group.set()
+        assert groups == [1, 3]
+        assert sum(sql.startswith("BEGIN") for sql in statements) == 2
+        assert not journal.connection.in_transaction
+        assert journal.successes == {
+            row["handle"]: index
+            for index, row in enumerate(records, start=1)
+            if index == 1 or failure is None
+        }
+    # A new process sees exactly the acknowledged prefix after success/failure.
+    with closing(OutboxJournal(queue, "cmip7", manifest["batch_id"])) as resumed:
+        assert resumed.connection.execute(
+            "SELECT published FROM handle_outbox ORDER BY position"
+        ).fetchall() == [(1,), *((0,) if failure else (1,) for _ in range(3))]
+        assert resumed.status(records[0]["handle"], 1) == "done"
+        for index, row in enumerate(records[1:], start=2):
+            assert resumed.status(row["handle"], index) == (
+                "pending" if failure else "done"
+            )
+        # A failed group can be retried without losing or skipping any records.
+        for index, row in enumerate(records, start=1):
+            resumed.record(
+                SimpleNamespace(handle=row["handle"], line_number=index, error=None)
+            )
+        assert resumed.connection.execute(
+            "SELECT COUNT(*) FROM handle_outbox WHERE published=1"
+        ).fetchone() == (4,)
