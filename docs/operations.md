@@ -141,6 +141,9 @@ batch commands, preview and then apply:
 ```bash
 piddi admin reset --project cmip6
 piddi admin reset --project cmip6 --apply
+# Or reset only a recent suffix (last seven UTC calendar days, including today):
+piddi admin reset --project cmip6 --from today-6
+piddi admin reset --project cmip6 --from today-6 --apply
 ```
 
 Reset updates work rows in place without copying the shared database. It moves
@@ -148,6 +151,19 @@ that project's old output into `reset-archives/<timestamp-id>/`, clears that
 project's batch summaries, and requeues all retained event snapshots. Catalog
 records and Kafka checkpoints stay unchanged. Work already removed by
 retention cannot be recovered by this reset.
+
+`--from YYYY-MM-DD` (also `today`, `yesterday`, `today-N`) selects the UTC day of
+local work creation, inclusively, and all later work IDs. It uses `created_at`,
+so publication, retries and their `updated_at` timestamps do not change selection.
+There is no end date: replay always continues through the retained suffix.
+The start expands to include whole affected batches; preview shows the effective
+timestamp, first work ID and count. Earlier completed work, batches and batch
+summaries remain unchanged. Run summaries overlapping the effective boundary are
+cleared as a whole because their counters cannot be split reliably. Shared receipt
+logs are copied to the reset archive and kept for unaffected batches/projects.
+If no rows match, apply does nothing. If part of an affected batch was removed
+by retention, dated reset refuses: restore missing history from dump backups
+before using that selection. Omitting `--from` retains the full reset behavior.
 
 Manual state-rewriting jobs are grouped under `piddi admin`:
 

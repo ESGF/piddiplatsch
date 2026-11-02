@@ -1,7 +1,7 @@
 """Complete Click interface for piddiplatsch."""
 
 import warnings
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
 
 import click
@@ -32,6 +32,18 @@ def _parse_range_date(
     if isinstance(selected, str):
         raise click.BadParameter(f"{selected} cannot be used as a range boundary")
     return selected
+
+
+def _parse_reset_from(_ctx, _param, value):
+    if value is None:
+        return None
+    try:
+        selected = parse_date_selector(value, today=datetime.now(UTC).date())
+        if isinstance(selected, str):
+            raise ValueError("--from requires a creation day, not 'all' or 'last'")
+        return selected
+    except ValueError as exc:
+        raise click.BadParameter(str(exc)) from exc
 
 
 @click.group(context_settings=CONTEXT_SETTINGS)
@@ -164,16 +176,22 @@ def sync(
     "--project", required=True, help="Project whose processing should be reset."
 )
 @click.option(
+    "--from",
+    "from_date",
+    callback=_parse_reset_from,
+    help="Reset from this UTC work creation day onward (YYYY-MM-DD, today, yesterday, today-N); expands to complete batches.",
+)
+@click.option(
     "--apply",
     is_flag=True,
-    help="Archive project output, clear project summaries, and requeue retained work; default is a preview.",
+    help="Archive affected output, clear affected summaries, and requeue selected work; default is a preview.",
 )
-def reset(project: str, apply: bool) -> None:
+def reset(project: str, apply: bool, from_date: datetime | None) -> None:
     """Reset project processing, preserving STAC records and Kafka checkpoints.
 
     Stop harvest and sync before using --apply. This command does not publish.
     """
-    commands.ResetCommand(project=project, apply=apply).execute()
+    commands.ResetCommand(project=project, apply=apply, from_date=from_date).execute()
 
 
 @admin.command("rebuild")

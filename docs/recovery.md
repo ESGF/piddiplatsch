@@ -137,6 +137,16 @@ project summaries, and requeues retained work.
 Catalog records and shared checkpoints remain intact. Retention-deleted work
 requires original archive replay into a fresh database.
 
+Add `--from YYYY-MM-DD` to reset a recent suffix instead of all retained work.
+For the last seven UTC calendar days including today, use `--from today-6`.
+Selection uses `work_items.created_at`, includes that day, and continues through
+all later work IDs. Complete batches are preserved: a batch crossing the cutoff
+expands the start, which the preview reports. Earlier work, output and batch
+summaries remain; overlapping run summaries are retired whole. A shared receipt
+is copied rather than removed from unaffected batches/projects. A dated reset
+requires every source row of each affected batch to be retained; recover missing
+history from original dumps into a fresh database if retention removed any.
+
 ## Storage
 
 ### Manual work-history rebuild
