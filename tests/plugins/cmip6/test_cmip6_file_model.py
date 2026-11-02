@@ -34,8 +34,12 @@ def test_file_model_checksum_validation():
 
 
 def test_file_model_url_serialization():
-    file_model = CMIP6FileModel(**VALID_FILE_DATA)
-    data = file_model.model_dump()  # triggers field_serializers
-    assert isinstance(data["DOWNLOAD_URL"], str)
-    for url in data["REPLICA_DOWNLOAD_URLS"]:
-        assert isinstance(url, str)
+    replicas = [
+        "https://replica1.example.com/data.nc",
+        "https://replica2.example.com/data.nc",
+    ]
+    file_model = CMIP6FileModel(**VALID_FILE_DATA, REPLICA_DOWNLOAD_URLS=replicas)
+    data = file_model.model_dump()
+    assert data["URL"] == VALID_FILE_DATA["URL"]
+    assert data["DOWNLOAD_URL"] == VALID_FILE_DATA["DOWNLOAD_URL"]
+    assert data["REPLICA_DOWNLOAD_URLS"] == replicas
