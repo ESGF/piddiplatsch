@@ -4,6 +4,9 @@
 
 ### Added
 
+- `piddi admin clean` removes completed outbox records without rebuilding work
+  history; `--apply` performs cleanup and optional `--vacuum` reclaims file space.
+  Unfinished batches and completion markers needed for ready exports are retained.
 - Transactional SQLite Handle outbox: mapping commits payloads, work states, and
   statistics together; publication progress survives missing batch files and
   resumes ordered Handle updates. Schema 4 upgrades additively to 5, importing

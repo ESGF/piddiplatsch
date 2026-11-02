@@ -18,6 +18,7 @@ from piddiplatsch.core.messages import KafkaSource
 from piddiplatsch.exceptions import CatalogError
 from piddiplatsch.monitoring.status import read_status
 from piddiplatsch.runners import rebuild
+from piddiplatsch.runners.clean import clean_outbox
 from piddiplatsch.runners.sync import SyncWorker, _worker_lock
 
 
@@ -116,6 +117,90 @@ def finished_outbox(seeded):
             (zlib.compress(b'{"handle":"21.TEST/done"}'),),
         )
     return root, database
+
+
+@pytest.mark.parametrize("vacuum", [False, True])
+def test_clean_only_removes_completed_outbox(finished_outbox, vacuum):
+    root, database = finished_outbox
+    tables = ("work_items", "catalog_items", "kafka_checkpoints", "stats")
+    before = {table: rows(database, table) for table in tables}
+    files = {path: path.read_bytes() for path in root.rglob("*.json*")}
+    result = CliRunner().invoke(
+        cli, ["admin", "clean", "--apply"] + (["--vacuum"] if vacuum else [])
+    )
+    assert result.exit_code == 0, result.output
+    assert "Cleared outbox: 2 batch records, 1 Handle rows." in result.output
+    assert {table: rows(database, table) for table in tables} == before
+    assert rows(database, "outbox_batches") == rows(database, "handle_outbox") == []
+    assert {path: path.read_bytes() for path in files} == files
+    assert not (root / "work-rebuild-archives").exists()
+    assert clean_outbox(config) == dict(outbox_batches=0, handle_outbox=0)
+
+
+@pytest.mark.parametrize("reason", ["ready", "unacknowledged", "export"])
+def test_clean_preserves_records_needed_for_recovery(finished_outbox, reason):
+    root, database = finished_outbox
+    with closing(sqlite3.connect(database)) as connection, connection:
+        if reason == "ready":
+            connection.execute(
+                "UPDATE outbox_batches SET status='ready' WHERE project='cmip6'"
+            )
+        elif reason == "unacknowledged":
+            connection.execute("UPDATE handle_outbox SET published=0")
+        else:
+            (root / "batches/cmip6/ready/old").mkdir(parents=True)
+        # Cleaning must work even with a pending event elsewhere.
+        connection.execute("UPDATE work_items SET state='pending' WHERE id=4")
+    protected = rows(database, "handle_outbox")
+    assert clean_outbox(config) == dict(outbox_batches=1, handle_outbox=0)
+    assert rows(database, "handle_outbox") == protected
+    assert [row["project"] for row in rows(database, "outbox_batches")] == ["cmip6"]
+    assert rows(database, "work_items")[-1]["state"] == "pending"
+
+
+@pytest.mark.parametrize("owner", ["harvest", "worker", "maintenance", "rebuild"])
+def test_clean_refuses_active_owners_and_incomplete_rebuild(finished_outbox, owner):
+    from contextlib import nullcontext
+
+    from piddiplatsch.catalog.ownership import harvest_lock
+    from piddiplatsch.output_maintenance import output_maintenance_lock
+
+    root, database = finished_outbox
+    locks = {
+        "harvest": harvest_lock,
+        "worker": _worker_lock,
+        "maintenance": output_maintenance_lock,
+    }
+    if owner == "rebuild":
+        (root / ".work-rebuild.json").write_text("{}")
+    before = rows(database, "outbox_batches")
+    with locks[owner](root) if owner in locks else nullcontext():
+        with pytest.raises((RuntimeError, CatalogError)):
+            clean_outbox(config)
+    assert rows(database, "outbox_batches") == before
+
+
+def test_clean_transaction_rolls_back_all_deletes(finished_outbox, monkeypatch):
+    _, database = finished_outbox
+    before = {
+        table: rows(database, table) for table in ("handle_outbox", "outbox_batches")
+    }
+    with closing(sqlite3.connect(database)) as connection, connection:
+        connection.execute(
+            "CREATE TRIGGER block_clean BEFORE DELETE ON outbox_batches BEGIN SELECT RAISE(ABORT, 'blocked'); END"
+        )
+    with pytest.raises(sqlite3.IntegrityError, match="blocked"):
+        clean_outbox(config)
+    assert {table: rows(database, table) for table in before} == before
+
+
+def test_clean_accepts_schema_four_without_outbox(seeded):
+    _, database = seeded
+    with closing(sqlite3.connect(database)) as connection, connection:
+        connection.execute("DROP TABLE handle_outbox")
+        connection.execute("DROP TABLE outbox_batches")
+        connection.execute("PRAGMA user_version=4")
+    assert clean_outbox(config, vacuum=True) == dict(outbox_batches=0, handle_outbox=0)
 
 
 @pytest.mark.parametrize("vacuum", [False, True])

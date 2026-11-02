@@ -17,6 +17,7 @@ _EXPORTS = {  # noqa: RUF067 - lazy public re-exports avoid loading network clie
     "PublishCommand": "publish",
     "ResetCommand": "reset",
     "RebuildWorkCommand": "rebuild",
+    "CleanCommand": "clean",
     "TopCommand": "top",
 }
 

@@ -161,6 +161,22 @@ history from original dumps into a fresh database if retention removed any.
 
 ## Storage
 
+### Manual outbox cleanup
+
+Use `piddi admin clean` to preview removal of completed outbox records only,
+without rebuilding work history. Stop harvest, sync, publication and maintenance,
+then run `piddi admin clean --apply`. Add `--vacuum` to return freed SQLite pages
+to the filesystem (requires extra disk space); otherwise SQLite reuses the space.
+
+Cleanup deletes completed batch metadata and any acknowledged payload rows in
+one transaction. It keeps the tables, catalog, work history, statistics, Kafka
+checkpoints and output files. It creates no archive of these disposable records.
+Pending work does not block cleanup: unfinished outbox batches and their payloads
+are preserved. Completed batches with unacknowledged payloads or an export still
+in a `ready` directory are also preserved so restart recovery remains safe. Let
+sync archive those exports before cleaning again. The command can be rerun safely,
+including if optional VACUUM fails after cleanup has already committed.
+
 ### Manual work-history rebuild
 
 Use this occasional manual operation to replace retained event history in SQLite

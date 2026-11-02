@@ -194,6 +194,25 @@ def reset(project: str, apply: bool, from_date: datetime | None) -> None:
     commands.ResetCommand(project=project, apply=apply, from_date=from_date).execute()
 
 
+@admin.command("clean")
+@click.option(
+    "--apply",
+    is_flag=True,
+    help="Remove completed outbox records; default is a preview.",
+)
+@click.option(
+    "--vacuum",
+    is_flag=True,
+    help="Reclaim unused database file space after cleaning (needs extra disk space).",
+)
+def clean(apply: bool, vacuum: bool) -> None:
+    """Clean completed outbox records without rebuilding work history.
+
+    Stop harvest and all processing/maintenance services before using --apply.
+    """
+    commands.CleanCommand(apply=apply, vacuum=vacuum).execute()
+
+
 @admin.command("rebuild")
 @click.option(
     "--apply",
