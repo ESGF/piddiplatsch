@@ -1,6 +1,7 @@
 """Dataset version lookup using the project's indexed local catalog."""
 
 from contextlib import contextmanager
+from time import perf_counter
 
 from piddiplatsch.catalog.api import open_catalog
 from piddiplatsch.catalog.base import BaseCatalogReader
@@ -28,6 +29,10 @@ class CatalogLookup(AbstractLookup):
         self.collection = collection or config.get_stac(self.plugin.name).get(
             "collection"
         )
+        self.previous_queries = 0
+        self.previous_found = 0
+        self.previous_missing = 0
+        self.previous_seconds = 0.0
 
     @contextmanager
     def _snapshot(self):
@@ -51,7 +56,17 @@ class CatalogLookup(AbstractLookup):
         self, collection_id: str, dataset_id: str, version_number: int
     ) -> str | None:
         """Query the exact nearest predecessor using the existing version index."""
-        with self._snapshot() as reader:
-            return reader.find_previous_version(
-                collection_id, dataset_id, version_number
-            )
+        started = perf_counter()
+        self.previous_queries += 1
+        try:
+            with self._snapshot() as reader:
+                previous = reader.find_previous_version(
+                    collection_id, dataset_id, version_number
+                )
+        finally:
+            self.previous_seconds += perf_counter() - started
+        if previous is None:
+            self.previous_missing += 1
+        else:
+            self.previous_found += 1
+        return previous

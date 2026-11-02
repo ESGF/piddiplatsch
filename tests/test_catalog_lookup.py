@@ -82,3 +82,25 @@ def test_missing_catalog_is_an_error_and_is_not_created(tmp_path):
     with pytest.raises(CatalogError):
         lookup.find_versions("CMIP6.dataset.v1")
     assert not list(tmp_path.glob("*.sqlite"))
+
+
+def test_predecessor_metrics_include_failed_query_time(monkeypatch):
+    reader = MagicMock()
+    reader.find_previous_version.side_effect = [
+        "dataset.v1",
+        None,
+        CatalogError("failed"),
+    ]
+    lookup = CatalogLookup("cmip6", reader=reader)
+    ticks = iter([0.0, 0.1, 1.0, 1.2, 2.0, 2.3])
+    monkeypatch.setattr("piddiplatsch.lookup.catalog.perf_counter", lambda: next(ticks))
+
+    assert lookup.find_previous_version("CMIP6", "dataset", 2) == "dataset.v1"
+    assert lookup.find_previous_version("CMIP6", "dataset", 1) is None
+    with pytest.raises(CatalogError, match="failed"):
+        lookup.find_previous_version("CMIP6", "dataset", 3)
+
+    assert lookup.previous_queries == 3
+    assert lookup.previous_found == lookup.previous_missing == 1
+    assert lookup.previous_seconds == pytest.approx(0.6)
+    reader.close.assert_not_called()
