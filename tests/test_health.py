@@ -1,4 +1,5 @@
 import sqlite3
+from contextlib import closing
 
 from piddiplatsch.catalog import CatalogEntry
 from piddiplatsch.catalog.sqlite import SQLiteCatalog
@@ -71,7 +72,7 @@ def test_health_skips_timestamp_reads_when_count_trigger_is_met(tmp_path):
     database = tmp_path / "piddi.db"
     seed(database)
     config._set("batch", "trigger_items", 2)
-    with sqlite3.connect(database) as connection:
+    with closing(sqlite3.connect(database)) as connection, connection:
 
         def authorize(action, table, column, *args):
             if (
@@ -92,7 +93,7 @@ def test_health_preserves_last_publication_after_work_retention(tmp_path):
     config._set("consumer", "output_dir", str(tmp_path))
     database = tmp_path / "piddi.db"
     seed(database)
-    with sqlite3.connect(database) as connection:
+    with closing(sqlite3.connect(database)) as connection, connection:
         connection.execute("DELETE FROM work_items WHERE state='published'")
     row = read_health("cmip7")["projects"][0]
     assert row["ready_batches"] == row["failed_batches"] == 1
@@ -104,7 +105,7 @@ def test_fast_health_counts_via_covering_indexes_without_payload_or_event_reads(
 ):
     database = tmp_path / "piddi.db"
     seed(database)
-    with sqlite3.connect(database) as connection:
+    with closing(sqlite3.connect(database)) as connection, connection:
         expected = database_health(connection)
 
         def authorize(action, table, column, *args):

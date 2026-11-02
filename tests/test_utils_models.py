@@ -1,5 +1,7 @@
+import json
 import string
-from datetime import datetime
+from copy import deepcopy
+from datetime import UTC, datetime
 from uuid import NAMESPACE_URL, UUID, uuid3
 
 import pytest
@@ -8,6 +10,50 @@ from hypothesis import strategies as st
 from multiformats import multihash
 
 import piddiplatsch.utils.models as utils
+
+
+def test_prepare_handle_data_preserves_scalars_formats_dates_and_omits_none():
+    record = {
+        "URL": "https://example.org/handle",
+        "AGGREGATION_LEVEL": "DATASET",
+        "RETRACTED_ON": datetime(2026, 1, 2, 3, 4, 5, tzinfo=UTC),
+        "PREVIOUS_VERSION": None,
+    }
+    assert utils.prepare_handle_data(record) == {
+        "URL": "https://example.org/handle",
+        "AGGREGATION_LEVEL": "DATASET",
+        "RETRACTED_ON": "2026-01-02T03:04:05+00:00",
+    }
+
+
+@pytest.mark.parametrize(
+    "value,expected",
+    [
+        (["file-1", "file-2"], ["file-1", "file-2"]),
+        (
+            {
+                "host": "ceda.ac.uk",
+                "published_on": datetime(2026, 1, 2),
+                "missing": None,
+            },
+            {
+                "host": "ceda.ac.uk",
+                "published_on": "2026-01-02T00:00:00",
+                "missing": None,
+            },
+        ),
+    ],
+    ids=["list", "dict-with-datetime"],
+)
+def test_prepare_handle_data_serializes_structures_without_mutating_input(
+    value, expected
+):
+    record = {"field": value}
+    original = deepcopy(record)
+    prepared = utils.prepare_handle_data(record)
+    assert json.loads(prepared["field"]) == expected
+    assert record == original
+
 
 # ----------------------
 # build_handle tests
@@ -113,9 +159,7 @@ def test_parse_datetime_valid_and_invalid():
 
 @given(st.datetimes())
 def test_parse_datetime_roundtrip(dt):
-    iso = dt.isoformat()
-    parsed = utils.parse_datetime(iso)
-    assert isinstance(parsed, datetime)
+    assert utils.parse_datetime(dt.isoformat()) == dt
 
 
 # ----------------------

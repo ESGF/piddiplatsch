@@ -58,21 +58,19 @@ class Publisher:
 
 
 @pytest.fixture
-def setup(tmp_path, testdata_path):
+def seeded_catalog(tmp_path, publication_sample):
     config._set("consumer", "output_dir", str(tmp_path))
     config._set("consumer", "projects", ["cmip7"])
     config._set(
         "batch", None, {"trigger_items": 2, "max_items": 2, "max_wait_seconds": 3600}
     )
-    sample = json.loads((testdata_path / "publication_samples/cmip7.json").read_text())
     directory = tmp_path / "catalog"
     config._set("catalog", "directory", str(directory))
     messages = []
 
     def put(version, *, extra=None):
-        message = deepcopy(sample)
+        message = publication_sample("cmip7", version=version)
         item = message["data"]["payload"]["item"]
-        item["id"] = item["id"].rsplit(".", 1)[0] + f".v{version}"
         if extra:
             item["properties"].update(extra)
         with closing(CatalogHarvester(directory)) as harvester:
@@ -98,8 +96,8 @@ def manifests(root):
     ]
 
 
-def test_count_trigger_seals_and_publishes_then_empty_tick_does_nothing(setup):
-    put, directory, root = setup
+def test_count_trigger_seals_and_publishes_then_empty_tick_does_nothing(seeded_catalog):
+    put, directory, root = seeded_catalog
     put(1)
     publisher = Publisher()
     assert SyncWorker(publisher=publisher).run() == []
@@ -122,11 +120,13 @@ def test_count_trigger_seals_and_publishes_then_empty_tick_does_nothing(setup):
 
 
 @pytest.mark.parametrize("force", [False, True])
-def test_batch_scheduling_cost_is_bounded_by_threshold(setup, monkeypatch, force):
+def test_batch_scheduling_cost_is_bounded_by_threshold(
+    seeded_catalog, monkeypatch, force
+):
     """More pending events must not add a full backlog scan before each batch."""
     from piddiplatsch.runners import sync
 
-    put, directory, root = setup
+    put, directory, root = seeded_catalog
     put(1)
     put(2)
     instructions = 0
@@ -178,12 +178,12 @@ def test_batch_scheduling_cost_is_bounded_by_threshold(setup, monkeypatch, force
 @pytest.mark.parametrize("mapped", [False, True])
 @pytest.mark.parametrize("unrelated_state", ["pending", "published", "invalid"])
 def test_mapped_batch_validation_ignores_unrelated_backlog(
-    setup, monkeypatch, mapped, unrelated_state
+    seeded_catalog, monkeypatch, mapped, unrelated_state
 ):
     """Validation cost must depend on mapped work, not the whole project history."""
     from piddiplatsch.runners import sync
 
-    put, directory, root = setup
+    put, directory, root = seeded_catalog
     put(1)
     project_root = root / "batches/cmip7"
     if mapped:
@@ -229,7 +229,7 @@ def test_mapped_batch_validation_ignores_unrelated_backlog(
 
 
 @pytest.fixture
-def priority_scheduler(setup, monkeypatch):
+def priority_scheduler(seeded_catalog, monkeypatch):
     """Keep real scheduling, replacing batch publication with finite queues."""
     config._set("consumer", "projects", ["cmip6", "cmip7"])
     worker = SyncWorker(publisher=Publisher())
@@ -284,8 +284,8 @@ def test_sync_failure_does_not_block_other_priority_projects(
 
 
 @pytest.mark.parametrize("force", [False, True])
-def test_priority_zero_skips_pending_and_ready_work(setup, force):
-    put, directory, root = setup
+def test_priority_zero_skips_pending_and_ready_work(seeded_catalog, force):
+    put, directory, root = seeded_catalog
     put(1)
     publisher = Publisher()
     publisher.fail = True
@@ -313,8 +313,8 @@ def test_priority_zero_skips_pending_and_ready_work(setup, force):
     assert len(publisher.calls) == 2
 
 
-def test_sync_lottery_excludes_idle_and_not_due_projects(setup, monkeypatch):
-    put, _directory, _root = setup
+def test_sync_lottery_excludes_idle_and_not_due_projects(seeded_catalog, monkeypatch):
+    put, _directory, _root = seeded_catalog
     put(1)
     config._set("consumer", "projects", ["cmip6", "cmip7"])
     config._set("plugins", "cmip6", {"priority": 255})
@@ -364,8 +364,10 @@ def test_sync_nonprogressing_candidate_does_not_spin_or_stop_other_projects(
 
 
 @pytest.mark.parametrize("force", [False, True])
-def test_sync_map_info_reports_force_setting_and_alias_summary(setup, caplog, force):
-    put, directory, _root = setup
+def test_sync_map_info_reports_force_setting_and_alias_summary(
+    seeded_catalog, caplog, force
+):
+    put, directory, _root = seeded_catalog
     config._set(
         "plugins", "cmip7", {**config.get_plugin("cmip7"), "force_dataset_pid": force}
     )
@@ -408,8 +410,10 @@ def test_sync_map_info_reports_force_setting_and_alias_summary(setup, caplog, fo
 
 
 @pytest.mark.parametrize("max_wait_seconds", [600, 1800, 3600])
-def test_time_trigger_preserves_successive_event_snapshots(setup, max_wait_seconds):
-    put, directory, root = setup
+def test_time_trigger_preserves_successive_event_snapshots(
+    seeded_catalog, max_wait_seconds
+):
+    put, directory, root = seeded_catalog
     put(1)
     config._set("batch", "trigger_items", 3)
     config._set("batch", "max_wait_seconds", max_wait_seconds)
@@ -436,8 +440,8 @@ def test_time_trigger_preserves_successive_event_snapshots(setup, max_wait_secon
     assert manifests(root)[0][1]["item_count"] == 2
 
 
-def test_batch_boundaries_keep_all_handles_for_each_item(setup):
-    put, directory, root = setup
+def test_batch_boundaries_keep_all_handles_for_each_item(seeded_catalog):
+    put, directory, root = seeded_catalog
     for version in range(1, 6):
         put(version)
     publisher = Publisher()
@@ -453,8 +457,8 @@ def test_batch_boundaries_keep_all_handles_for_each_item(setup):
     assert pending(directory).count == 0
 
 
-def test_changes_during_mapping_remain_pending(setup, monkeypatch):
-    put, directory, root = setup
+def test_changes_during_mapping_remain_pending(seeded_catalog, monkeypatch):
+    put, directory, root = seeded_catalog
     put(1)
     put(2)
     worker = SyncWorker(publisher=Publisher())
@@ -478,10 +482,10 @@ def test_changes_during_mapping_remain_pending(setup, monkeypatch):
         )
 
 
-def test_top_shows_entire_batch_lifecycle_without_counter_gaps(setup, monkeypatch):
-    from piddiplatsch.runners import sync
+def test_batch_lifecycle_preserves_activity_and_counters(seeded_catalog, monkeypatch):
+    from piddiplatsch.monitoring.activity import BatchActivity
 
-    put, directory, _root = setup
+    put, directory, _root = seeded_catalog
     put(1)
     put(2)
     config._set("stats", "enable_db", True)
@@ -503,60 +507,17 @@ def test_top_shows_entire_batch_lifecycle_without_counter_gaps(setup, monkeypatc
                 r["command"] == "sync" and r["status"] == "running"
                 for r in status["runs"]
             )
-        stream = StringIO()
-        Console(file=stream, width=260).print(TopCommand._overview(status))
-        row = next(
-            line
-            for line in stream.getvalue().splitlines()
-            if line.lstrip().startswith("cmip7 ")
-        )
-        assert phase in row
         phases.append(phase)
 
-    class ObservedPublisher(Publisher):
-        def run(self, *args, **kwargs):
-            snapshot("publishing")
-            return super().run(*args, **kwargs)
+    heartbeat = BatchActivity._heartbeat
 
-    worker = SyncWorker(publisher=ObservedPublisher())
-    select = SQLiteCatalog.select_work_ids
-    write = worker._write_items
-    fingerprint = sync._fingerprint
-    acknowledge = worker._acknowledge
-    verify = worker._verify_output
-    record = worker._record_publication
+    def observe_heartbeat(activity):
+        heartbeat(activity)
+        if activity.run["status"] == "running":
+            snapshot(activity.run["phase"])
 
-    def selecting(*args, **kwargs):
-        snapshot("preparing")
-        return select(*args, **kwargs)
-
-    def mapping(*args, **kwargs):
-        snapshot("mapping")
-        return write(*args, **kwargs)
-
-    def checking(*args, **kwargs):
-        snapshot(worker._activity.run["phase"])
-        return fingerprint(*args, **kwargs)
-
-    def verifying(*args, **kwargs):
-        snapshot(worker._activity.run["phase"])
-        return verify(*args, **kwargs)
-
-    def acknowledging(*args, **kwargs):
-        # The first acknowledgement seals; the second is recovery verification.
-        snapshot("verifying" if "verifying" in phases else "sealing")
-        return acknowledge(*args, **kwargs)
-
-    def finalizing(*args, **kwargs):
-        snapshot("finalizing")
-        return record(*args, **kwargs)
-
-    monkeypatch.setattr(SQLiteCatalog, "select_work_ids", selecting)
-    monkeypatch.setattr(worker, "_write_items", mapping)
-    monkeypatch.setattr(sync, "_fingerprint", checking)
-    monkeypatch.setattr(worker, "_acknowledge", acknowledging)
-    monkeypatch.setattr(worker, "_verify_output", verifying)
-    monkeypatch.setattr(worker, "_record_publication", finalizing)
+    monkeypatch.setattr(BatchActivity, "_heartbeat", observe_heartbeat)
+    worker = SyncWorker(publisher=Publisher())
     assert len(worker.run()) == 1
     assert not worker.errors
     assert set(phases) == {
@@ -577,8 +538,8 @@ def test_top_shows_entire_batch_lifecycle_without_counter_gaps(setup, monkeypatc
 @pytest.mark.parametrize(
     "stage", ["_write_items", "_acknowledge", "_verify_output", "_archive"]
 )
-def test_failed_batch_closes_activity_heartbeat(setup, monkeypatch, stage):
-    put, directory, _root = setup
+def test_failed_batch_closes_activity_heartbeat(seeded_catalog, monkeypatch, stage):
+    put, directory, _root = seeded_catalog
     put(1)
     put(2)
     config._set("stats", "enable_db", True)
@@ -602,8 +563,8 @@ def test_failed_batch_closes_activity_heartbeat(setup, monkeypatch, stage):
     assert "cmip7: errors recorded" in output.getvalue()
 
 
-def test_failed_publication_retries_immutable_batch_before_new_mapping(setup):
-    put, directory, root = setup
+def test_failed_publication_retries_immutable_batch_before_new_mapping(seeded_catalog):
+    put, directory, root = seeded_catalog
     put(1)
     put(2)
     publisher = Publisher()
@@ -632,9 +593,9 @@ def test_failed_publication_retries_immutable_batch_before_new_mapping(setup):
 
 
 def test_crash_after_sealing_recovers_acknowledgement_without_remapping(
-    setup, monkeypatch
+    seeded_catalog, monkeypatch
 ):
-    put, directory, root = setup
+    put, directory, root = seeded_catalog
     put(1)
     put(2)
     worker = SyncWorker(publisher=Publisher())
@@ -658,8 +619,10 @@ def test_crash_after_sealing_recovers_acknowledgement_without_remapping(
     assert len(manifests(root)) == 1
 
 
-def test_failed_mapping_never_seals_or_advances_pending_progress(setup, monkeypatch):
-    put, directory, root = setup
+def test_failed_mapping_never_seals_or_advances_pending_progress(
+    seeded_catalog, monkeypatch
+):
+    put, directory, root = seeded_catalog
     put(1)
     put(2)
     worker = SyncWorker(publisher=Publisher())
@@ -679,8 +642,10 @@ def test_failed_mapping_never_seals_or_advances_pending_progress(setup, monkeypa
     assert not recovered.errors
 
 
-def test_bad_checksum_is_quarantined_and_limit_preserves_progress(setup, caplog):
-    put, directory, root = setup
+def test_bad_checksum_is_quarantined_and_limit_preserves_progress(
+    seeded_catalog, caplog
+):
+    put, directory, root = seeded_catalog
     message = put(1)
     asset_key = next(iter(message["data"]["payload"]["item"]["assets"]))
     message["data"]["payload"]["item"]["assets"][asset_key][
@@ -716,8 +681,8 @@ def test_bad_checksum_is_quarantined_and_limit_preserves_progress(setup, caplog)
     assert pending(directory).count == 0
 
 
-def test_worker_lock_prevents_overlapping_ticks(setup):
-    put, directory, _root = setup
+def test_worker_lock_prevents_overlapping_ticks(seeded_catalog):
+    put, directory, _root = seeded_catalog
     put(1)
     put(2)
     worker = SyncWorker(publisher=Publisher())
@@ -729,8 +694,10 @@ def test_worker_lock_prevents_overlapping_ticks(setup):
 
 
 @pytest.mark.parametrize("limit", [0, 1])
-def test_error_limit_seals_valid_prefix_and_later_ticks_do_not_remap(setup, limit):
-    put, directory, root = setup
+def test_error_limit_seals_valid_prefix_and_later_ticks_do_not_remap(
+    seeded_catalog, limit
+):
+    put, directory, root = seeded_catalog
     config._set("plugins", "cmip7", {**config.get_plugin("cmip7"), "max_errors": limit})
     config._set("batch", "max_items", 100)
     db = directory / "piddi.db"
@@ -787,9 +754,9 @@ def test_error_limit_seals_valid_prefix_and_later_ticks_do_not_remap(setup, limi
 
 
 def test_rejected_records_are_verified_before_crash_recovery_acknowledgement(
-    setup, monkeypatch
+    seeded_catalog, monkeypatch
 ):
-    put, directory, root = setup
+    put, directory, root = seeded_catalog
     config._set("plugins", "cmip7", {**config.get_plugin("cmip7"), "max_errors": 2})
     message = put(1)
     item = message["data"]["payload"]["item"]
@@ -826,10 +793,12 @@ def test_rejected_records_are_verified_before_crash_recovery_acknowledgement(
     assert len(manifests(root)) == 1
 
 
-def test_wrapped_storage_error_does_not_quarantine_or_advance_items(setup, monkeypatch):
+def test_wrapped_storage_error_does_not_quarantine_or_advance_items(
+    seeded_catalog, monkeypatch
+):
     from piddiplatsch.handles.jsonl_backend import JsonlHandleBackend
 
-    put, directory, root = setup
+    put, directory, root = seeded_catalog
     put(1)
     put(2)
 
@@ -850,8 +819,8 @@ def test_wrapped_storage_error_does_not_quarantine_or_advance_items(setup, monke
     assert manifest["status"] == "failed"
 
 
-def test_clean_generation_rejects_stale_ready_batch(setup):
-    put, directory, _root = setup
+def test_clean_generation_rejects_stale_ready_batch(seeded_catalog):
+    put, directory, _root = seeded_catalog
     put(1)
     put(2)
     publisher = Publisher()
@@ -867,14 +836,14 @@ def test_clean_generation_rejects_stale_ready_batch(setup):
     assert len(publisher.calls) == 1
 
 
-def test_defaults_and_cli_worker_tick(setup, monkeypatch):
+def test_defaults_and_cli_worker_tick(seeded_catalog, monkeypatch):
     from piddiplatsch.config.schema import BatchConfig
 
     assert BatchConfig().publish_workers == 4
     assert BatchConfig().trigger_items == 100
     assert BatchConfig().max_items == 2000
     assert BatchConfig().max_wait_seconds == 600
-    put, _directory, _root = setup
+    put, _directory, _root = seeded_catalog
     put(1)
     publisher = Publisher()
     monkeypatch.setattr("piddiplatsch.runners.sync.get_publisher", lambda: publisher)
@@ -888,7 +857,7 @@ def test_defaults_and_cli_worker_tick(setup, monkeypatch):
     assert publisher.options[0]["batch_id"]
 
 
-def test_worker_uses_default_batch_limits_when_settings_are_omitted(setup):
+def test_worker_uses_default_batch_limits_when_settings_are_omitted(seeded_catalog):
     from piddiplatsch.config.config import Config
 
     config._set("batch", None, {})
@@ -901,8 +870,8 @@ def test_worker_uses_default_batch_limits_when_settings_are_omitted(setup):
     assert Config().get("batch", "max_wait_seconds") == 600
 
 
-def test_archive_partition_is_stable_across_publication_midnight(setup):
-    put, _directory, root = setup
+def test_archive_partition_is_stable_across_publication_midnight(seeded_catalog):
+    put, _directory, root = seeded_catalog
     put(1)
     put(2)
     clock = [datetime(2026, 12, 31, 23, 59, tzinfo=UTC)]
@@ -922,8 +891,8 @@ def test_archive_partition_is_stable_across_publication_midnight(setup):
     assert manifest["published_at"].startswith("2027-01-01")
 
 
-def test_existing_flat_archives_are_preserved_without_republication(setup):
-    put, _directory, root = setup
+def test_existing_flat_archives_are_preserved_without_republication(seeded_catalog):
+    put, _directory, root = seeded_catalog
     put(1)
     put(2)
     publisher = Publisher()
@@ -946,8 +915,8 @@ def test_existing_flat_archives_are_preserved_without_republication(setup):
     assert len(manifests(root)) == 2
 
 
-def test_cli_publication_overrides_preserve_config(setup, monkeypatch):
-    put, _directory, _root = setup
+def test_cli_publication_overrides_preserve_config(seeded_catalog, monkeypatch):
+    put, _directory, _root = seeded_catalog
     put(1)
     config._set("batch", "publish_workers", 2)
     config._set("batch", "publish_retries", 5)
@@ -971,9 +940,9 @@ def test_cli_publication_overrides_preserve_config(setup, monkeypatch):
 
 
 def test_cli_project_selection_preserves_other_ready_and_pending_work(
-    setup, monkeypatch
+    seeded_catalog, monkeypatch
 ):
-    put, directory, root = setup
+    put, directory, root = seeded_catalog
     put(1)
     publisher = Publisher()
     publisher.fail = True
@@ -1012,8 +981,10 @@ def test_cli_project_selection_preserves_other_ready_and_pending_work(
         (["--retries", "-1"], "Invalid value"),
     ],
 )
-def test_invalid_cli_overrides_do_not_publish(setup, monkeypatch, options, error):
-    put, directory, root = setup
+def test_invalid_cli_overrides_do_not_publish(
+    seeded_catalog, monkeypatch, options, error
+):
+    put, directory, root = seeded_catalog
     put(1)
     publisher = Publisher()
     monkeypatch.setattr("piddiplatsch.runners.sync.get_publisher", lambda: publisher)
@@ -1025,8 +996,10 @@ def test_invalid_cli_overrides_do_not_publish(setup, monkeypatch, options, error
     assert not (root / "batches").exists()
 
 
-def test_corrupt_ready_payload_blocks_publication_before_ack(setup, monkeypatch):
-    put, directory, root = setup
+def test_corrupt_ready_payload_blocks_publication_before_ack(
+    seeded_catalog, monkeypatch
+):
+    put, directory, root = seeded_catalog
     put(1)
     put(2)
     worker = SyncWorker(publisher=Publisher())
@@ -1049,8 +1022,8 @@ def test_corrupt_ready_payload_blocks_publication_before_ack(setup, monkeypatch)
     assert pending(directory).count == 2
 
 
-def test_identical_payloads_from_different_events_remain_independent(setup):
-    put, directory, root = setup
+def test_identical_payloads_from_different_events_remain_independent(seeded_catalog):
+    put, directory, root = seeded_catalog
     first_message = put(1)
     first = pending(directory)
     put(1)
@@ -1071,9 +1044,9 @@ def test_identical_payloads_from_different_events_remain_independent(setup):
 
 @pytest.mark.parametrize("max_errors", [100, -1])
 def test_mapping_failure_below_limit_keeps_valid_items_and_advances_queue(
-    setup, max_errors
+    seeded_catalog, max_errors
 ):
-    put, directory, root = setup
+    put, directory, root = seeded_catalog
     config._set(
         "plugins", "cmip7", {**config.get_plugin("cmip7"), "max_errors": max_errors}
     )
@@ -1124,10 +1097,10 @@ def test_invalid_batch_configuration_is_rejected(field, value):
         BatchConfig.model_validate({field: value})
 
 
-def test_real_publisher_receipts_and_archiving_without_remote_service(setup):
+def test_real_publisher_receipts_and_archiving_without_remote_service(seeded_catalog):
     from piddiplatsch.runners.publish import HandlePublisher
 
-    put, _directory, root = setup
+    put, _directory, root = seeded_catalog
     put(1)
     put(2)
 
@@ -1166,8 +1139,10 @@ def test_real_publisher_receipts_and_archiving_without_remote_service(setup):
     assert latest["receipt"] == manifest["receipt"]
 
 
-def test_crash_after_success_marker_archives_without_republishing(setup, monkeypatch):
-    put, _directory, root = setup
+def test_crash_after_success_marker_archives_without_republishing(
+    seeded_catalog, monkeypatch
+):
+    put, _directory, root = seeded_catalog
     put(1)
     put(2)
     publisher = Publisher()
@@ -1190,8 +1165,10 @@ def test_crash_after_success_marker_archives_without_republishing(setup, monkeyp
     assert archived.relative_to(root).parts[:3] == ("batches", "cmip7", "published")
 
 
-def test_crash_after_catalog_ack_keeps_newer_changes_on_recovery(setup, monkeypatch):
-    put, directory, root = setup
+def test_crash_after_catalog_ack_keeps_newer_changes_on_recovery(
+    seeded_catalog, monkeypatch
+):
+    put, directory, root = seeded_catalog
     put(1)
     put(2)
     worker = SyncWorker(publisher=Publisher())
@@ -1216,13 +1193,15 @@ def test_crash_after_catalog_ack_keeps_newer_changes_on_recovery(setup, monkeypa
     assert sorted(manifest["item_count"] for _, manifest in manifests(root)) == [1, 2]
 
 
-def test_sync_progress_displays_map_and_known_publication_total(setup, monkeypatch):
+def test_sync_progress_displays_map_and_known_publication_total(
+    seeded_catalog, monkeypatch
+):
     from unittest.mock import MagicMock
 
     from piddiplatsch.monitoring.progress import Progress
     from piddiplatsch.runners.publish import HandlePublisher
 
-    put, _directory, root = setup
+    put, _directory, root = seeded_catalog
     put(1)
     put(2)
     backend = MagicMock(spec=["prefix", "add"], prefix="21.TEST")
@@ -1250,11 +1229,13 @@ def test_sync_progress_displays_map_and_known_publication_total(setup, monkeypat
     assert any("sync cmip7 map" in phase and "items:" in phase for phase in phases)
 
 
-def test_full_and_patch_event_types_survive_harvest_mapping_and_publication(setup):
+def test_full_and_patch_event_types_survive_harvest_mapping_and_publication(
+    seeded_catalog,
+):
     from piddiplatsch.monitoring.stats import Stats
     from piddiplatsch.monitoring.status import read_status
 
-    put, directory, _root = setup
+    put, directory, _root = seeded_catalog
     original = put(1)
     payload = original["data"]["payload"]
     patch = {

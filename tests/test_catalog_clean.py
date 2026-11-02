@@ -12,21 +12,19 @@ from piddiplatsch.catalog.state import HarvestState
 from piddiplatsch.core.messages import KafkaSource
 
 
-def seed(directory, testdata_path):
+def seed(directory, publication_sample):
     with closing(CatalogHarvester(directory)) as harvester:
         for offset, project in enumerate(("cmip6", "cmip7")):
-            message = json.loads(
-                (testdata_path / "publication_samples" / f"{project}.json").read_text()
-            )
+            message = publication_sample(project)
             harvester.process_with_source(
                 "seed", message, KafkaSource("topic", 0, offset)
             )
 
 
 def test_partial_clean_is_rejected_before_changing_shared_progress(
-    tmp_path, testdata_path
+    tmp_path, publication_sample
 ):
-    seed(tmp_path, testdata_path)
+    seed(tmp_path, publication_sample)
     with pytest.raises(CatalogError, match="shared Kafka checkpoints"):
         CatalogHarvester(tmp_path, clean_projects=("cmip6",))
     assert not HarvestState(tmp_path).pending_clean
@@ -36,9 +34,9 @@ def test_partial_clean_is_rejected_before_changing_shared_progress(
 
 
 def test_complete_clean_is_atomic_and_never_compacts(
-    tmp_path, testdata_path, monkeypatch
+    tmp_path, publication_sample, monkeypatch
 ):
-    seed(tmp_path, testdata_path)
+    seed(tmp_path, publication_sample)
     monkeypatch.setattr(
         SQLiteCatalog,
         "compact",
@@ -54,8 +52,8 @@ def test_complete_clean_is_atomic_and_never_compacts(
         assert reader.get_checkpoint("topic", 0) is None
 
 
-def test_interrupted_clean_restarts_before_new_events(tmp_path, testdata_path):
-    seed(tmp_path, testdata_path)
+def test_interrupted_clean_restarts_before_new_events(tmp_path, publication_sample):
+    seed(tmp_path, publication_sample)
     state = HarvestState(tmp_path)
     state.request_clean(("cmip6", "cmip7"))
     with closing(CatalogHarvester(tmp_path)):

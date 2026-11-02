@@ -1,6 +1,5 @@
 """Local version lookup uses indexed metadata and respects snapshot ownership."""
 
-import json
 from unittest.mock import MagicMock
 
 import pytest
@@ -15,13 +14,11 @@ from piddiplatsch.lookup.catalog import CatalogLookup
 
 @pytest.mark.parametrize("project", ["cmip6", "cmip6plus", "cmip7", "cordex-cmip6"])
 def test_default_lookup_uses_index_and_project_collection(
-    tmp_path, testdata_path, monkeypatch, project
+    tmp_path, publication_sample, monkeypatch, project
 ):
     config._set("catalog", "directory", str(tmp_path))
     config._set("lookup", None, {"enabled": True})
-    item = json.loads(
-        (testdata_path / "publication_samples" / f"{project}.json").read_text()
-    )["data"]["payload"]["item"]
+    item = publication_sample(project)["data"]["payload"]["item"]
     dataset_id, _ = get_plugin(project).catalog_index(item["id"])
     collection = item["collection"]
     config._set("plugins", project, {"stac": {"collection": collection}})

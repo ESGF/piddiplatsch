@@ -53,11 +53,9 @@ def patch_message(operations, *, project="CMIP6", version=1):
 
 @pytest.mark.parametrize("project", ["cmip6", "cmip6plus", "cmip7", "cordex-cmip6"])
 def test_real_publications_are_cached_without_handle_validation(
-    tmp_path, testdata_path, project
+    tmp_path, publication_sample, project
 ):
-    message = json.loads(
-        (testdata_path / "publication_samples" / f"{project}.json").read_text()
-    )
+    message = publication_sample(project)
     payload = message["data"]["payload"]
     with closing(CatalogHarvester(tmp_path / "catalog")) as harvester:
         result = harvester.process_with_source(

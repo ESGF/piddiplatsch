@@ -1,4 +1,5 @@
 import sqlite3
+from contextlib import closing
 
 from click.testing import CliRunner
 
@@ -13,7 +14,7 @@ def test_estimates_are_bounded_weighted_samples_and_never_read_dbstat(tmp_path):
     db = tmp_path / "piddi.db"
     with SQLiteCatalog("small", db):
         pass
-    with sqlite3.connect(db) as connection:
+    with closing(sqlite3.connect(db)) as connection, connection:
         for project, size in (("small", 1000), ("large", 10000)):
             connection.executemany(
                 "INSERT INTO catalog_items VALUES (?, 'collection', ?, 'dataset', 1, zeroblob(?), 'now')",

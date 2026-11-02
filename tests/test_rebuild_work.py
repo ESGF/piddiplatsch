@@ -51,14 +51,12 @@ def rows(database, table):
 
 
 @pytest.fixture
-def seeded(tmp_path, testdata_path):
+def seeded(tmp_path, publication_sample):
     config._set("consumer", "output_dir", str(tmp_path))
     config._set("catalog", "directory", str(tmp_path))
     with closing(CatalogHarvester(tmp_path)) as harvester:
         for offset, project in enumerate(("cmip6", "cmip7", "cmip6", "cmip7")):
-            message = json.loads(
-                (testdata_path / "publication_samples" / f"{project}.json").read_text()
-            )
+            message = publication_sample(project)
             message["data"]["payload"]["item"]["properties"]["latest"] = offset
             harvester.process_with_source(
                 "key", message, KafkaSource("topic", 0, offset)
@@ -219,7 +217,7 @@ def test_rebuild_archives_and_clears_finished_outbox_without_dropping_tables(
         assert records(archive / f"{table}.jsonl.gz") == before[table]
         assert rows(database, table) == []
     assert read_status(database)["handle_totals"] == totals
-    with sqlite3.connect(database) as connection:
+    with closing(sqlite3.connect(database)) as connection, connection:
         assert connection.execute("PRAGMA user_version").fetchone()[0] == 5
     # The schema remains immediately usable; no Handle work is requeued.
     publisher = MagicMock()
@@ -286,7 +284,7 @@ def test_rebuild_still_accepts_version_four_without_outbox_tables(seeded):
     result = rebuild.rebuild_work(config)
     assert result["cleared_outbox"] == {}
     assert len(rows(database, "work_items")) == 2
-    with sqlite3.connect(database) as connection:
+    with closing(sqlite3.connect(database)) as connection, connection:
         assert connection.execute("PRAGMA user_version").fetchone()[0] == 4
 
 
@@ -495,7 +493,7 @@ def test_vacuum_reclaims_space_after_rebuild(finished_outbox):
     result = rebuild.rebuild_work(config, vacuum=True)
     assert result["vacuum"]
     assert database.stat().st_size < before
-    with sqlite3.connect(database) as connection:
+    with closing(sqlite3.connect(database)) as connection, connection:
         assert connection.execute("PRAGMA freelist_count").fetchone()[0] == 0
 
 

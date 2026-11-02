@@ -37,7 +37,7 @@ def kafka_message(record):
 
 
 @pytest.fixture
-def restored(tmp_path, testdata_path, monkeypatch):
+def restored(tmp_path, publication_sample, monkeypatch):
     backup = tmp_path / "backup"
     backup.mkdir()
     output = tmp_path / "recovered"
@@ -46,9 +46,7 @@ def restored(tmp_path, testdata_path, monkeypatch):
     config._set("catalog", "directory", str(output))
     messages = {}
     for name in ("cmip6", "cmip7"):
-        messages[name] = json.loads(
-            (testdata_path / "publication_samples" / f"{name}.json").read_text()
-        )
+        messages[name] = publication_sample(name)
         messages[name]["data"]["payload"]["item"]["properties"]["recovery_steps"] = []
     payload = messages["cmip6"]["data"]["payload"]
     patch = dict(

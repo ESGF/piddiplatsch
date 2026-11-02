@@ -191,6 +191,27 @@ def test_top_once_filters_project(tmp_path):
     assert "cmip6" not in result.output
 
 
+@pytest.mark.parametrize(
+    "phase",
+    ["preparing", "mapping", "sealing", "verifying", "publishing", "finalizing"],
+)
+def test_top_displays_current_batch_phase(tmp_path, phase):
+    config._set("catalog", "directory", str(tmp_path))
+    config._set("stats", "enable_db", True)
+    with batch_activity("cmip7") as activity:
+        activity.set_phase(phase)
+        stream = StringIO()
+        Console(file=stream, width=260).print(
+            TopCommand._overview(read_status(tmp_path / "piddi.db"))
+        )
+        row = next(
+            line
+            for line in stream.getvalue().splitlines()
+            if line.lstrip().startswith("cmip7 ")
+        )
+        assert phase in row
+
+
 def test_batch_activity_preserves_publisher_progress_and_finalizing_phase(tmp_path):
     config._set("catalog", "directory", str(tmp_path))
     config._set("stats", "enable_db", True)
