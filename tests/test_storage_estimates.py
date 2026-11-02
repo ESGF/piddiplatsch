@@ -62,6 +62,4 @@ def test_top_uses_estimates_for_once_and_json(tmp_path):
     for option in ("--once", "--json"):
         result = CliRunner().invoke(cli, ["top", "--db", str(db), option])
         assert result.exit_code == 0, result.output
-        assert (
-            "~estimated" if option == "--once" else '"estimated": true'
-        ) in result.output
+        assert ("DB ~" if option == "--once" else '"estimated": true') in result.output

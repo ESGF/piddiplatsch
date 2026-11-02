@@ -365,11 +365,17 @@ def _table_size_lines(sizes):
     if not sizes["available"]:
         reason = sizes.get("reason", "estimate unavailable")
         return [Text(f"SQLite table sizes: unavailable ({reason})", style="dim")]
+    names = {
+        "work_items": "work",
+        "catalog_items": "catalog",
+        "kafka_checkpoints": "checkpoints",
+    }
     entries = " · ".join(
-        f"{row['name']}: {_bytes(row['total_bytes'])}" for row in sizes["tables"]
+        f"{names.get(row['name'], row['name'])} {_bytes(row['total_bytes'])}"
+        for row in sizes["tables"]
     )
-    label = "SQLite tables ~estimated" if sizes.get("estimated") else "SQLite tables"
-    return [Text(f"{label} (all projects, indexes included): {entries}")]
+    label = "DB ~" if sizes.get("estimated") else "DB"
+    return [Text(f"{label} (all projects, incl. indexes): {entries}")]
 
 
 def _metrics_lines(metrics):
@@ -396,7 +402,8 @@ def _bytes(value: int) -> str:
     size = float(value)
     for unit in ("B", "KiB", "MiB", "GiB", "TiB"):
         if size < 1024 or unit == "TiB":
-            return f"{size:.1f} {unit}"
+            amount = f"{size:.1f}".removesuffix(".0")
+            return f"{amount} {unit}"
         size /= 1024
 
 
