@@ -1,6 +1,7 @@
 import datetime
 import logging
 import sqlite3
+from contextlib import closing
 from types import SimpleNamespace
 
 import pytest
@@ -262,7 +263,7 @@ def test_fresh_database_contains_only_current_monitoring_tables(tmp_path):
     reporter = StatusReporter(str(db_path))
     reporter.close()
 
-    with sqlite3.connect(db_path) as connection:
+    with closing(sqlite3.connect(db_path)) as connection, connection:
         tables = {
             row[0]
             for row in connection.execute(

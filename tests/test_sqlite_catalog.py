@@ -199,7 +199,7 @@ def test_project_file_ownership_and_schema_version_are_checked(tmp_path):
         assert catalog.get_checkpoint("topic", 0) is None
     with SQLiteCatalog("cmip6", path) as catalog:
         assert catalog.get_item("CMIP6", entry().item_id) is not None
-    with sqlite3.connect(path) as connection:
+    with closing(sqlite3.connect(path)) as connection, connection:
         connection.execute("PRAGMA user_version=999")
     with pytest.raises(CatalogError, match="schema"):
         SQLiteCatalog("cmip6", path)
@@ -252,7 +252,7 @@ def test_invalid_json_does_not_allow_checkpoint_commit(catalog, invalid):
 def test_corrupt_payload_is_an_error_but_predecessor_search_does_not_decode(catalog):
     with catalog.transaction() as transaction:
         transaction.put_item(entry(1))
-    with sqlite3.connect(catalog.path) as connection:
+    with closing(sqlite3.connect(catalog.path)) as connection, connection:
         connection.execute("UPDATE catalog_items SET stac_blob = ?", (b"corrupt",))
     assert catalog.find_previous_version("CMIP6", "dataset", 2) == entry(1).item_id
     with pytest.raises(CatalogError, match="Invalid stored"):
@@ -266,7 +266,7 @@ def test_compressed_storage_and_query_indexes(catalog):
     large = entry(repeated="stac-metadata " * 10000)
     with catalog.transaction() as transaction:
         transaction.put_item(large)
-    with sqlite3.connect(catalog.path) as connection:
+    with closing(sqlite3.connect(catalog.path)) as connection, connection:
         assert (
             connection.execute(
                 "SELECT length(stac_blob) FROM catalog_items"
@@ -337,7 +337,7 @@ def test_reset_failure_preserves_items_and_checkpoints(catalog):
     with catalog.transaction() as transaction:
         transaction.put_item(entry())
         transaction.set_checkpoint(KafkaCheckpoint("topic", 0, 10))
-    with sqlite3.connect(catalog.path) as connection:
+    with closing(sqlite3.connect(catalog.path)) as connection, connection:
         connection.execute(
             "CREATE TRIGGER prevent_checkpoint_delete BEFORE DELETE ON kafka_checkpoints "
             "BEGIN SELECT RAISE(ABORT, 'simulated reset failure'); END"
@@ -357,7 +357,7 @@ def test_compaction_reclaims_reset_storage_without_losing_remaining_state(catalo
         transaction.put_item(entry(1))
         transaction.set_checkpoint(KafkaCheckpoint("topic", 0, 1))
     catalog.compact()
-    with sqlite3.connect(catalog.path) as connection:
+    with closing(sqlite3.connect(catalog.path)) as connection, connection:
         assert connection.execute("PRAGMA freelist_count").fetchone()[0] == 0
     assert catalog.get_item("CMIP6", entry(1).item_id) == entry(1)
     assert catalog.get_checkpoint("topic", 0).next_offset == 1
