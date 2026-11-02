@@ -4,6 +4,7 @@
 
 ### Added
 
+- `top` displays the configured batch event trigger, maximum wait, and batch size.
 - `piddi admin clean` removes completed outbox records without rebuilding work
   history; `--apply` performs cleanup and optional `--vacuum` reclaims file space.
   Unfinished batches and completion markers needed for ready exports are retained.

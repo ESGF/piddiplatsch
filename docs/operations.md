@@ -262,6 +262,8 @@ the total. Mapped counts survive published-work cleanup in retained batch stats;
 project reset clears that project's mapped history and requeues retained work.
 `top --json` exposes `event_totals` with `mapped`, `pending`, `invalid`, and `total`,
 respecting `--project` when selected.
+The `Batch:` line shows the configured event-count trigger, oldest-event wait
+trigger, and maximum events per batch (defaults: 100 events or 10m; max 2,000).
 Between batches, Activity shows `idle` when there is no work, `waiting` when
 pending events are below both mapping triggers, and `ready` once the event count
 or oldest event age reaches the configured `[batch].trigger_items` or

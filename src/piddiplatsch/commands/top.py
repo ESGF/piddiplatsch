@@ -94,6 +94,14 @@ class TopCommand(Command):
         """Keep the daily operator view to one table and actionable status lines."""
         active = _active_runs(status)
         lines = [_totals_line(status)]
+        lines.append(
+            Text(
+                f"Batch: {config.get('batch', 'trigger_items', 100):,} events / "
+                f"{_eta_duration(config.get('batch', 'max_wait_seconds', 600))} "
+                f"· max {config.get('batch', 'max_items', 2000):,}",
+                style="dim",
+            )
+        )
         starts = (
             [status["totals_since"]]
             if status.get("totals_since")
