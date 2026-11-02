@@ -1,19 +1,25 @@
 """Durable pending changes, sealed batches, triggers, and publication recovery."""
 
 import json
+import random
 import sqlite3
 from contextlib import closing
 from copy import deepcopy
 from datetime import UTC, datetime, timedelta
+from io import StringIO
+from types import SimpleNamespace
 
 import pytest
 from click.testing import CliRunner
+from rich.console import Console
 
 from piddiplatsch.catalog.harvest import CatalogHarvester
 from piddiplatsch.catalog.sqlite import SQLiteCatalog
 from piddiplatsch.cli import cli
+from piddiplatsch.commands.top import TopCommand
 from piddiplatsch.config import config
 from piddiplatsch.core.messages import KafkaSource
+from piddiplatsch.monitoring.status import read_status
 from piddiplatsch.result import PublishResult
 from piddiplatsch.runners.sync import SyncWorker, _worker_lock
 
@@ -34,6 +40,16 @@ class Publisher:
         assert all(record["project"] == kwargs["project"] for record in records)
         self.calls.append(path)
         self.options.append(kwargs)
+        for _, position, record in kwargs.get("record_source", ()):
+            kwargs["journal"].record(
+                SimpleNamespace(
+                    line_number=position,
+                    handle=record["handle"],
+                    error=(
+                        RuntimeError("test publication failed") if self.fail else None
+                    ),
+                )
+            )
         return PublishResult(
             total=len(records),
             succeeded=0 if self.fail else len(records),
@@ -106,6 +122,248 @@ def test_count_trigger_seals_and_publishes_then_empty_tick_does_nothing(setup):
 
 
 @pytest.mark.parametrize("force", [False, True])
+def test_batch_scheduling_cost_is_bounded_by_threshold(setup, monkeypatch, force):
+    """More pending events must not add a full backlog scan before each batch."""
+    from piddiplatsch.runners import sync
+
+    put, directory, root = setup
+    put(1)
+    put(2)
+    instructions = 0
+    original_open = sync.open_catalog
+
+    def count_instructions():
+        nonlocal instructions
+        instructions += 1
+        return 0
+
+    def instrumented_open(*args, **kwargs):
+        reader = original_open(*args, **kwargs)
+        reader._require_connection().set_progress_handler(count_instructions, 1)
+        return reader
+
+    class SelectionReachedError(Exception):
+        pass
+
+    def stop_at_selection(*args, **kwargs):
+        raise SelectionReachedError
+
+    monkeypatch.setattr(sync, "open_catalog", instrumented_open)
+    monkeypatch.setattr(SQLiteCatalog, "select_work_ids", stop_at_selection)
+
+    def scheduling_cost(worker):
+        nonlocal instructions
+        instructions = 0
+        with pytest.raises(SelectionReachedError):
+            worker._map_due("cmip7", root / "batches/cmip7", force)
+        return instructions
+
+    small = scheduling_cost(SyncWorker(publisher=Publisher()))
+    with closing(sqlite3.connect(directory / "piddi.db")) as connection:
+        connection.execute(
+            "WITH RECURSIVE extra(n) AS (SELECT 2 UNION ALL SELECT n+1 FROM extra WHERE n<10001) "
+            "INSERT INTO work_items(project,topic,partition,offset,stac_blob,event_type,created_at,updated_at) "
+            "SELECT project,topic,partition,n,stac_blob,event_type,created_at,updated_at "
+            "FROM work_items CROSS JOIN extra WHERE id=1"
+        )
+        connection.commit()
+    worker = SyncWorker(publisher=Publisher())
+    large = scheduling_cost(worker)
+    repeated = scheduling_cost(worker)
+    # Allow query-planner overhead, but reject work proportional to 10,000 rows.
+    assert large <= small + 100
+    assert repeated <= small + 100
+
+
+@pytest.mark.parametrize("mapped", [False, True])
+@pytest.mark.parametrize("unrelated_state", ["pending", "published", "invalid"])
+def test_mapped_batch_validation_ignores_unrelated_backlog(
+    setup, monkeypatch, mapped, unrelated_state
+):
+    """Validation cost must depend on mapped work, not the whole project history."""
+    from piddiplatsch.runners import sync
+
+    put, directory, root = setup
+    put(1)
+    project_root = root / "batches/cmip7"
+    if mapped:
+        with SQLiteCatalog("cmip7", directory / "piddi.db") as catalog:
+            catalog.seal_batch("existing", [{"id": 1, "handle_count": 2}])
+        ready = project_root / "ready/existing"
+        ready.mkdir(parents=True)
+        (ready / "manifest.json").write_text("{}")
+    instructions = 0
+    original_open = sync.open_catalog
+
+    def count_instructions():
+        nonlocal instructions
+        instructions += 1
+        return 0
+
+    def instrumented_open(*args, **kwargs):
+        reader = original_open(*args, **kwargs)
+        reader._require_connection().set_progress_handler(count_instructions, 1)
+        return reader
+
+    monkeypatch.setattr(sync, "open_catalog", instrumented_open)
+    worker = SyncWorker(publisher=Publisher())
+    worker._check_mapped_batches("cmip7", project_root)
+    small = instructions
+    with closing(sqlite3.connect(directory / "piddi.db")) as connection:
+        connection.execute(
+            "WITH RECURSIVE extra(n) AS (SELECT 1 UNION ALL SELECT n+1 FROM extra WHERE n<10000) "
+            "INSERT INTO work_items(project,topic,partition,offset,stac_blob,event_type,state,created_at,updated_at) "
+            "SELECT project,topic,partition,n,stac_blob,event_type,?,created_at,updated_at "
+            "FROM work_items CROSS JOIN extra WHERE id=1",
+            (unrelated_state,),
+        )
+        connection.commit()
+    instructions = 0
+    worker._check_mapped_batches("cmip7", project_root)
+    assert instructions <= small + 100
+    if mapped:
+        # Indexed validation must still detect missing output for actual mapped work.
+        (project_root / "ready/existing/manifest.json").unlink()
+        with pytest.raises(sync.BatchError, match="Mapped batch output is missing"):
+            worker._check_mapped_batches("cmip7", project_root)
+
+
+@pytest.fixture
+def priority_scheduler(setup, monkeypatch):
+    """Keep real scheduling, replacing batch publication with finite queues."""
+    config._set("consumer", "projects", ["cmip6", "cmip7"])
+    worker = SyncWorker(publisher=Publisher())
+    jobs = {"cmip6": 1000, "cmip7": 1000}
+    turns = []
+    monkeypatch.setattr(
+        worker, "_has_sync_work", lambda project, force: jobs[project] > 0
+    )
+
+    def publish(project, root):
+        jobs[project] -= 1
+        turns.append(project)
+        return True
+
+    monkeypatch.setattr(worker, "_publish_ready", publish)
+    worker.random = random.Random(42)  # noqa: S311 - deterministic scheduling test
+    return worker, jobs, turns
+
+
+@pytest.mark.parametrize("cmip7_priority,expected_share", [(100, 0.5), (255, 0.75)])
+def test_sync_uses_weighted_batch_selection(
+    priority_scheduler, cmip7_priority, expected_share
+):
+    worker, jobs, turns = priority_scheduler
+    config._set("plugins", "cmip7", {"priority": cmip7_priority})
+    # 255:85 is exactly 3:1; equal defaults must instead give equal chances.
+    config._set("plugins", "cmip6", {"priority": 85 if cmip7_priority == 255 else 100})
+    worker.run()
+    assert not worker.errors
+    share = turns[:1000].count("cmip7") / 1000
+    assert share == pytest.approx(expected_share, abs=0.05)
+    assert turns[:1000].count("cmip6") > 0
+    assert jobs == {"cmip6": 0, "cmip7": 0}
+
+
+def test_sync_failure_does_not_block_other_priority_projects(
+    priority_scheduler, monkeypatch
+):
+    worker, jobs, turns = priority_scheduler
+    publish = worker._publish_ready
+
+    def fail_cmip7(project, root):
+        if project == "cmip7":
+            raise OSError("publication unavailable")
+        return publish(project, root)
+
+    monkeypatch.setattr(worker, "_publish_ready", fail_cmip7)
+    worker.run()
+    assert worker.errors == ["cmip7: publication unavailable"]
+    assert jobs == {"cmip6": 0, "cmip7": 1000}
+    assert turns == ["cmip6"] * 1000
+
+
+@pytest.mark.parametrize("force", [False, True])
+def test_priority_zero_skips_pending_and_ready_work(setup, force):
+    put, directory, root = setup
+    put(1)
+    publisher = Publisher()
+    publisher.fail = True
+    SyncWorker(publisher=publisher).run(force_map=True)
+    ready, _manifest = manifests(root)[0]
+    put(2)
+    config._set("plugins", "cmip7", {"priority": 0})
+    publisher.fail = False
+    publisher.calls.clear()
+    worker = SyncWorker(publisher=publisher)
+    assert worker.run(force_map=force) == []
+    assert not worker.errors
+    assert not publisher.calls
+    assert ready.exists()
+    assert pending(directory).count == 1
+    # Manual operations can still finish queued work and map disabled projects.
+    worker.run(publish_only=True)
+    assert len(publisher.calls) == 1
+    worker.run(force_map=True, map_only=True)
+    assert pending(directory).count == 0
+    assert len(publisher.calls) == 1
+    config._set("plugins", "cmip7", {"priority": 255})
+    worker.run()
+    assert not worker.errors
+    assert len(publisher.calls) == 2
+
+
+def test_sync_lottery_excludes_idle_and_not_due_projects(setup, monkeypatch):
+    put, _directory, _root = setup
+    put(1)
+    config._set("consumer", "projects", ["cmip6", "cmip7"])
+    config._set("plugins", "cmip6", {"priority": 255})
+    config._set("plugins", "cmip7", {**config.get_plugin("cmip7"), "priority": 1})
+    draws = []
+
+    def choose(population, weights, k):
+        draws.append(([p.name for p in population], weights))
+        return [population[0]]
+
+    worker = SyncWorker(publisher=Publisher())
+    monkeypatch.setattr(worker.random, "choices", choose)
+    assert worker.run() == []
+    assert not draws  # One recent event is below this fixture's trigger of two.
+    paths = worker.run(force_map=True)
+    assert len(paths) == 1
+    assert draws == [(["cmip7"], [1])]
+    assert not worker.errors
+
+
+def test_sync_nonprogressing_candidate_does_not_spin_or_stop_other_projects(
+    priority_scheduler, monkeypatch
+):
+    worker, jobs, turns = priority_scheduler
+    # A mapped batch waiting on older, not-yet-due work can remain a candidate.
+    jobs["cmip6"] = 1
+    publish = worker._publish_ready
+    monkeypatch.setattr(worker, "_has_sync_work", lambda project, force: True)
+
+    def blocked(project, root):
+        if project == "cmip6":
+            return False
+        if jobs[project]:
+            return publish(project, root)
+        return False
+
+    monkeypatch.setattr(worker, "_publish_ready", blocked)
+    monkeypatch.setattr(worker, "_check_mapped_batches", lambda *args: None)
+    monkeypatch.setattr(worker, "_map_due", lambda *args: None)
+    # Ensure the database exists so the normal no-progress path is exercised.
+    with SQLiteCatalog("cmip6", worker.catalog_directory / "piddi.db"):
+        pass
+    worker.run()
+    assert not worker.errors
+    assert jobs == {"cmip6": 1, "cmip7": 0}
+    assert turns == ["cmip7"] * 1000
+
+
+@pytest.mark.parametrize("force", [False, True])
 def test_sync_map_info_reports_force_setting_and_alias_summary(setup, caplog, force):
     put, directory, _root = setup
     config._set(
@@ -149,10 +407,12 @@ def test_sync_map_info_reports_force_setting_and_alias_summary(setup, caplog, fo
         ).fetchone() == (1, 2 if force else 0)
 
 
-def test_hour_trigger_preserves_successive_event_snapshots(setup):
+@pytest.mark.parametrize("max_wait_seconds", [600, 1800, 3600])
+def test_time_trigger_preserves_successive_event_snapshots(setup, max_wait_seconds):
     put, directory, root = setup
     put(1)
     config._set("batch", "trigger_items", 3)
+    config._set("batch", "max_wait_seconds", max_wait_seconds)
     first = pending(directory)
     put(1, extra={"custom:change": 2})
     updated = pending(directory)
@@ -162,12 +422,14 @@ def test_hour_trigger_preserves_successive_event_snapshots(setup):
     publisher = Publisher()
     assert (
         SyncWorker(
-            now=lambda: first.oldest_at + timedelta(seconds=3599), publisher=publisher
+            now=lambda: first.oldest_at + timedelta(seconds=max_wait_seconds - 1),
+            publisher=publisher,
         ).run()
         == []
     )
     worker = SyncWorker(
-        now=lambda: first.oldest_at + timedelta(hours=1), publisher=publisher
+        now=lambda: first.oldest_at + timedelta(seconds=max_wait_seconds),
+        publisher=publisher,
     )
     assert len(worker.run()) == 1
     assert not worker.errors
@@ -214,6 +476,130 @@ def test_changes_during_mapping_remain_pending(setup, monkeypatch):
             ]
             is True
         )
+
+
+def test_top_shows_entire_batch_lifecycle_without_counter_gaps(setup, monkeypatch):
+    from piddiplatsch.runners import sync
+
+    put, directory, _root = setup
+    put(1)
+    put(2)
+    config._set("stats", "enable_db", True)
+    phases = []
+
+    def snapshot(phase):
+        status = read_status(directory / "piddi.db")
+        activity = [
+            r
+            for r in status["runs"]
+            if r["command"] == "batch" and r["state"] == "healthy"
+        ]
+        assert len(activity) == 1
+        assert activity[0]["phase"] == phase
+        assert activity[0]["selected_projects"] == ["cmip7"]
+        # Phase tracking must not reset or claim the mapping/publication counters.
+        if phase in {"sealing", "verifying", "publishing", "finalizing"}:
+            assert not any(
+                r["command"] == "sync" and r["status"] == "running"
+                for r in status["runs"]
+            )
+        stream = StringIO()
+        Console(file=stream, width=260).print(TopCommand._overview(status))
+        row = next(
+            line
+            for line in stream.getvalue().splitlines()
+            if line.lstrip().startswith("cmip7 ")
+        )
+        assert phase in row
+        phases.append(phase)
+
+    class ObservedPublisher(Publisher):
+        def run(self, *args, **kwargs):
+            snapshot("publishing")
+            return super().run(*args, **kwargs)
+
+    worker = SyncWorker(publisher=ObservedPublisher())
+    select = SQLiteCatalog.select_work_ids
+    write = worker._write_items
+    fingerprint = sync._fingerprint
+    acknowledge = worker._acknowledge
+    verify = worker._verify_output
+    record = worker._record_publication
+
+    def selecting(*args, **kwargs):
+        snapshot("preparing")
+        return select(*args, **kwargs)
+
+    def mapping(*args, **kwargs):
+        snapshot("mapping")
+        return write(*args, **kwargs)
+
+    def checking(*args, **kwargs):
+        snapshot(worker._activity.run["phase"])
+        return fingerprint(*args, **kwargs)
+
+    def verifying(*args, **kwargs):
+        snapshot(worker._activity.run["phase"])
+        return verify(*args, **kwargs)
+
+    def acknowledging(*args, **kwargs):
+        # The first acknowledgement seals; the second is recovery verification.
+        snapshot("verifying" if "verifying" in phases else "sealing")
+        return acknowledge(*args, **kwargs)
+
+    def finalizing(*args, **kwargs):
+        snapshot("finalizing")
+        return record(*args, **kwargs)
+
+    monkeypatch.setattr(SQLiteCatalog, "select_work_ids", selecting)
+    monkeypatch.setattr(worker, "_write_items", mapping)
+    monkeypatch.setattr(sync, "_fingerprint", checking)
+    monkeypatch.setattr(worker, "_acknowledge", acknowledging)
+    monkeypatch.setattr(worker, "_verify_output", verifying)
+    monkeypatch.setattr(worker, "_record_publication", finalizing)
+    assert len(worker.run()) == 1
+    assert not worker.errors
+    assert set(phases) == {
+        "preparing",
+        "mapping",
+        "sealing",
+        "verifying",
+        "publishing",
+        "finalizing",
+    }
+    status = read_status(directory / "piddi.db")
+    assert not any(r["status"] == "running" for r in status["runs"])
+    assert status["handle_totals"][0]["mapped_items"] == 2
+    assert status["handle_totals"][0]["prepared"] == 4
+    assert status["handle_totals"][0]["published"] == 4
+
+
+@pytest.mark.parametrize(
+    "stage", ["_write_items", "_acknowledge", "_verify_output", "_archive"]
+)
+def test_failed_batch_closes_activity_heartbeat(setup, monkeypatch, stage):
+    put, directory, _root = setup
+    put(1)
+    put(2)
+    config._set("stats", "enable_db", True)
+    worker = SyncWorker(publisher=Publisher())
+
+    def fail(*args, **kwargs):
+        raise RuntimeError("batch stage failed")
+
+    monkeypatch.setattr(worker, stage, fail)
+    worker.run()
+    assert worker.errors
+    status = read_status(directory / "piddi.db")
+    activities = [r for r in status["runs"] if r["command"] == "batch"]
+    assert len(activities) == 1
+    assert activities[0]["status"] == "failed"
+    assert activities[0]["finished_at"] is not None
+    assert activities[0]["error_summary"] == "batch stage failed"
+    assert not worker._activity.thread.is_alive()
+    output = StringIO()
+    Console(file=output, width=260).print(TopCommand._overview(status))
+    assert "cmip7: errors recorded" in output.getvalue()
 
 
 def test_failed_publication_retries_immutable_batch_before_new_mapping(setup):
@@ -485,9 +871,9 @@ def test_defaults_and_cli_worker_tick(setup, monkeypatch):
     from piddiplatsch.config.schema import BatchConfig
 
     assert BatchConfig().publish_workers == 4
-    assert BatchConfig().trigger_items == 1000
+    assert BatchConfig().trigger_items == 100
     assert BatchConfig().max_items == 2000
-    assert BatchConfig().max_wait_seconds == 3600
+    assert BatchConfig().max_wait_seconds == 600
     put, _directory, _root = setup
     put(1)
     publisher = Publisher()
@@ -507,10 +893,12 @@ def test_worker_uses_default_batch_limits_when_settings_are_omitted(setup):
 
     config._set("batch", None, {})
     worker = SyncWorker(publisher=Publisher())
-    assert worker.trigger_items == 1000
+    assert worker.trigger_items == 100
     assert worker.max_items == 2000
-    assert Config().get("batch", "trigger_items") == 1000
+    assert worker.max_wait_seconds == 600
+    assert Config().get("batch", "trigger_items") == 100
     assert Config().get("batch", "max_items") == 2000
+    assert Config().get("batch", "max_wait_seconds") == 600
 
 
 def test_archive_partition_is_stable_across_publication_midnight(setup):

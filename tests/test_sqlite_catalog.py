@@ -444,14 +444,21 @@ def test_work_snapshots_and_summary_acknowledgement_are_transactional(catalog):
     )
 
 
-def test_fresh_database_has_four_application_tables(catalog):
+def test_fresh_database_has_transactional_outbox_tables(catalog):
     tables = {
         row[0]
         for row in catalog._execute(
             "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'"
         )
     }
-    assert tables == {"catalog_items", "work_items", "kafka_checkpoints", "stats"}
+    assert tables == {
+        "catalog_items",
+        "work_items",
+        "kafka_checkpoints",
+        "stats",
+        "outbox_batches",
+        "handle_outbox",
+    }
 
 
 def test_batch_stats_reuse_one_row_across_days_retries_and_work_cleanup(

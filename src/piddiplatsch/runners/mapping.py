@@ -1,4 +1,4 @@
-"""Map pending database work into durable project batches without publishing."""
+"""Map pending work into the SQLite Handle outbox without publishing."""
 
 import json
 from datetime import datetime
@@ -29,8 +29,9 @@ def map_catalog(
     """Map pending event snapshots; selectors count work entries across projects.
 
     Date filters select local work creation days in UTC. No date selector means
-    all pending work. Output and database progress use the same sealing/recovery
-    path as sync, under the same worker lock.
+    all pending work is eligible. The total limit defaults to batch.max_items
+    across selected projects; an explicit limit overrides it. Output and database
+    progress use the same sealing/recovery path as sync, under the worker lock.
     """
     if limit is not None and limit < 1:
         raise ValueError("limit must be at least 1")
@@ -71,7 +72,7 @@ def map_catalog(
     else:
         worker.from_date = from_date.date() if from_date else None
         worker.to_date = to_date.date() if to_date else None
-    worker.remaining = limit
+    worker.remaining = worker.max_items if limit is None else limit
     worker.offset = offset
     paths = worker.run(force_map=True, map_only=True)
     result = FeedResult()

@@ -112,6 +112,8 @@ class CatalogHarvester:
                     catalog._execute("DELETE FROM work_items")
                     catalog._execute("DELETE FROM kafka_checkpoints")
                     catalog._execute("DELETE FROM stats")
+                    catalog._execute("DELETE FROM handle_outbox")
+                    catalog._execute("DELETE FROM outbox_batches")
             # Open project views for recovered-item refresh without migration.
             if path.exists():
                 for project in self.project_names:

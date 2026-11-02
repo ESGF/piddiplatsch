@@ -16,11 +16,11 @@ def test_dangerous_jobs_are_grouped_in_admin_help():
         if line.strip()
     }
     assert "admin" in commands
-    assert not {"reset", "rebuild"} & commands
+    assert not {"reset", "rebuild", "clean"} & commands
     admin = CliRunner().invoke(cli, ["admin", "--help"])
     assert admin.exit_code == 0
     assert all(name in admin.output for name in ("reset", "rebuild", "recover"))
-    for command in ("reset", "rebuild", "recover"):
+    for command in ("reset", "rebuild", "recover", "clean"):
         help_result = CliRunner().invoke(cli, ["admin", command, "--help"])
         assert "--apply" in help_result.output
 
@@ -61,7 +61,7 @@ def test_harvest_and_admin_recover_share_workflow_with_safe_defaults(
 
 
 @pytest.mark.parametrize(
-    "arguments", [["reset", "--project", "cmip6"], ["rebuild"], ["recover"]]
+    "arguments", [["reset", "--project", "cmip6"], ["rebuild"], ["recover"], ["clean"]]
 )
 def test_admin_previews_do_not_require_log_file(monkeypatch, arguments):
     configure = MagicMock(side_effect=AssertionError("Preview must not open logs"))

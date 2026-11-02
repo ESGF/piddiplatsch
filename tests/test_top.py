@@ -9,9 +9,62 @@ from rich.console import Console
 from piddiplatsch.cli import cli
 from piddiplatsch.commands.top import TopCommand
 from piddiplatsch.config import config
+from piddiplatsch.monitoring.activity import batch_activity
 from piddiplatsch.monitoring.stats import Stats, publication_monitor
 from piddiplatsch.monitoring.status import read_status
 from piddiplatsch.result import ProcessingResult
+
+
+@pytest.mark.parametrize(
+    "pending,age,queued,expected",
+    [
+        (0, None, 0, "idle"),
+        (None, None, 0, "sampling"),
+        (1, 0, 0, "waiting"),
+        (99, 599, 0, "waiting"),
+        (1, 600, 0, "ready"),
+        (1, 700, 0, "ready"),
+        (100, None, 0, "ready"),
+        (101, None, 0, "ready"),
+        (1, None, 0, "pending"),
+        (0, None, 1, "queued"),
+        (100, None, 1, "queued"),
+    ],
+)
+def test_queue_activity_distinguishes_batch_eligibility(pending, age, queued, expected):
+    from datetime import UTC, datetime, timedelta
+
+    from piddiplatsch.commands.top import _queue_activity
+
+    config._set("batch", "trigger_items", 100)
+    config._set("batch", "max_wait_seconds", 600)
+    now = datetime.now(UTC)
+    row = dict(
+        project="cmip7",
+        pending_items=pending,
+        ready_batches=queued,
+        pending_oldest_at=(
+            (now - timedelta(seconds=age)).isoformat() if age is not None else None
+        ),
+    )
+    assert _queue_activity(row, now.isoformat()) == expected
+
+
+def test_queue_activity_uses_custom_thresholds_and_refresh_time():
+    from piddiplatsch.commands.top import _queue_activity
+
+    config._set("batch", "trigger_items", 10)
+    config._set("batch", "max_wait_seconds", 60)
+    row = dict(
+        project="cmip7", pending_items=1, pending_oldest_at="2026-11-02T10:00:00+00:00"
+    )
+    assert _queue_activity(row, "2026-11-02T10:00:59+00:00") == "waiting"
+    # Age crosses the threshold even when the background counts haven't refreshed.
+    assert _queue_activity(row, "2026-11-02T10:01:00+00:00") == "ready"
+    row["pending_items"] = 10
+    assert _queue_activity(row, "2026-11-02T10:00:01+00:00") == "ready"
+    config._set("plugins", "cmip7", {"priority": 0})
+    assert _queue_activity(row, "2026-11-02T10:01:00+00:00") == "disabled"
 
 
 def _monitoring_db(path):
@@ -136,6 +189,60 @@ def test_top_once_filters_project(tmp_path):
     assert result.exit_code == 0
     assert "cmip7" in result.output
     assert "cmip6" not in result.output
+
+
+def test_batch_activity_preserves_publisher_progress_and_finalizing_phase(tmp_path):
+    config._set("catalog", "directory", str(tmp_path))
+    config._set("stats", "enable_db", True)
+    with batch_activity("cmip7") as activity:
+        activity.set_phase("publishing")
+        with publication_monitor("cmip7", expected_handles=10) as monitoring:
+            monitoring.record_publication("cmip7", success=True)
+            monitoring._heartbeat_once(force_sample=True)
+            status = read_status(tmp_path / "piddi.db")
+            publisher = next(r for r in status["runs"] if r["command"] == "publish")
+            assert publisher["publication"]["published_handles"] == 1
+            assert publisher["publication"]["remaining_handles"] == 9
+            stream = StringIO()
+            Console(file=stream, width=260).print(TopCommand._overview(status))
+            assert "publishing" in stream.getvalue()
+        activity.set_phase("finalizing")
+        status = read_status(tmp_path / "piddi.db")
+        stream = StringIO()
+        Console(file=stream, width=260).print(TopCommand._overview(status))
+        assert "finalizing" in stream.getvalue()
+        assert status["handle_totals"] == []  # Activity never adds durable totals.
+
+
+def test_stale_batch_keeps_last_phase_visible_with_warning(tmp_path):
+    config._set("catalog", "directory", str(tmp_path))
+    config._set("stats", "enable_db", True)
+    with batch_activity("cmip7") as activity:
+        activity.set_phase("sealing")
+        status = read_status(tmp_path / "piddi.db", stale_after_seconds=-1)
+        output = StringIO()
+        Console(file=output, width=260).print(TopCommand._overview(status))
+        assert "sealing · stale" in output.getvalue()
+        assert "cmip7: batch heartbeat is stale" in output.getvalue()
+
+
+def test_finished_batch_errors_clear_after_successful_batch(tmp_path):
+    config._set("catalog", "directory", str(tmp_path))
+    config._set("stats", "enable_db", True)
+    with pytest.raises(RuntimeError), batch_activity("cmip7"):
+        raise RuntimeError("sealing failed")
+    output = StringIO()
+    Console(file=output, width=260).print(
+        TopCommand._overview(read_status(tmp_path / "piddi.db"))
+    )
+    assert "cmip7: errors recorded" in output.getvalue()
+    with batch_activity("cmip7"):
+        pass
+    output = StringIO()
+    Console(file=output, width=260).print(
+        TopCommand._overview(read_status(tmp_path / "piddi.db"))
+    )
+    assert "errors recorded" not in output.getvalue()
 
 
 def test_top_error_column_counts_finished_and_active_attempts_per_project(tmp_path):

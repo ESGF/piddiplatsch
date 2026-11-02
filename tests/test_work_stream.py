@@ -4,6 +4,7 @@ import json
 from contextlib import closing
 from copy import deepcopy
 from datetime import UTC, datetime, timedelta
+from types import SimpleNamespace
 
 import pytest
 from click.testing import CliRunner
@@ -44,23 +45,41 @@ def seed(tmp_path, testdata_path, projects=("cmip6", "cmip7"), count=3):
 class Publisher:
     def __init__(self, failed_project=None):
         self.calls = []
+        self.batches = []
         self.failed_project = failed_project
 
     def run(self, paths, **kwargs):
         project = kwargs["project"]
         self.calls.append(project)
+        manifest = json.loads((paths[0].parent / "manifest.json").read_text())
+        self.batches.append((project, [entry["id"] for entry in manifest["outcomes"]]))
         count = len(paths[0].read_text().splitlines())
         failed = count if project == self.failed_project else 0
+        for _, position, record in kwargs.get("record_source", ()):
+            kwargs["journal"].record(
+                SimpleNamespace(
+                    line_number=position,
+                    handle=record["handle"],
+                    error=RuntimeError("test publication failed") if failed else None,
+                )
+            )
         return PublishResult(total=count, succeeded=count - failed, failed=failed)
 
 
-def test_project_batches_run_round_robin(tmp_path, testdata_path):
+def test_weighted_project_batches_preserve_each_projects_order(tmp_path, testdata_path):
     seed(tmp_path, testdata_path)
     publisher = Publisher()
     worker = SyncWorker(publisher=publisher)
     assert len(worker.run(force_map=True)) == 4
     assert not worker.errors
-    assert publisher.calls == ["cmip6", "cmip7", "cmip6", "cmip7"]
+    assert sorted(publisher.calls) == ["cmip6", "cmip6", "cmip7", "cmip7"]
+    for project, expected in (("cmip6", [1, 2, 3]), ("cmip7", [4, 5, 6])):
+        assert [
+            identity
+            for name, ids in publisher.batches
+            if name == project
+            for identity in ids
+        ] == expected
     with SQLiteCatalog("cmip7", tmp_path / "piddi.db", read_only=True) as reader:
         assert reader.get_checkpoint("topic", 0).next_offset == 6
         assert (
@@ -71,13 +90,28 @@ def test_project_batches_run_round_robin(tmp_path, testdata_path):
         )
 
 
+def test_filtered_mapping_cannot_interleave_batches_and_replay_older_updates(
+    tmp_path, testdata_path
+):
+    from piddiplatsch.runners.mapping import map_catalog
+
+    seed(tmp_path, testdata_path, projects=("cmip7",))
+    assert map_catalog(projects=["cmip7"], offset=1, limit=1).succeeded == 1
+    assert map_catalog(projects=["cmip7"]).succeeded == 2
+    publisher = Publisher()
+    worker = SyncWorker(publisher=publisher)
+    worker.run()
+    assert not worker.errors
+    assert [ids for _, ids in publisher.batches] == [[1], [2], [3]]
+
+
 def test_failed_project_does_not_block_other_projects(tmp_path, testdata_path):
     seed(tmp_path, testdata_path)
     publisher = Publisher(failed_project="cmip6")
     worker = SyncWorker(publisher=publisher)
     worker.run(force_map=True)
     assert worker.errors
-    assert publisher.calls == ["cmip6", "cmip7", "cmip7"]
+    assert sorted(publisher.calls) == ["cmip6", "cmip7", "cmip7"]
     with SQLiteCatalog("cmip6", tmp_path / "piddi.db", read_only=True) as reader:
         assert reader.pending_work().count == 1
         assert (
@@ -196,7 +230,7 @@ def test_map_offset_stays_skipped_across_batch_rounds(tmp_path, testdata_path):
     from piddiplatsch.runners.mapping import map_catalog
 
     seed(tmp_path, testdata_path, projects=("cmip6",), count=7)
-    assert map_catalog(projects=["cmip6"], offset=2).succeeded == 5
+    assert map_catalog(projects=["cmip6"], offset=2, limit=5).succeeded == 5
     with SQLiteCatalog("cmip6", tmp_path / "piddi.db", read_only=True) as reader:
         assert reader._execute(
             "SELECT id FROM work_items WHERE state='pending' ORDER BY id"
@@ -222,13 +256,22 @@ def test_publication_exception_keeps_saved_output_and_records_failure(
         assert reader._execute("SELECT errors FROM stats").fetchone() == (1,)
 
 
-def test_saved_publication_backlog_also_runs_round_robin(tmp_path, testdata_path):
+def test_weighted_saved_publication_backlog_preserves_each_projects_order(
+    tmp_path, testdata_path
+):
     from piddiplatsch.runners.mapping import map_catalog
 
     seed(tmp_path, testdata_path)
-    assert map_catalog(projects=["cmip6", "cmip7"]).succeeded == 6
+    assert map_catalog(projects=["cmip6", "cmip7"], limit=6).succeeded == 6
     publisher = Publisher()
     worker = SyncWorker(publisher=publisher)
     assert worker.run() == []
     assert not worker.errors
-    assert publisher.calls == ["cmip6", "cmip7", "cmip6", "cmip7"]
+    assert sorted(publisher.calls) == ["cmip6", "cmip6", "cmip7", "cmip7"]
+    for project, expected in (("cmip6", [1, 2, 3]), ("cmip7", [4, 5, 6])):
+        assert [
+            identity
+            for name, ids in publisher.batches
+            if name == project
+            for identity in ids
+        ] == expected

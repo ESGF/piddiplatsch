@@ -52,6 +52,11 @@ class ConfigExplainCommand(Command):
         for key in ("topic", "output_dir"):
             show(key, config.get("consumer", key), f"consumer.{key}")
         show(
+            "Sync priority",
+            config.get_sync_priority(project),
+            plugin_source("priority"),
+        )
+        show(
             "Mapping max_errors",
             config.get_mapping_max_errors(project),
             plugin_source("max_errors"),

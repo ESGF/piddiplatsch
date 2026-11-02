@@ -16,7 +16,7 @@
     piddi_enable_service: false
     # This timer publishes Handles; enable explicitly after checking the site profile.
     piddi_enable_sync_timer: false
-    piddi_sync_check_interval: 1min
+    piddi_sync_check_interval: 20s
     piddi_enable_maintenance_timer: "{{ piddi_enable_service }}"
     # Shared application settings used by manual runs and deployment.
     piddi_config_source: "{{ playbook_dir }}/../../custom.toml"

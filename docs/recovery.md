@@ -1,7 +1,10 @@
 # Recovery
 
-The fresh-start format uses one `piddi.db` and saved JSONL batches. Existing
-per-project databases and old manifests are not migrated. See
+The current format uses one `piddi.db` containing the transactional Handle
+outbox. Version 4 databases upgrade additively to version 5; ready manifest-v3
+batches and progress journals are imported when processed. Keep these legacy
+files until imported. Older per-project databases and incompatible manifests
+are not migrated. See
 [Operations](operations.md) for command examples and paths.
 
 ## Harvest interruption
@@ -93,11 +96,17 @@ instead when preserving that publication progress is required.
 A building batch does not advance work. Retry normal map/sync; the selected
 snapshots remain pending. Building artifacts may remain for inspection.
 
-A sealed batch has durable Handle/failure files, checksums, and exact work-ID
-outcomes. If the process stopped before database acknowledgement, the next batch
-command verifies the files and repeats the acknowledgement transaction. Repeated
-acknowledgement cannot repeat the batch totals. A checksum error or missing source
-work blocks that batch; restore the matching database and output together.
+A mapping commit saves exact Handle payloads, batch metadata, work-state changes,
+and summary counts together in SQLite. Before that commit, work stays pending.
+Afterward, publication needs only the database; missing JSONL exports are not a
+recovery failure. A completed temporary spool left before the commit may be
+verified and imported on restart; otherwise the still-pending work can be mapped
+again. Repeated acknowledgement cannot duplicate batch totals.
+
+Legacy ready batches are verified against their checksums before import. A
+checksum error, mismatched progress journal, or missing source work blocks that
+import without partially committing it. Restore those legacy files and their
+matching database rather than dropping their recorded publication progress.
 
 Mapping validation failures become invalid work with an explanation, while
 unprocessed snapshots stay pending. Partial Handle output for a rejected entry is
@@ -105,19 +114,22 @@ rolled back before sealing.
 
 ## Publication interruption
 
-Failed publication leaves work mapped. Retry `publish` or `sync` using the saved
-output. Older failed publication blocks newer batches in that project, while
+Failed publication leaves work mapped. Retry `publish` or `sync` using the SQLite
+outbox. Older failed publication blocks newer batches in that project, while
 other projects can continue. The same Handle stays ordered within each batch.
 
-The saved `publication-progress.jsonl` journal records successful output positions
-per Handle, tied to the immutable output checksum. Each success is durable before
-a later write to that Handle starts. Retries skip completed positions and defer
-later updates after a failure. A torn final journal line is repaired on restart.
-A crash between remote HTTP success and its journal append can repeat that last
-write; earlier completed Handle versions are not replayed. The local system does not promise exactly-once remote execution. Successful
-work-state transitions and batch totals are nevertheless committed together and
-are idempotent on recovery. If acknowledgement completed before archival, the
-next run archives the batch without republishing it.
+Each successful output position commits in `handle_outbox` before a later write
+to the same Handle starts. Retries skip completed positions and defer later
+updates after a failure. No database transaction spans an HTTP request. A crash
+after remote success but before its SQLite acknowledgement can repeat that same
+payload against the same Handle ID; earlier committed versions are not replayed.
+After full success, work-state transitions, batch totals, and removal of finished
+outbox payloads commit together. A failed completion transaction leaves all three
+unchanged and can be retried without resending committed writes. Optional file
+exports can be archived afterward; they do not control publication completion.
+
+Standalone publication of explicit JSONL files can still use a file journal;
+queued publication no longer relies on one.
 
 ## Explicit retries and reset
 
@@ -149,6 +161,22 @@ history from original dumps into a fresh database if retention removed any.
 
 ## Storage
 
+### Manual outbox cleanup
+
+Use `piddi admin clean` to preview removal of completed outbox records only,
+without rebuilding work history. Stop harvest, sync, publication and maintenance,
+then run `piddi admin clean --apply`. Add `--vacuum` to return freed SQLite pages
+to the filesystem (requires extra disk space); otherwise SQLite reuses the space.
+
+Cleanup deletes completed batch metadata and any acknowledged payload rows in
+one transaction. It keeps the tables, catalog, work history, statistics, Kafka
+checkpoints and output files. It creates no archive of these disposable records.
+Pending work does not block cleanup: unfinished outbox batches and their payloads
+are preserved. Completed batches with unacknowledged payloads or an export still
+in a `ready` directory are also preserved so restart recovery remains safe. Let
+sync archive those exports before cleaning again. The command can be rerun safely,
+including if optional VACUUM fails after cleanup has already committed.
+
 ### Manual work-history rebuild
 
 Use this occasional manual operation to replace retained event history in SQLite
@@ -173,11 +201,18 @@ then project, collection and item ID. It uses a unique synthetic source identity
 and new work IDs; these are not Kafka offsets. All new entries are published full
 snapshots, so normal processing does not map or publish them again. Existing
 processing summaries and published Handle totals remain in the database.
+Completed `outbox_batches` metadata and any acknowledged outbox payload rows
+are archived and cleared in the same transaction as the work replacement. The
+empty outbox tables remain ready for future sync. Unfinished outbox batches or
+unacknowledged Handle rows block cleanup, even if other counters say published.
 
 Before replacing work, the command streams the complete old work and summaries
 to `work-rebuild-archives/<id>/work_items.jsonl.gz` and `stats.jsonl.gz` under
 `consumer.output_dir`. Every work-row field is retained; `stac_blob` holds the
 original compressed bytes encoded as base64, as recorded in `rebuild.json`.
+Outbox tables are exported as `outbox_batches.jsonl.gz` and `handle_outbox.jsonl.gz`
+when present; their compressed `manifest` and `payload` fields use base64 as
+well. `rebuild.json` records the number of removed rows per outbox table.
 These are historical row exports, not Kafka dump envelopes accepted by
 `harvest --archive`. Old batches and project receipt directories are moved into
 the same archive. Keep/back up this directory if you want the old event history;

@@ -61,8 +61,8 @@ version_history = false
 [batch]
 # Per project: map when this many event snapshots are pending OR the oldest has
 # waited max_wait_seconds. Harvest changes arriving during mapping stay pending.
-trigger_items = 1000
-max_wait_seconds = 3600
+trigger_items = 100
+max_wait_seconds = 600
 # Maximum work entries per immutable output batch; never split an entry's Handles.
 max_items = 2000
 # Ready batches publish immediately during the sync tick, in project order.
@@ -157,6 +157,9 @@ strict_mode = true
 # Project Handle profiles are optional. Every plugin inherits [handles].default.
 # Uncomment `handle` in a plugin table to override it for that project.
 [plugins.cmip6]
+# Sync selection weight, 0-255. Zero disables sync; manual map/publish still work.
+# Equal weights give equal chances at each batch boundary, not a fixed order.
+priority = 100
 # Mapping error limit; catalog harvest independently stops on any error.
 # 0 and 1 stop on the first error; -1 allows unlimited errors.
 max_errors = 1
@@ -177,6 +180,7 @@ excluded_asset_keys = ["reference_file", "globus", "thumbnail", "quicklook"]
 collection = "CMIP6"
 
 [plugins.cmip7]
+priority = 100
 max_errors = 1
 # handle = "profile-name"
 force_dataset_pid = false
@@ -190,6 +194,7 @@ excluded_asset_keys = ["reference_file", "globus", "thumbnail", "quicklook"]
 collection = "CMIP7"
 
 [plugins.cordex-cmip6]
+priority = 100
 max_errors = 1
 # handle = "profile-name"
 force_dataset_pid = false
@@ -201,6 +206,7 @@ excluded_asset_keys = ["reference_file", "globus", "thumbnail", "quicklook"]
 collection = "CORDEX-CMIP6"
 
 [plugins.cmip6plus]
+priority = 100
 # Override mapping errors for this project without changing other projects.
 # max_errors = 10000
 max_errors = 1
@@ -227,7 +233,7 @@ interval_seconds = 30
 # Message count threshold before logging a stats snapshot.
 summary_interval = 10000
 
-# Enable live heartbeats and rate samples in piddi.db (the same four tables).
+# Enable live heartbeats and rate samples in piddi.db's stats table.
 # Each batch has a retained stats row with original full/patch event counts;
 # prepared/published Handle counts include aliases.
 # Batch summaries are committed with work-state transitions even if monitoring is off.

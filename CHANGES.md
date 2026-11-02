@@ -4,6 +4,18 @@
 
 ### Added
 
+- `top` displays the configured batch event trigger, maximum wait, and batch size.
+- `piddi admin clean` removes completed outbox records without rebuilding work
+  history; `--apply` performs cleanup and optional `--vacuum` reclaims file space.
+  Unfinished batches and completion markers needed for ready exports are retained.
+- Transactional SQLite Handle outbox: mapping commits payloads, work states, and
+  statistics together; publication progress survives missing batch files and
+  resumes ordered Handle updates. Schema 4 upgrades additively to 5, importing
+  legacy ready batches and their progress journals when processed. Batch files
+  remain audit exports; completed queue payloads are removed transactionally.
+- Per-project `priority` weights for sync, integers 0–255 with an equal default
+  of 100. Zero disables sync for the project; eligible projects compete by weight
+  at each batch boundary. Explicit map/publish and harvest remain independent.
 - Companion error log beside the normal log (`piddi.error.log`), containing
   ERROR/CRITICAL messages and tracebacks, with deployment log rotation.
 - Raw JSONL dump rotation by UTC day and event count (`consumer.dump_max_events`,
@@ -28,12 +40,24 @@
 
 ### Changed
 
+- `top` distinguishes `waiting` (below both batch triggers), `ready` (eligible
+  for mapping), and `queued` (mapped and awaiting publication), using configured
+  thresholds. Priority-zero projects with work show `disabled`.
+- `admin rebuild` archives and clears completed SQLite outbox records alongside
+  work consolidation, refusing unfinished outbox work. Existing `--vacuum`
+  optionally returns the freed database pages to the filesystem.
+- Standalone `map` defaults its total event limit to `[batch].max_items` (2,000)
+  across selected projects. Explicit `--limit N` overrides that total; sync retains
+  continuous batch-by-batch mapping/publication.
+- Scheduled sync checks default to 20 seconds after each run, with one-second
+  timer accuracy; mapping starts at 100 pending events per project or a maximum
+  wait of 10 minutes.
 - Removed legacy `[handle]` and root project settings, transient mapping/force
   options, failure-file retry helpers, the dummy STAC client, and old Ansible
   timer aliases. Mapping consumes full records; harvest owns PATCH recovery.
   Use named Handle profiles and `[plugins.<project>]` settings.
 - Published sync batches use UTC date directories; default sync batches now
-  trigger at 1,000 and contain up to 2,000 catalog items.
+  trigger at 100 and contain up to 2,000 catalog items.
 - Publication receipts also use UTC date directories under `published/`.
 - Simpler INFO progress logs; per-record details moved to DEBUG.
 - Statistics summaries every 30 seconds or 10,000 messages by default.
@@ -43,6 +67,13 @@
 
 ### Fixed
 
+- Sync's mapped-batch validation uses the project/state index, avoiding a scan
+  of pending and completed work before preparing each new batch.
+- `piddi top` retains a batch activity heartbeat through preparation, mapping,
+  sealing, verification, publication, and finalization, displaying each phase
+  instead of appearing pending between mapping and publishing.
+- Sync scheduling uses bounded index checks instead of repeatedly scanning the
+  pending backlog before each batch, reducing gaps between mapping/publication.
 - A zero error limit stops at the first actual error instead of stopping after
   a successful record.
 - `piddi top` retains errors from the latest finished mapping run after switching

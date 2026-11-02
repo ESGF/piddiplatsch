@@ -217,6 +217,8 @@ class HandlePublisher:
         expected_handles: int | None = None,
         batch_id: str | None = None,
         publication_journal: Path | None = None,
+        record_source: Iterable[JsonlRecord] | None = None,
+        journal=None,
     ) -> PublishResult:
         if limit is not None and limit < 1:
             raise ValueError("limit must be at least 1")
@@ -233,7 +235,9 @@ class HandlePublisher:
             extra_paths=(result_file.parent,) if result_file else ()
         )
         disk_guard.check(force=True)
-        files = find_jsonl(paths)
+        files = self._input_files(
+            paths, record_source, offset, limit, publication_journal
+        )
         result = PublishResult()
         self.logger.info(
             "[%s] Starting | %d input files | offset %d | limit %s | retries %d | workers %d",
@@ -260,11 +264,15 @@ class HandlePublisher:
             ExitStack() as stack,
         ):
             journal = stack.enter_context(
-                self._journal_context(publication_journal, files, offset, limit)
+                nullcontext(journal)
+                if journal is not None
+                else self._journal_context(publication_journal, files, offset, limit)
             )
             records = stack.enter_context(
                 closing(
-                    iter_jsonl_records(
+                    (row for row in record_source)
+                    if record_source is not None
+                    else iter_jsonl_records(
                         files,
                         offset=offset,
                         limit=limit,
@@ -366,6 +374,14 @@ class HandlePublisher:
             f"{result.total / elapsed if elapsed > 0 else 0.0:,.0f}",
             f"{elapsed:,.0f}",
         )
+
+    @staticmethod
+    def _input_files(paths, record_source, offset, limit, publication_journal):
+        if record_source is None:
+            return find_jsonl(paths)
+        if offset or limit is not None or publication_journal is not None:
+            raise ValueError("Outbox publication requires a complete database batch")
+        return []
 
     @staticmethod
     def _remember_error(result: PublishResult, error: str) -> None:

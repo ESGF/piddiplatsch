@@ -28,9 +28,9 @@ version_history = false
 
 [batch]
 # Enable the Ansible sync timer when automatic Handle publication is intended.
-# Map per project at 1,000 distinct pending items or a one-hour maximum wait.
-trigger_items = 1000
-max_wait_seconds = 3600
+# Map per project at 100 pending events or a 10-minute maximum wait.
+trigger_items = 100
+max_wait_seconds = 600
 max_items = 2000
 publish_workers = 4
 publish_retries = 3
@@ -86,18 +86,24 @@ password = "YOUR_HANDLE_PASSWORD"
 # Do not add file links to dataset Handle records in this site example.
 # Set max_parts = -1 for unlimited links, or a positive limit if needed.
 [plugins.cmip6]
+# Sync weight, 0-255; 0 disables sync. All projects default to 100.
+priority = 100
 max_parts = 0
 
 [plugins.cordex-cmip6]
+priority = 100
 max_parts = 0
 
 [plugins.cmip6plus]
+priority = 100
 # Mapping error limit for this project only. Default: 1; 0 also stops at the
 # first error; -1 allows unlimited errors. Harvest is independently fail-fast.
 # max_errors = 10000
 max_parts = 0
 
 [plugins.cmip7]
+# Increase to e.g. 200 to favor CMIP7 at batch boundaries when work is eligible.
+priority = 100
 max_parts = 0
 # Set true in custom.toml for affected projects to correct publisher dataset PIDs
 # generated from dataset_id instead of versioned instance_id. Defaults to false.

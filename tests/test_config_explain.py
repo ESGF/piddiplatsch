@@ -24,6 +24,7 @@ def explain(*args):
 def test_explain_defaults(explained_config):
     result = explain()
     assert result.exit_code == 0, result.output
+    assert "Sync priority: 100  <- plugins.cmip6.priority" in result.output
     assert 'Handle profile: "mock"  <- handles.default' in result.output
     assert "Handle timeout: 10  <- handles.defaults.timeout" in result.output
     assert 'STAC collection: "CMIP6"  <- plugins.cmip6.stac.collection' in result.output

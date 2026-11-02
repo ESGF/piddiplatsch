@@ -12,7 +12,7 @@
 
 # Enable scheduled mapping AND real Handle publication after validating outputs.
 # piddi_enable_sync_timer: true
-# piddi_sync_check_interval: 1min
+# piddi_sync_check_interval: 20s
 
 # Defaults to the harvest service setting; compresses only closed raw dumps.
 # piddi_enable_maintenance_timer: true

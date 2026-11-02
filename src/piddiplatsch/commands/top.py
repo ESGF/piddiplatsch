@@ -13,11 +13,34 @@ from rich.console import Console, Group
 from rich.table import Table
 from rich.text import Text
 
+from piddiplatsch.config import config
 from piddiplatsch.monitoring.eta import backlog_estimate
 from piddiplatsch.monitoring.sampling import BackgroundMetrics
 from piddiplatsch.monitoring.status import read_status, summarize_event_totals
 
 from .base import Command
+
+
+def _queue_activity(row: dict, generated_at: str | None = None) -> str:
+    if (
+        row.get("pending_items") or row.get("ready_batches")
+    ) and config.get_sync_priority(row["project"]) == 0:
+        return "disabled"
+    if row.get("ready_batches"):
+        return "queued"
+    pending = row.get("pending_items")
+    if pending is None:
+        return "sampling"
+    if not pending:
+        return "idle"
+    if pending >= config.get("batch", "trigger_items", 100):
+        return "ready"
+    oldest = row.get("pending_oldest_at")
+    if oldest is None:
+        return "pending"  # An older/partial metrics snapshot cannot prove eligibility.
+    now = datetime.fromisoformat(generated_at) if generated_at else datetime.now(UTC)
+    age = (now - datetime.fromisoformat(oldest)).total_seconds()
+    return "ready" if age >= config.get("batch", "max_wait_seconds", 600) else "waiting"
 
 
 @dataclass(kw_only=True)
@@ -71,6 +94,14 @@ class TopCommand(Command):
         """Keep the daily operator view to one table and actionable status lines."""
         active = _active_runs(status)
         lines = [_totals_line(status)]
+        lines.append(
+            Text(
+                f"Batch: {config.get('batch', 'trigger_items', 100):,} events / "
+                f"{_eta_duration(config.get('batch', 'max_wait_seconds', 600))} "
+                f"· max {config.get('batch', 'max_items', 2000):,}",
+                style="dim",
+            )
+        )
         starts = (
             [status["totals_since"]]
             if status.get("totals_since")
@@ -164,6 +195,7 @@ class TopCommand(Command):
         names = set(health) | set(totals)
         error_totals = {}
         for run in status["runs"]:
+            names.update(_run_projects(run))
             for project in run["projects"]:
                 name = project["project"]
                 names.add(name)
@@ -186,22 +218,22 @@ class TopCommand(Command):
             estimate = (
                 publishers[0].get("publication", {}) if len(publishers) == 1 else {}
             )
-            activity = "idle"
-            if row.get("ready_batches"):
-                activity = "queued"
-            elif row.get("pending_items"):
-                activity = "pending"
+            activity = _queue_activity(row, status.get("generated_at"))
             if any(
                 run["command"] in {"sync", "map"} and run["state"] == "healthy"
                 for run in runs
             ):
                 activity = "mapping"
+            phase = _batch_phase(runs)
+            if phase is not None:
+                activity = phase
             if publishers:
                 activity = "publishing"
             if (
                 row.get("failed_batches")
                 or row.get("invalid_items")
                 or _latest_mapping_has_errors(name, status["runs"])
+                or _latest_batch_has_errors(name, status["runs"])
                 or any(
                     p.get("failed", 0)
                     for run in runs
@@ -369,6 +401,8 @@ def _table_size_lines(sizes):
         "work_items": "work",
         "catalog_items": "catalog",
         "kafka_checkpoints": "checkpoints",
+        "handle_outbox": "outbox",
+        "outbox_batches": "batches",
     }
     entries = " · ".join(
         f"{names.get(row['name'], row['name'])} {_bytes(row['total_bytes'])}"
@@ -429,6 +463,28 @@ def _latest_mapping_has_errors(project: str, runs: list[dict]) -> bool:
             if row["project"] == project
         )
     return False
+
+
+def _batch_phase(runs: list[dict]) -> str | None:
+    batch = next((run for run in runs if run["command"] == "batch"), None)
+    if batch is None:
+        return None
+    phase = batch.get("phase", "preparing")
+    return f"{phase} · stale" if batch["state"] == "stale" else phase
+
+
+def _latest_batch_has_errors(project: str, runs: list[dict]) -> bool:
+    latest = next(
+        (
+            run
+            for run in runs
+            if run["command"] == "batch"
+            and run.get("status") != "running"
+            and project in _run_projects(run)
+        ),
+        None,
+    )
+    return latest is not None and latest.get("state") == "failed"
 
 
 def _active_runs(status: dict) -> list[dict]:

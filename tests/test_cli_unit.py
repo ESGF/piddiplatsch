@@ -205,7 +205,8 @@ class TestMapCommand:
         result = runner.invoke(cli, ["map", "--help"])
         assert result.exit_code == 0
         assert "catalog" in result.output
-        assert "Handle JSONL" in result.output
+        assert "SQLite Handle outbox" in result.output
+        assert "[batch].max_items" in result.output
         assert "--catalog-dir" in result.output
         assert "--version-history" in result.output
         assert "--date" in result.output

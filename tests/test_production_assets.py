@@ -287,7 +287,7 @@ def test_batch_deployment_installs_oneshot_and_configurable_timer():
         0
     ]
     assert playbook["vars"]["piddi_enable_sync_timer"] is False
-    assert playbook["vars"]["piddi_sync_check_interval"] == "1min"
+    assert playbook["vars"]["piddi_sync_check_interval"] == "20s"
     guard = playbook["pre_tasks"][1]["ansible.builtin.assert"]["that"]
     assert "piddi_enable_batch_timer is not defined" in guard
     assert "piddi_batch_check_interval is not defined" in guard
@@ -298,6 +298,7 @@ def test_batch_deployment_installs_oneshot_and_configurable_timer():
     ]
     timer = (PROJECT_ROOT / "deploy/ansible/templates/piddi-sync.timer.j2").read_text()
     assert "OnUnitInactiveSec={{ piddi_sync_check_interval }}" in timer
+    assert "AccuracySec=1s" in timer
     assert "Unit=piddi-sync.service" in timer
     unit = (PROJECT_ROOT / "deploy/ansible/templates/piddi-sync.service.j2").read_text()
     assert "Type=oneshot" in unit

@@ -3,11 +3,13 @@
 ## Fresh start
 
 Stop harvest and batch services. Archive the previous output directory and old
-monitoring database, then configure a new empty output directory. There is no
-migration from per-project catalogs, dirty-item queues, older shared database
-schemas, or older batch manifests. Full/patch event tracking requires schema 4;
-restart tests with a new empty output directory, rather than a project reset.
-Keep each new database paired with its batch directory and harvest control file.
+monitoring database, then configure a new empty output directory when migrating
+from per-project catalogs, dirty-item queues, or incompatible manifests. Schema
+4 upgrades to schema 5 automatically, without a fresh start: the new SQLite
+outbox tables are added, and ready manifest-v3 batches and their per-Handle
+journals are imported transactionally when processed. Keep those legacy files
+until imported. Stop all services when upgrading the application; older code
+does not support schema 5. Preserve the database and harvest control file.
 
 ## Disk safety recovery
 
@@ -80,13 +82,17 @@ piddi map --all-projects --limit 2000
 Map selects pending database work, in ascending ID order within each project.
 It processes one bounded project batch per round, round robin. It never contacts
 Kafka, STAC, or the Handle server. Date selectors refer to local work creation
-days in UTC; omitted dates select all pending work. Offset/limit count work entries
-across selected projects, after date filtering. Successfully sealed work is not
+days in UTC; omitted dates make all pending work eligible. The total per-command
+limit defaults to `[batch].max_items` (2,000), across all selected projects.
+Use `--limit N` to override it, including a larger number that spans several
+batches. Offset/limit count work entries after date filtering. Successfully sealed work is not
 mapped again by a repeated command.
 
 Inspect `batches/<project>/ready/<batch-id>/handles.jsonl`, `failures.jsonl`, and
 `manifest.json`. The manifest records settings, checksums, exact work IDs, and
-mapping outcomes. All Handles for one work entry stay together.
+mapping outcomes. All Handles for one work entry stay together. These files are
+audit exports; the work transitions, queued payloads, and batch counters commit
+together in SQLite. Once committed, publication does not depend on the exports.
 
 ## Publish and sync
 
@@ -99,21 +105,29 @@ piddi sync --project cmip6
 
 Publish without paths sends saved queued batches and updates their database
 states. It does not map. Sync maps eligible pending work and publishes saved
-batches. The threshold is 1,000 pending work entries or one hour; force-map skips
+batches. The threshold is 100 pending work entries or 10 minutes; force-map skips
 the wait. The default ceiling is 2,000 work entries per project batch.
 
-Projects run sequentially, round robin. Requests for different Handles within
-the current batch may run concurrently. Projects never write the same Handle.
+Sync runs projects sequentially, choosing each next batch by the eligible
+projects' `plugins.<project>.priority` weights (default 100, range 0–255).
+Zero disables sync for that project, including forced sync; manual map/publish
+remain available. Higher weights increase selection probability. Requests for
+different Handles within the current batch may run concurrently. Projects never
+write the same Handle.
 Failed publication blocks later publication for its project while other projects
 continue. Manual mapping of newer work cannot bypass older pending work: map that
 older work or use sync before publishing the newer batch.
 
-Publication uses saved output and a durable per-Handle success journal; retries
-skip completed positions and do not remap. A failed write defers later updates to
-that Handle for the attempt. Receipts go under
+Publication streams immutable Handle payloads from `handle_outbox`; successful
+positions commit to SQLite before a later update to the same Handle starts.
+Retries skip committed positions and do not remap. A failed write defers later
+updates to that Handle for the attempt. Receipts go under
 `published/YYYY/MM/DD/`. Successful batches move to
 `batches/<project>/published/YYYY/MM/DD/<batch-id>/`. A crash may repeat HTTP
-writes, but database acknowledgements and batch summaries are idempotent.
+writes against the same Handle ID. SQLite work-state changes, completion counters,
+and removal of finished outbox payloads commit together. No transaction is held
+while waiting for HTTP. Exports and receipts are not needed to resume a committed
+queue. Standalone file publication continues to support its optional file journal.
 
 Explicit `piddi publish PATH...` is available for operator-managed JSONL files.
 It does not acknowledge database work or add to the work-stream batch totals.
@@ -223,7 +237,8 @@ piddi maintain
 
 Top reads only `piddi.db`, including when `--db PATH` selects another database.
 The SQLite table sizes are rough estimates, include indexes, and cover all
-projects, even with `--project`. Top estimates the four application tables from
+projects, even with `--project`. Top estimates the application tables, including
+the outbox, from
 up to 16 rows per project/table and assumes 75% page occupancy. Estimates can
 be biased by changing row sizes and fragmentation; they are not measured disk
 allocations. JSON labels them with `estimated: true` and includes the method
@@ -247,6 +262,29 @@ the total. Mapped counts survive published-work cleanup in retained batch stats;
 project reset clears that project's mapped history and requeues retained work.
 `top --json` exposes `event_totals` with `mapped`, `pending`, `invalid`, and `total`,
 respecting `--project` when selected.
+The `Batch:` line shows the configured event-count trigger, oldest-event wait
+trigger, and maximum events per batch (defaults: 100 events or 10m; max 2,000).
+Between batches, Activity shows `idle` when there is no work, `waiting` when
+pending events are below both mapping triggers, and `ready` once the event count
+or oldest event age reaches the configured `[batch].trigger_items` or
+`max_wait_seconds` (defaults: 100 events or 10 minutes). `ready` means eligible
+for the next scheduler selection, with project priority determining its weight;
+it is not a promise that the project will run next. `queued` means mapping has
+already produced a batch awaiting publication. Priority-zero projects with work
+show `disabled`. Counts initially show `sampling`; `pending` is a fallback when
+an incomplete snapshot lacks the oldest event timestamp. Counts are sampled in
+the background; age eligibility is reevaluated on each refresh. The same config
+used by sync must be loaded by top for these thresholds and priorities to match.
+
+The Activity column shows `preparing`, `mapping`, `sealing`, `verifying`,
+`publishing`, or `finalizing` throughout a batch. A separate heartbeat stays
+active during file checks, durable writes, and database acknowledgements;
+`pending` no longer stands in for these stages. Very short phases can still
+finish between screen refreshes. JSON includes the lifecycle as a `batch` run
+with `phase` and `selected_projects`, separate from throughput counters.
+If the activity heartbeat becomes stale, the last phase remains visible with a
+stale warning. Failed batch stages close their activity record and raise an error
+alert, including failures after mapping has finished.
 The harvest summary adds `stored: N full / M patch` for the displayed harvest
 runs. These counts include only successfully stored events. The received-event
 total also includes filtered/replayed deliveries and failures, so it can be larger.

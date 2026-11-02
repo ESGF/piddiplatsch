@@ -33,13 +33,17 @@ Fill or update the shared `outputs/piddi.db`:
 piddi harvest
 ```
 
-Prepare Handle files, inspect them, then publish:
+Prepare the SQLite Handle outbox, inspect its exported files, then publish:
 
 ```bash
 piddi map --project cmip6
 # Inspect outputs/batches/cmip6/ready/<batch-id>/handles.jsonl.
 piddi publish --project cmip6 --workers 4 --retries 3
 ```
+
+Standalone `map` stops after `[batch].max_items` events in total (default 2,000).
+Use `map --limit N` to choose another total. Sync continues mapping and publishing
+successive batches automatically.
 
 ## Map and publish with sync
 
@@ -61,9 +65,12 @@ To run only one configured project:
 piddi sync --project cmip6 --workers 4 --retries 3
 ```
 
-This storage format requires a fresh start. Archive the previous output directory
-and monitoring database, then use an empty output directory. There is no migration
-from per-project catalogs or old batches.
+The database owns queued Handle payloads and publication progress. A restart
+resumes unpublished rows; exported batch files are not required after their
+database commit. Schema 4 upgrades add the outbox automatically and import ready
+manifest-v3 batches and their progress when processed. Keep legacy batch files
+until imported. Older per-project catalogs and incompatible formats still
+require a fresh start; see the recovery guide.
 
 ## Check progress and options
 

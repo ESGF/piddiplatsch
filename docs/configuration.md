@@ -168,8 +168,9 @@ kafka_commit_interval_seconds = 1.0
 The shared database defaults to `<consumer.output_dir>/piddi.db`. Set
 `catalog.directory` to change its directory. SQLite is the supported backend.
 `enabled` controls catalog/work writes during harvest. Map always reads database
-work snapshots. This format requires a fresh output directory; there is no legacy
-schema migration.
+work snapshots. Schema 4 is upgraded additively to schema 5, adding the Handle
+outbox without rebuilding existing work. Older incompatible storage formats
+still require a fresh output directory.
 
 `ignore_unknown_projects` defaults to `false`: an unknown project stops harvest
 without advancing its checkpoint or acknowledging the event. Set it to `true` to
@@ -201,8 +202,8 @@ acknowledgement for each message and can reduce throughput.
 
 ```toml
 [batch]
-trigger_items = 1000
-max_wait_seconds = 3600
+trigger_items = 100
+max_wait_seconds = 600
 max_items = 2000
 publish_workers = 4
 publish_retries = 3
@@ -210,17 +211,45 @@ retention_days = 0 # Disabled; set e.g. 30 to enable published-work cleanup.
 # directory = "/var/lib/piddi/batches"
 ```
 
-Sync maps a project when either 1,000 work entries are pending or the oldest
-has waited one hour. Every event has an independent snapshot, including repeated
+Sync maps a project when either 100 work entries are pending or the oldest
+has waited 10 minutes. Every event has an independent snapshot, including repeated
 updates to the same item. `sync --force-map` skips these waiting thresholds.
 Manual `map` processes pending work immediately.
 
 `max_items` caps each project batch at 2,000 work entries by default. It does not
 limit Handles or bytes; an entry's dataset and file Handles stay together. Sync
-processes one batch per eligible project in round robin order. Project processing
-is sequential; `publish_workers` only controls concurrent Handle requests within
+selects each next batch using the eligible projects' priority weights. Projects
+run sequentially; `publish_workers` only controls concurrent Handle requests within
 the current batch. `publish_retries` controls temporary HTTP retries. Sync's
 `--workers` and `--retries` override these values for one run.
+Standalone `map` also defaults its total event limit to `max_items`, across all
+selected projects, to bound each invocation's outbox growth. `map --limit N`
+overrides that total; a larger value still produces batches capped at `max_items`.
+This is a per-command event cap, not a limit on queued Handles or database bytes.
+
+Set `priority` under each `[plugins.<project>]` table to an integer from 0 to
+255. Every project defaults to 100. Zero disables both mapping and queued
+publication by `sync`, including `sync --project ... --force-map`; explicit
+`map` and `publish` commands remain available and keep their existing project
+order. Harvest is unaffected.
+
+```toml
+[plugins.cmip6]
+priority = 100
+
+[plugins.cmip7]
+priority = 200
+```
+
+At each batch boundary, sync draws one project with probability proportional
+to its weight, considering only projects with due pending events or ready batches.
+In this example, CMIP7 has twice CMIP6's chance when both have eligible work.
+Equal weights give equal chances, and consecutive turns for one project are
+possible. Positive weights provide a chance on every draw, not a maximum waiting
+time or guaranteed turn. Weights govern batch turns, not Handle counts or elapsed
+time, and do not interrupt an active batch or bypass count/time thresholds.
+Each project's pending snapshot boundary remains fixed for the sync run; events
+arriving after that boundary wait for the next run.
 
 `plugins.<project>.max_errors` limits mapping errors per batch. Mapping stores
 invalid work and its explanation, rolls back partial Handle output for the failed
@@ -239,10 +268,15 @@ remain until you explicitly set a positive period, such as 30 days. Once enabled
 cutoff. Pending, mapped, invalid, catalog, and summary rows remain. Maintenance
 never runs `VACUUM` or deletes JSONL output.
 
-The batch directory defaults to `<consumer.output_dir>/batches`. Keep it paired
-with its database. All batch commands use a shared lock beside `piddi.db`, even
+The batch directory defaults to `<consumer.output_dir>/batches`. Mapping uses it
+for temporary spools and optional audit exports. Committed Handle payloads and
+publication progress live in `piddi.db`; missing exports do not block publication.
+Keep legacy ready files until they have been imported into the outbox.
+All batch commands use a shared lock beside `piddi.db`, even
 when a custom batch directory is configured. The Ansible setting
-`piddi_sync_check_interval` controls how often the timer runs.
+`piddi_sync_check_interval` controls how often the timer runs, defaulting to
+20 seconds after the previous run finishes. A running sync continues processing
+eligible batches; the timer interval applies between runs.
 
 ## Completed output maintenance
 
@@ -307,6 +341,11 @@ in the same `stats` table. These rows do not contribute to batch totals.
 No extra tables or separate monitoring database are created.
 `piddi top` reads live harvest, mapping, and publication status. Publication
 results also appear in logs and JSONL receipts.
+Batch commands keep a separate activity heartbeat through preparation, mapping,
+sealing, verification, publication, and finalization. `top` shows these phases
+instead of falling back to pending between the mapping and publication counter
+runs. Activity records add no event or Handle counts. JSON identifies them with
+`command: "batch"`, a `phase`, and the project in `selected_projects`.
 
 Heartbeats update every five seconds, even when Kafka is idle. Unfinished runs
 become stale after 15 seconds without a heartbeat. Each live run retains up to one hour of rate samples; top shows the last five
@@ -336,6 +375,7 @@ previous UTC days, leaving today's files available for appending.
 | --- | --- |
 | `consumer.output_dir` | Root directory for catalogs, Handle files, receipts, and diagnostic files. |
 | `plugins.<name>.max_errors` | Project mapping error limit. Default: `1`; `0` also stops on the first error; `-1` removes the limit. |
+| `plugins.<name>.priority` | Sync selection weight, integer `0`–`255`. Default: `100`; `0` disables sync for the project. |
 | `schema.strict_mode` | Reject incomplete or unsupported records. Default: `true`. |
 | `plugins.<name>.landing_page_url` | Base URL for Handle landing pages. |
 | `plugins.<name>.max_parts` | Limit dataset `HAS_PARTS` entries; `-1` means unlimited. |

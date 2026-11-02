@@ -60,7 +60,8 @@ run. It starts sync even if the timer is disabled at boot. Ansible controls whic
 units start after reboot. Log rotation runs hourly when harvest is enabled.
 
 Set `piddi_sync_check_interval` in Ansible YAML to change the timer interval.
-The default is `1min`, measured after the previous run finishes. Batch thresholds
+The default is `20s`, measured after the previous run finishes, with one-second
+timer accuracy. Batch thresholds
 are separate [TOML settings](configuration.md#scheduled-batches).
 
 Ansible validates application settings before installing them. It restarts
@@ -92,14 +93,16 @@ Use `piddi top --once` for one snapshot or `piddi top --json` for JSON output.
 Publication receipts are saved under `/var/lib/piddi/published/YYYY/MM/DD/`,
 grouped by UTC date. Existing flat receipt files remain in place.
 
-Failed batches stay in `batches/<project>/ready/` and block newer work for that
+Failed batches stay in the SQLite outbox and block newer work for that
 project. Other projects can continue. See [Scheduled batch recovery](recovery.md#publication-interruption).
 
 ## Backups
 
 Stop Piddi before taking a file-based backup. Save the configuration, catalog
-directory (including `.harvest-state.json`), and batch directory together.
-Keep immutable batch files and receipts according to your site's audit policy.
+directory (including `piddi.db`, any SQLite WAL files, and `.harvest-state.json`).
+The database contains the queued payloads and publication progress. Include the
+batch directory until any legacy ready batches have been imported; after that,
+keep batch exports and receipts according to your site's audit policy.
 Completed batch output and closed receipts are compressed by default. Optional
 `maintenance.output_retention_days` removes them after a configured age; its
 default `0` keeps them indefinitely. Ready and failed batches are protected.
@@ -132,8 +135,9 @@ The playbook rejects these old YAML variables until they are moved.
 
 Ansible replaces old `piddi-batch` units with `piddi-sync` units. Use
 `piddi_enable_sync_timer` and `piddi_sync_check_interval`; the old `batch` control
-names are rejected. The TOML section remains `[batch]`. Existing batch files
-remain usable.
+names are rejected. The TOML section remains `[batch]`. Schema-4 ready batches
+with manifest version 3 and their progress journals are imported into schema 5
+when processed. Do not remove those files before the import.
 
 ## Vagrant test VM
 

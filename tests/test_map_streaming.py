@@ -3,9 +3,11 @@
 import tracemalloc
 
 import pytest
+from click.testing import CliRunner
 
 from piddiplatsch.catalog import CatalogEntry
 from piddiplatsch.catalog.sqlite import SQLiteCatalog
+from piddiplatsch.cli import cli
 from piddiplatsch.config import config
 from piddiplatsch.core.messages import KafkaSource
 from piddiplatsch.core.pipeline import process_messages
@@ -103,6 +105,48 @@ def test_map_offset_and_limit_count_across_selected_projects(tmp_path, processor
     assert processor.last_key == "cmip7.dataset.v000001"
 
 
+@pytest.mark.parametrize("limit,expected", [(None, 2), (1, 1), (5, 5)])
+def test_map_defaults_to_one_batch_total_and_allows_explicit_override(
+    tmp_path, processor, limit, expected
+):
+    config._set("batch", "max_items", 2)
+    seed(tmp_path, "cmip6", count=3)
+    seed(tmp_path, "cmip7", count=3)
+    result = map_catalog(directory=tmp_path, projects=["cmip6", "cmip7"], limit=limit)
+    assert result.total == result.succeeded == processor.count == expected
+    with SQLiteCatalog("cmip6", tmp_path / "piddi.db", read_only=True) as catalog:
+        assert (
+            catalog._execute(
+                "SELECT COUNT(*) FROM work_items WHERE state='pending'"
+            ).fetchone()[0]
+            == 6 - expected
+        )
+        assert (
+            catalog._execute(
+                "SELECT MAX(items) FROM stats WHERE kind='batch'"
+            ).fetchone()[0]
+            <= 2
+        )
+
+
+@pytest.mark.parametrize("limit,expected", [(None, 2), ("5", 5)])
+def test_cli_map_respects_configured_default_total_and_limit_override(
+    tmp_path, processor, limit, expected
+):
+    config._set("batch", "max_items", 2)
+    config._set("catalog", "directory", str(tmp_path))
+    seed(tmp_path, count=7)
+    args = ["--silent", "map", "--project", "cmip6"]
+    if limit is not None:
+        args += ["--limit", limit]
+    result = CliRunner().invoke(cli, args)
+    assert result.exit_code == 0, result.output
+    assert f"Mapped {expected}/{expected} work entries." in result.output
+    assert processor.count == expected
+    with SQLiteCatalog("cmip6", tmp_path / "piddi.db", read_only=True) as catalog:
+        assert catalog.pending_work().count == 7 - expected
+
+
 def test_empty_selection_skips_processor_setup(tmp_path, monkeypatch):
     seed(tmp_path, count=1)
 
@@ -131,7 +175,7 @@ def test_map_memory_does_not_scale_with_catalog_size(tmp_path, processor):
         seed(directory, count=count, payload_size=8192)
         tracemalloc.start()
         try:
-            result = map_catalog(directory=directory, projects=["cmip6"])
+            result = map_catalog(directory=directory, projects=["cmip6"], limit=count)
             peak = tracemalloc.get_traced_memory()[1]
         finally:
             tracemalloc.stop()

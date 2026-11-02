@@ -194,6 +194,25 @@ def reset(project: str, apply: bool, from_date: datetime | None) -> None:
     commands.ResetCommand(project=project, apply=apply, from_date=from_date).execute()
 
 
+@admin.command("clean")
+@click.option(
+    "--apply",
+    is_flag=True,
+    help="Remove completed outbox records; default is a preview.",
+)
+@click.option(
+    "--vacuum",
+    is_flag=True,
+    help="Reclaim unused database file space after cleaning (needs extra disk space).",
+)
+def clean(apply: bool, vacuum: bool) -> None:
+    """Clean completed outbox records without rebuilding work history.
+
+    Stop harvest and all processing/maintenance services before using --apply.
+    """
+    commands.CleanCommand(apply=apply, vacuum=vacuum).execute()
+
+
 @admin.command("rebuild")
 @click.option(
     "--apply",
@@ -206,7 +225,7 @@ def reset(project: str, apply: bool, from_date: datetime | None) -> None:
     help="Reclaim unused database file space after rebuilding (needs extra disk space).",
 )
 def rebuild_work(apply: bool, vacuum: bool) -> None:
-    """Consolidate completed work into published catalog snapshots across all projects.
+    """Consolidate completed work and clear finished outbox records across projects.
 
     Stop harvest and all processing/maintenance services before using --apply.
     """
@@ -369,7 +388,7 @@ harvest.params = [
 @click.option(
     "--limit",
     type=click.IntRange(min=1),
-    help="Stop after mapping this many pending work entries in total.",
+    help="Stop after mapping this many pending work entries in total (default: [batch].max_items, normally 2000).",
 )
 @click.option(
     "--offset",
@@ -397,7 +416,7 @@ def map_messages(
     version_history: bool | None,
     handle_profile: str | None,
 ) -> None:
-    """Map pending work snapshots into durable Handle JSONL batches."""
+    """Map pending work into the SQLite Handle outbox and JSONL audit exports."""
     commands.MapCommand(
         verbose=ctx.obj["verbose"],
         directory=directory,

@@ -36,6 +36,26 @@ def preview_reset(settings, project, *, from_date=None):
         return select_reset(connection, project, output, batches, from_date)
 
 
+def _clear_outbox(connection, project, batch_ids):
+    if not connection.execute(
+        "SELECT 1 FROM sqlite_master WHERE type='table' AND name='outbox_batches'"
+    ).fetchone():
+        return  # A reset can also operate on a not-yet-upgraded version 4 database.
+    if batch_ids is None:
+        connection.execute("DELETE FROM handle_outbox WHERE project=?", (project,))
+        connection.execute("DELETE FROM outbox_batches WHERE project=?", (project,))
+    else:
+        for identity in batch_ids:
+            connection.execute(
+                "DELETE FROM handle_outbox WHERE project=? AND batch_id=?",
+                (project, identity),
+            )
+            connection.execute(
+                "DELETE FROM outbox_batches WHERE project=? AND batch_id=?",
+                (project, identity),
+            )
+
+
 def reset_processing(settings, project, *, from_date=None):
     """Replay all retained work or an ordered suffix, including complete batches."""
     project = get_plugin(project).name
@@ -108,6 +128,11 @@ def reset_processing(settings, project, *, from_date=None):
                     sql += " AND id>=?"
                     parameters.append(selection.first_id)
                 connection.execute(sql, parameters)
+                _clear_outbox(
+                    connection,
+                    project,
+                    None if from_date is None else selection.batch_ids,
+                )
                 if from_date is None:
                     connection.execute("DELETE FROM stats WHERE project=?", (project,))
                 else:
