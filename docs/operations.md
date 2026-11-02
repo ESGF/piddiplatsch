@@ -180,6 +180,12 @@ piddi maintain
 ```
 
 Top reads only `piddi.db`, including when `--db PATH` selects another database.
+The SQLite table sizes include indexes and cover all projects, even with
+`--project`. Interactive top samples these allocated sizes once a minute;
+`--once` and `--json` measure them immediately. JSON includes `table_sizes` with
+per-table `table_bytes`, `index_bytes`, and `total_bytes`. Sizes exclude the WAL,
+database schema, and unallocated free pages. SQLite builds without `dbstat`
+show sizes as unavailable.
 Catalog items count distinct stored STAC items. The summary shows
 `Mapped: N / total events`, where total is successfully mapped + currently pending
 + currently invalid events. This is all accepted queued event history, rather

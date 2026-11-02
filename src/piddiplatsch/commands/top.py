@@ -32,14 +32,25 @@ class TopCommand(Command):
 
     def execute(self) -> None:
         console = Console()
+        table_sizes = None
+        sizes_updated_at = None
         while True:
             try:
+                sample_sizes = (
+                    sizes_updated_at is None
+                    or time.monotonic() - sizes_updated_at >= 60
+                )
                 status = read_status(
                     self.db_path,
                     project=self.project,
                     stale_after_seconds=self.stale_after_seconds,
                     history_seconds=300,
+                    include_table_sizes=sample_sizes,
                 )
+                if sample_sizes:
+                    table_sizes = status["table_sizes"]
+                    sizes_updated_at = time.monotonic()
+                status["table_sizes"] = table_sizes
                 status["backlog_estimate"] = backlog_estimate(status)
             except (FileNotFoundError, ValueError) as exc:
                 raise click.ClickException(str(exc)) from exc
@@ -82,6 +93,7 @@ class TopCommand(Command):
                 else "unknown free space"
             )
             lines.append(Text(f"Disk: {space} · {disk['state']} · {disk['path']}"))
+        lines.extend(_table_size_lines(status.get("table_sizes")))
         harvest = [run for run in active if run["command"] == "harvest"]
         harvest_rates = _harvest_rates(harvest)
         if harvest:
@@ -346,6 +358,25 @@ def _harvest_rates(runs: list[dict]) -> dict[str, float]:
 
 def _count(value: int | None) -> str:
     return f"{value:,}" if value is not None else "—"
+
+
+def _table_size_lines(sizes):
+    if sizes is None:
+        return []
+    if not sizes["available"]:
+        return [Text("SQLite table sizes: unavailable (dbstat missing)", style="dim")]
+    entries = " · ".join(
+        f"{row['name']}: {_bytes(row['total_bytes'])}" for row in sizes["tables"]
+    )
+    return [Text(f"SQLite tables (all projects, indexes included): {entries}")]
+
+
+def _bytes(value: int) -> str:
+    size = float(value)
+    for unit in ("B", "KiB", "MiB", "GiB", "TiB"):
+        if size < 1024 or unit == "TiB":
+            return f"{size:.1f} {unit}"
+        size /= 1024
 
 
 def _run_projects(run: dict) -> set[str]:

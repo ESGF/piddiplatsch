@@ -18,6 +18,7 @@ def read_status(
     project: str | None = None,
     stale_after_seconds: float = 15.0,
     history_seconds: float = 3600.0,
+    include_table_sizes: bool = True,
 ) -> dict:
     """Return the shared status model used by operator-facing commands."""
     path = Path(db_path)
@@ -49,6 +50,7 @@ def read_status(
         from piddiplatsch.monitoring.health import database_health
 
         health = database_health(connection, project)
+        table_sizes = read_table_sizes(connection) if include_table_sizes else None
         payloads = {}
         latest = None
         for row in connection.execute("SELECT id,runtime FROM stats WHERE kind='run'"):
@@ -125,6 +127,42 @@ def read_status(
         "handle_totals": [dict(row) for row in handle_totals],
         "event_totals": summarize_event_totals(health["projects"], handle_totals),
         "totals_since": totals_since,
+        "table_sizes": table_sizes,
+    }
+
+
+def read_table_sizes(connection):
+    """Allocated table and index bytes, across all projects in this snapshot.
+
+    dbstat walks database pages, so interactive callers should sample sparingly.
+    Some SQLite builds do not provide the optional dbstat virtual table.
+    """
+    try:
+        rows = connection.execute(
+            "SELECT s.tbl_name, "
+            "SUM(CASE WHEN s.type='table' THEN d.bytes ELSE 0 END) AS table_bytes, "
+            "SUM(CASE WHEN s.type='index' THEN d.bytes ELSE 0 END) AS index_bytes "
+            "FROM sqlite_schema AS s JOIN "
+            "(SELECT name, SUM(pgsize) AS bytes FROM dbstat GROUP BY name) AS d "
+            "ON d.name=s.name WHERE s.type IN ('table','index') "
+            "AND s.tbl_name NOT LIKE 'sqlite_%' GROUP BY s.tbl_name "
+            "ORDER BY SUM(d.bytes) DESC, s.tbl_name"
+        ).fetchall()
+    except sqlite3.OperationalError as exc:
+        if "no such table: dbstat" not in str(exc):
+            raise
+        return {"available": False, "tables": []}
+    return {
+        "available": True,
+        "tables": [
+            dict(
+                name=name,
+                table_bytes=table_bytes,
+                index_bytes=index_bytes,
+                total_bytes=table_bytes + index_bytes,
+            )
+            for name, table_bytes, index_bytes in rows
+        ],
     }
 
 

@@ -1,4 +1,5 @@
 import json
+import sqlite3
 from io import StringIO
 from types import SimpleNamespace
 
@@ -60,6 +61,84 @@ def test_top_json_is_project_aware(tmp_path):
     assert projects["cmip7"]["consumed"] == 0
     history = {row["project"]: row for row in status["runs"][0]["history"]}
     assert history["cmip6"]["deltas"]["consumed"] == 1
+
+
+def test_top_table_sizes_include_indexes_and_ignore_project_filter(tmp_path):
+    db = tmp_path / "piddi.db"
+    _monitoring_db(db)
+    with sqlite3.connect(db) as connection:
+        connection.execute("CREATE TABLE extra (id TEXT PRIMARY KEY, value BLOB)")
+        connection.execute("INSERT INTO extra VALUES ('one', zeroblob(20000))")
+        try:
+            expected = connection.execute(
+                "SELECT SUM(pgsize) FROM dbstat WHERE name IN "
+                "('extra', 'sqlite_autoindex_extra_1')"
+            ).fetchone()[0]
+        except sqlite3.OperationalError:
+            pytest.skip("SQLite build lacks dbstat")
+    before = db.read_bytes()
+    sizes = read_status(db)["table_sizes"]
+    assert sizes["available"]
+    assert read_status(db, project="cmip7")["table_sizes"] == sizes
+    row = next(row for row in sizes["tables"] if row["name"] == "extra")
+    assert row["table_bytes"] >= 20000
+    assert row["index_bytes"] > 0
+    assert row["total_bytes"] == expected
+    assert db.read_bytes() == before
+    result = CliRunner().invoke(cli, ["top", "--db", str(db), "--once"])
+    assert result.exit_code == 0, result.output
+    assert "indexes included" in result.output
+    assert "extra:" in result.output
+    result = CliRunner().invoke(cli, ["top", "--db", str(db), "--json"])
+    assert result.exit_code == 0, result.output
+    assert json.loads(result.output)["table_sizes"] == sizes
+
+
+def test_table_sizes_unavailable_without_dbstat():
+    from piddiplatsch.monitoring.status import read_table_sizes
+
+    class WithoutDbstat:
+        def execute(self, sql):
+            raise sqlite3.OperationalError("no such table: dbstat")
+
+    sizes = read_table_sizes(WithoutDbstat())
+    assert sizes == {"available": False, "tables": []}
+    stream = StringIO()
+    Console(file=stream).print(
+        TopCommand._overview(
+            dict(runs=[], health=dict(projects=[], storage=[]), table_sizes=sizes)
+        )
+    )
+    assert "SQLite table sizes: unavailable" in stream.getvalue()
+
+
+def test_top_samples_table_sizes_once_per_minute(tmp_path, monkeypatch):
+    from piddiplatsch.commands import top
+
+    clock = [0]
+    samples = []
+
+    def status(*args, include_table_sizes, **kwargs):
+        samples.append(include_table_sizes)
+        return dict(
+            runs=[],
+            health=dict(projects=[], storage=[]),
+            table_sizes=(
+                dict(available=True, tables=[]) if include_table_sizes else None
+            ),
+        )
+
+    def sleep(seconds):
+        clock[0] += seconds
+        if clock[0] >= 90:
+            raise KeyboardInterrupt
+
+    monkeypatch.setattr(top, "read_status", status)
+    monkeypatch.setattr(top, "backlog_estimate", lambda status: {})
+    monkeypatch.setattr(top.time, "monotonic", lambda: clock[0])
+    monkeypatch.setattr(top.time, "sleep", sleep)
+    TopCommand(db_path=tmp_path / "unused.db", refresh_seconds=30).execute()
+    assert samples == [True, False, True]
 
 
 def test_top_once_filters_project(tmp_path):
