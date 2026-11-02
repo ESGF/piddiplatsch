@@ -36,6 +36,9 @@
 
 ### Changed
 
+- `admin rebuild` archives and clears completed SQLite outbox records alongside
+  work consolidation, refusing unfinished outbox work. Existing `--vacuum`
+  optionally returns the freed database pages to the filesystem.
 - Standalone `map` defaults its total event limit to `[batch].max_items` (2,000)
   across selected projects. Explicit `--limit N` overrides that total; sync retains
   continuous batch-by-batch mapping/publication.

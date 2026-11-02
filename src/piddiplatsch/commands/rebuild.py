@@ -22,13 +22,16 @@ class RebuildWorkCommand(Command):
         click.echo(f"Keep catalog and Kafka checkpoints: {database}")
         click.echo("Keep processing summaries and published Handle totals.")
         click.echo(
+            "Archive and clear completed outbox records; keep the empty tables for future sync."
+        )
+        click.echo(
             f"Archive old work, summaries and batches: {output / 'work-rebuild-archives'}"
         )
         click.echo(
             "Replace work history with one published full snapshot per catalog item, ordered by local last_update."
         )
         click.echo(
-            "Requires all retained work to be published: no pending, mapped or invalid events. Nothing is requeued."
+            "Requires all retained work and outbox publication to be finished: no pending, mapped or invalid events. Nothing is requeued."
         )
         click.echo(
             "VACUUM: reclaim unused file space."
@@ -55,4 +58,9 @@ class RebuildWorkCommand(Command):
         click.echo(
             f"Rebuilt {result['previous_work_entries']:,} old work entries as "
             f"{result['catalog_entries']:,} published catalog snapshots. Archive: {result['archive']}"
+        )
+        cleared = result.get("cleared_outbox", {})
+        click.echo(
+            f"Cleared outbox: {cleared.get('outbox_batches', 0):,} batch records, "
+            f"{cleared.get('handle_outbox', 0):,} Handle rows."
         )

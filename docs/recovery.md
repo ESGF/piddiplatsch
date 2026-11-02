@@ -185,11 +185,18 @@ then project, collection and item ID. It uses a unique synthetic source identity
 and new work IDs; these are not Kafka offsets. All new entries are published full
 snapshots, so normal processing does not map or publish them again. Existing
 processing summaries and published Handle totals remain in the database.
+Completed `outbox_batches` metadata and any acknowledged outbox payload rows
+are archived and cleared in the same transaction as the work replacement. The
+empty outbox tables remain ready for future sync. Unfinished outbox batches or
+unacknowledged Handle rows block cleanup, even if other counters say published.
 
 Before replacing work, the command streams the complete old work and summaries
 to `work-rebuild-archives/<id>/work_items.jsonl.gz` and `stats.jsonl.gz` under
 `consumer.output_dir`. Every work-row field is retained; `stac_blob` holds the
 original compressed bytes encoded as base64, as recorded in `rebuild.json`.
+Outbox tables are exported as `outbox_batches.jsonl.gz` and `handle_outbox.jsonl.gz`
+when present; their compressed `manifest` and `payload` fields use base64 as
+well. `rebuild.json` records the number of removed rows per outbox table.
 These are historical row exports, not Kafka dump envelopes accepted by
 `harvest --archive`. Old batches and project receipt directories are moved into
 the same archive. Keep/back up this directory if you want the old event history;

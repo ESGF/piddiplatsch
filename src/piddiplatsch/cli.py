@@ -206,7 +206,7 @@ def reset(project: str, apply: bool, from_date: datetime | None) -> None:
     help="Reclaim unused database file space after rebuilding (needs extra disk space).",
 )
 def rebuild_work(apply: bool, vacuum: bool) -> None:
-    """Consolidate completed work into published catalog snapshots across all projects.
+    """Consolidate completed work and clear finished outbox records across projects.
 
     Stop harvest and all processing/maintenance services before using --apply.
     """

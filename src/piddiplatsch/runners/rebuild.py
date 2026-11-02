@@ -22,9 +22,12 @@ def _export(connection, table, destination, guard):
     # The table names below are fixed by callers. Keep the compressed snapshots
     # byte-for-byte; do not inflate/decode and recompress millions of STAC items.
     cursor = connection.execute(
-        {"work_items": "SELECT * FROM work_items", "stats": "SELECT * FROM stats"}[
-            table
-        ]
+        {
+            "work_items": "SELECT * FROM work_items",
+            "stats": "SELECT * FROM stats",
+            "outbox_batches": "SELECT * FROM outbox_batches",
+            "handle_outbox": "SELECT * FROM handle_outbox",
+        }[table]
     )
     columns = [column[0] for column in cursor.description]
     temporary = destination.with_suffix(destination.suffix + ".partial")
@@ -34,10 +37,11 @@ def _export(connection, table, destination, guard):
                 if index % 1000 == 0:
                     guard.check()
                 record = dict(zip(columns, row, strict=True))
-                if "stac_blob" in record:
-                    record["stac_blob"] = base64.b64encode(record["stac_blob"]).decode(
-                        "ascii"
-                    )
+                for column in ("stac_blob", "manifest", "payload"):
+                    if isinstance(record.get(column), bytes):
+                        record[column] = base64.b64encode(record[column]).decode(
+                            "ascii"
+                        )
                 compressed.write(
                     (json.dumps(record, separators=(",", ":")) + "\n").encode()
                 )
@@ -129,7 +133,30 @@ def _finish(connection, journal, plan, guard):
     return plan
 
 
+def _outbox_tables(connection):
+    return [
+        row[0]
+        for row in connection.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' "
+            "AND name IN ('outbox_batches','handle_outbox') ORDER BY name"
+        )
+    ]
+
+
+def _require_completed_outbox(connection):
+    checks = {
+        "outbox_batches": "SELECT 1 FROM outbox_batches WHERE status<>'published' LIMIT 1",
+        "handle_outbox": "SELECT 1 FROM handle_outbox WHERE published=0 LIMIT 1",
+    }
+    for table in _outbox_tables(connection):
+        if connection.execute(checks[table]).fetchone():
+            raise ValueError(
+                "Cannot rebuild work while unfinished outbox publication remains"
+            )
+
+
 def _require_completed_work(connection):
+    _require_completed_outbox(connection)
     unfinished = connection.execute(
         "SELECT state, COUNT(*) FROM work_items INDEXED BY work_selection "
         "WHERE state<>'published' GROUP BY state"
@@ -252,6 +279,16 @@ def rebuild_work(settings, *, vacuum=False):
                     previous_work_entries=old_count,
                     vacuum=vacuum,
                     stac_blob_encoding="base64",
+                    outbox_blob_encoding="base64",
+                    cleared_outbox={
+                        table: connection.execute(
+                            {
+                                "outbox_batches": "SELECT COUNT(*) FROM outbox_batches",
+                                "handle_outbox": "SELECT COUNT(*) FROM handle_outbox",
+                            }[table]
+                        ).fetchone()[0]
+                        for table in _outbox_tables(connection)
+                    },
                     order="last_update, project, collection_id, item_id",
                     state="published",
                 )
@@ -260,10 +297,19 @@ def rebuild_work(settings, *, vacuum=False):
                     connection, "work_items", archive / "work_items.jsonl.gz", guard
                 )
                 _export(connection, "stats", archive / "stats.jsonl.gz", guard)
+                for table in plan["cleared_outbox"]:
+                    _export(connection, table, archive / f"{table}.jsonl.gz", guard)
                 _save_manifest(journal, plan)
                 for index, source in enumerate(sources):
                     _move(source, archive / f"output-{index}")
                 connection.execute("DELETE FROM work_items")
+                for table in plan["cleared_outbox"]:
+                    connection.execute(
+                        {
+                            "handle_outbox": "DELETE FROM handle_outbox",
+                            "outbox_batches": "DELETE FROM outbox_batches",
+                        }[table]
+                    )
                 now = datetime.now(UTC).isoformat()
                 connection.execute(
                     "INSERT INTO work_items(project,topic,partition,offset,stac_blob,event_type,state,created_at,updated_at) "
