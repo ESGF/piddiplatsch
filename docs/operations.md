@@ -153,6 +153,7 @@ Original archives are an alternative harvest input:
 
 ```bash
 piddi harvest --archive outputs/dump/dump_messages_2026-11-01_000001.jsonl
+piddi harvest --archive /backup/piddi/dump
 ```
 
 Repeat `--archive` for multiple parts, including `.jsonl.gz` files. Parts sort by
@@ -161,6 +162,10 @@ requires the new coordinate-bearing envelope; legacy payload-only dumps are not
 supported. Rebuilding shared harvest state must include all stored projects;
 `--clean-catalog` starts a new Kafka group generation and resets the shared state.
 A partial harvest clean is refused when other stored projects share checkpoints.
+Normal Kafka harvest resumes each partition at its database checkpoint,
+independently of broker group offsets, and stops if required history has expired.
+See [dump backup recovery](recovery.md#rebuild-from-dump-backups-then-catch-up-with-kafka)
+for the manual rebuild and Kafka handoff procedure.
 
 ## Remote current-item recovery
 

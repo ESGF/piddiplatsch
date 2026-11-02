@@ -233,7 +233,7 @@ def test_harvest_cli_creates_project_databases_and_commits_after_store(
     assert settings["group.id"] == config.get("kafka", "group.id") + ".harvest"
     assert settings["enable.auto.commit"] is False
     assert settings["enable.auto.offset.store"] is False
-    assert settings["auto.offset.reset"] == "earliest"
+    assert settings["auto.offset.reset"] == "error"
     assert client.commit.call_count == 1
     assert client.commit.call_args.kwargs["asynchronous"] is False
     assert [

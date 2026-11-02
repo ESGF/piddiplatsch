@@ -195,7 +195,7 @@ def reset(project: str, apply: bool) -> None:
 @click.option(
     "--clean-catalog",
     is_flag=True,
-    help="Clear all registered project catalogs and rebuild from retained Kafka history.",
+    help="Clear all registered project catalogs and rebuild from archives or retained Kafka history.",
 )
 @click.option(
     "--clean-project",
@@ -207,8 +207,8 @@ def reset(project: str, apply: bool) -> None:
     "--archive",
     "archives",
     multiple=True,
-    type=click.Path(exists=True, dir_okay=False, path_type=Path),
-    help="Replay a coordinate-bearing JSONL or JSONL.gz archive instead of Kafka; repeat for parts.",
+    type=click.Path(exists=True, path_type=Path),
+    help="Replay a JSONL/JSONL.gz archive or dump directory instead of Kafka; repeat for parts.",
 )
 @click.option(
     "--ignore-unknown-projects/--stop-on-unknown-projects",

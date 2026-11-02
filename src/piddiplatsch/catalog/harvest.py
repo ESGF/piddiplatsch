@@ -128,6 +128,13 @@ class CatalogHarvester:
     def preflight_check(self) -> None:
         return None
 
+    def kafka_resume_offset(self, topic: str, partition: int) -> int | None:
+        """Checkpoints are shared; read fresh progress on each assignment."""
+        checkpoint = self._get_catalog(self.project_names[0]).get_checkpoint(
+            topic, partition
+        )
+        return checkpoint.next_offset if checkpoint else None
+
     def plugin_name_for(self, value: dict) -> str | None:
         project = extract_project_id(value)
         plugin = self._plugins_by_project.get(normalize_project_id(project or ""))

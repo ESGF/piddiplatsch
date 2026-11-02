@@ -16,6 +16,72 @@ Raw archives carry source coordinates and the original payload. Use repeatable
 parts. Shared Kafka checkpoints require a complete harvest rebuild across stored
 projects; project-only harvest cleanup cannot safely rewind a shared partition.
 
+## Rebuild from dump backups, then catch up with Kafka
+
+Compressed raw dumps can rebuild the database independently of Kafka retention.
+Keep a continuous archive from the desired starting point to the backup cutoff;
+the cutoff may be several days old if Kafka still retains the following interval.
+Preserve the original numbered filenames and source coordinates. Legacy dumps
+containing only payloads cannot provide a reliable Kafka handoff.
+
+Stop harvest, mapping and publication services. Use a fresh output/catalog
+directory so this rebuild cannot reuse old batches or publication journals. For
+example, use a recovery configuration with these overrides alongside the usual
+Kafka, STAC and Handle settings:
+
+```toml
+[consumer]
+output_dir = "/mnt/piddi-recovery"
+
+[catalog]
+directory = "/mnt/piddi-recovery"
+```
+
+Replay the saved dump directory first:
+
+```bash
+piddi --config recovery.toml harvest --archive /backup/piddi/dump
+```
+
+This reads top-level `dump_messages_*.jsonl` and `.jsonl.gz` parts in filename
+order, without connecting to Kafka, rewriting the backup, mapping or publishing.
+Explicit files and repeated `--archive` inputs also work. Replay can be restarted:
+durable checkpoints skip overlapping events before applying them, including PATCH
+events. A malformed archive stops the command; repair/restore it before continuing.
+Internal archive gaps cannot be inferred reliably from Kafka offset numbers, so
+archive completeness is a backup requirement.
+
+After replay succeeds, start normal harvest using the same recovery directory:
+
+```bash
+piddi --config recovery.toml harvest --idle-timeout 0
+```
+
+On each partition assignment, harvest reads the database's **next offset** and
+explicitly starts Kafka there, regardless of the consumer group's committed
+offset. For example, a dump ending at offset 12345 resumes at 12346. The same
+rule applies to ordinary restarts and rebalances, using fresh database progress.
+The selected positions and retained ranges are logged. A partition absent from
+the backup starts at its earliest retained offset; earlier lost history for such
+a partition cannot be detected automatically.
+
+Before assigning any partitions, harvest checks their current Kafka watermarks:
+
+- A required position below the earliest retained offset stops with the missing
+  interval. Restore newer/missing dump parts into this database, then retry.
+- A position beyond Kafka's end stops with a topic/cluster/backup mismatch error.
+- A position equal to Kafka's end is valid: harvest waits for new messages.
+
+Automatic offset reset is disabled for catalog harvesting, so retention passing
+the selected offset during fetching also stops consumption instead of silently
+skipping ahead. Kafka cannot fill an interval missing from both Kafka and dumps.
+
+Once the catalog and work queue are restored, resume normal mapping/publication
+against the recovery directory. Dump recovery reconstructs pending work; it does
+not restore old publication receipts or suppress remote Handle writes that were
+already completed before the failure. Restore a matching database/output backup
+instead when preserving that publication progress is required.
+
 ## Mapping interruption
 
 A building batch does not advance work. Retry normal map/sync; the selected

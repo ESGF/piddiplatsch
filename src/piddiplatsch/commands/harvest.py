@@ -56,6 +56,12 @@ class HarvestCommand(KafkaCommand):
         if enabled:
             directory = get_catalog_directory()
         try:
+            from piddiplatsch.catalog.replay import archive_paths
+
+            # Reject empty/missing inputs before a requested clean changes state.
+            archives = archive_paths(self.archives)
+            if archives and not enabled:
+                raise ValueError("Archive replay requires the database catalog")
             with closing(
                 HarvestProcessor(
                     catalog_dir=directory,
@@ -65,17 +71,16 @@ class HarvestCommand(KafkaCommand):
                 )
             ) as processor:
                 if clean_projects:
+                    source = "saved dumps" if archives else "retained Kafka history"
                     click.echo(
-                        f"Cleared catalogs: {', '.join(clean_projects)}. Replaying retained Kafka history."
+                        f"Cleared catalogs: {', '.join(clean_projects)}. Replaying {source}."
                     )
-                if self.archives:
-                    if not enabled:
-                        raise ValueError("Archive replay requires the database catalog")
+                if archives:
                     from piddiplatsch.catalog.replay import archived_messages
                     from piddiplatsch.consumer import start_consumer
 
                     with (
-                        closing(archived_messages(self.archives)) as messages,
+                        closing(archived_messages(archives)) as messages,
                         self.progress(title="harvest replay", stream=True) as progress,
                     ):
                         start_consumer(

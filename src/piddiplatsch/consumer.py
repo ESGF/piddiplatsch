@@ -5,13 +5,14 @@ import logging
 import signal
 import sys
 import time
+from collections.abc import Callable
 from contextlib import closing, nullcontext
 from enum import StrEnum
 
 from piddiplatsch.config import config
 from piddiplatsch.core.messages import KafkaSource, SourceMessage
 from piddiplatsch.core.pipeline import ProcessingPipeline, build_processing_target
-from piddiplatsch.exceptions import MaxErrorsExceededError
+from piddiplatsch.exceptions import CatalogError, MaxErrorsExceededError
 from piddiplatsch.monitoring.progress import BaseProgress
 from piddiplatsch.monitoring.stats import CounterKey, stats
 from piddiplatsch.result import ProcessingResult
@@ -51,6 +52,7 @@ class KafkaConsumer:
         commit_batch_size: int = 100,
         commit_interval: float = 1.0,
         on_idle=None,
+        checkpoint_reader: Callable[[str, int], int | None] | None = None,
     ):
         consumer_class = prepare_kafka_runtime()
 
@@ -65,6 +67,14 @@ class KafkaConsumer:
         self.clock = clock
         self.with_source = with_source
         self.on_idle = on_idle
+        self.checkpoint_reader = checkpoint_reader
+        self._assignment_error: Exception | None = None
+        strategies = str(kafka_cfg.get("partition.assignment.strategy", "")).split(",")
+        self._incremental_assignment = kafka_cfg.get(
+            "group.protocol"
+        ) == "consumer" or "cooperative-sticky" in {
+            strategy.strip() for strategy in strategies
+        }
         self.commit_batch_size = commit_batch_size
         self.commit_interval = commit_interval
         self._pending_offsets: dict[tuple[str, int], int] = {}
@@ -77,10 +87,17 @@ class KafkaConsumer:
                 "enable.auto.commit": False,
                 "enable.auto.offset.store": False,
             }
+            if checkpoint_reader is not None:
+                # Never silently jump forward if retention passes a restored
+                # checkpoint after the watermark check but before fetching.
+                kafka_cfg["auto.offset.reset"] = "error"
         self.consumer = consumer_class(kafka_cfg, logger=logger)
         if with_source:
             self.consumer.subscribe(
-                [self.topic], on_revoke=self._on_revoke, on_lost=self._on_lost
+                [self.topic],
+                on_assign=self._on_assign if checkpoint_reader is not None else None,
+                on_revoke=self._on_revoke,
+                on_lost=self._on_lost,
             )
         else:
             self.consumer.subscribe([self.topic])
@@ -89,6 +106,8 @@ class KafkaConsumer:
         last_message_at = self.clock()
         try:
             while True:
+                if self._assignment_error is not None:
+                    raise self._assignment_error
                 poll_timeout = 1.0
                 if self.with_source:
                     self._maybe_commit()
@@ -100,6 +119,8 @@ class KafkaConsumer:
                     poll_timeout = min(poll_timeout, remaining)
 
                 msg = self.consumer.poll(timeout=poll_timeout)
+                if self._assignment_error is not None:
+                    raise self._assignment_error
                 if msg is None:
                     if self.on_idle is not None:
                         self.on_idle()
@@ -132,7 +153,11 @@ class KafkaConsumer:
                     yield key, value
         finally:
             try:
-                if self.with_source and not self._commit_failed:
+                if (
+                    self.with_source
+                    and not self._commit_failed
+                    and self._assignment_error is None
+                ):
                     self.flush_acknowledgements()
             finally:
                 self.consumer.close()
@@ -190,6 +215,62 @@ class KafkaConsumer:
             self._pending_messages = 0
         self._last_commit_at = self.clock()
 
+    def _on_assign(self, consumer, partitions) -> None:
+        """Use local durable progress rather than the broker group's position."""
+        from confluent_kafka import KafkaException
+
+        try:
+            for partition in partitions:
+                try:
+                    low, high = consumer.get_watermark_offsets(
+                        partition, timeout=10.0, cached=False
+                    )
+                except KafkaException as exc:
+                    raise CatalogError(
+                        f"Cannot check Kafka retention for {partition.topic}/{partition.partition}: {exc}. "
+                        "Harvest was not resumed."
+                    ) from exc
+                next_offset = self.checkpoint_reader(
+                    partition.topic, partition.partition
+                )
+                if next_offset is None:
+                    next_offset = low
+                    logger.info(
+                        "Harvest %s/%d: no database checkpoint; starting at earliest retained offset %d",
+                        partition.topic,
+                        partition.partition,
+                        low,
+                    )
+                elif next_offset < low:
+                    raise CatalogError(
+                        f"Recovery gap for {partition.topic}/{partition.partition}: database requires offset "
+                        f"{next_offset}, but Kafka's earliest retained offset is {low} "
+                        f"(missing interval [{next_offset}, {low})). Restore newer dumps before resuming."
+                    )
+                elif next_offset > high:
+                    raise CatalogError(
+                        f"Recovery position for {partition.topic}/{partition.partition} is beyond Kafka's end: "
+                        f"database requires offset {next_offset}, Kafka end is {high}. Check the topic/cluster and backup."
+                    )
+                else:
+                    logger.info(
+                        "Harvest %s/%d: resuming database checkpoint %d (Kafka retained range [%d, %d))",
+                        partition.topic,
+                        partition.partition,
+                        next_offset,
+                        low,
+                        high,
+                    )
+                partition.offset = next_offset
+            # Validate every partition before accepting any assignment.
+            if self._incremental_assignment:
+                consumer.incremental_assign(partitions)
+            else:
+                consumer.assign(partitions)
+        except Exception as exc:
+            self._assignment_error = exc
+            raise
+
     def _on_revoke(self, consumer, partitions) -> None:
         self.flush_acknowledgements(partitions)
 
@@ -242,6 +323,13 @@ class HarvestProcessor:
 
     def preflight_check(self) -> None:
         return None
+
+    def kafka_resume_offset(self, topic: str, partition: int) -> int | None:
+        return (
+            self._harvester.kafka_resume_offset(topic, partition)
+            if self._harvester
+            else None
+        )
 
     def process(self, key: str, value: dict) -> ProcessingResult:
         if self._harvester:
@@ -341,6 +429,9 @@ def start_consumer(
         options = (
             {
                 "with_source": True,
+                "checkpoint_reader": getattr(
+                    proc_instance, "kafka_resume_offset", None
+                ),
                 "commit_batch_size": catalog_cfg.get("kafka_commit_batch_size", 100),
                 "commit_interval": catalog_cfg.get(
                     "kafka_commit_interval_seconds", 1.0
