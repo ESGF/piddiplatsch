@@ -9,6 +9,34 @@ schemas, or older batch manifests. Full/patch event tracking requires schema 4;
 restart tests with a new empty output directory, rather than a project reset.
 Keep each new database paired with its batch directory and harvest control file.
 
+## Disk safety recovery
+
+By default, Piddi warns below **40 GiB** free and stops new work below **20 GiB**.
+Checks during processing are throttled to ten seconds. A critical reading or an
+unavailable storage check writes `.disk-space-stop` in the configured output
+directory. Harvest, mapping, publication, and maintenance honor this persistent
+stop. Deployed systemd services skip automatic restarts and timer starts while it
+exists, including after a reboot. Already running jobs stop at their next disk
+check; writes already in flight may finish.
+
+For the standard deployment, inspect the marker and journal, stop the services,
+and check the mounted filesystem. After resolving the cause and restoring enough
+headroom (preferably above the warning threshold), explicitly resume:
+
+```bash
+cat /var/lib/piddi/.disk-space-stop
+systemctl stop piddi.service piddi-sync.service piddi-maintenance.service
+df -h /var/lib/piddi
+# After inspection and freeing space:
+rm /var/lib/piddi/.disk-space-stop
+systemctl start piddi.service piddi-sync.service
+```
+
+The marker is outside the database; no database reset is needed. Deploy updated
+service units, run `systemctl daemon-reload`, and restart running services to
+enable this behavior. Timers remain enabled and resume their normal schedules
+after the marker is removed.
+
 ## Harvest
 
 ```bash

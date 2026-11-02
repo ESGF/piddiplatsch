@@ -1,6 +1,7 @@
-"""Shared, throttled disk checks without creating output directories."""
+"""Shared, throttled disk checks and a persistent stop for manual inspection."""
 
 import logging
+import os
 import shutil
 import threading
 import time
@@ -58,9 +59,10 @@ def disk_status(paths=None, settings=None) -> list[dict]:
 
 
 class DiskGuard:
-    def __init__(self, paths, settings: DiskConfig):
+    def __init__(self, paths, settings: DiskConfig, *, stop_file=None):
         self.paths = paths
         self.settings = settings
+        self.stop_file = Path(stop_file) if stop_file is not None else None
         self._checked_at = float("-inf")
         self._error = None
         self._warned = set()
@@ -72,6 +74,12 @@ class DiskGuard:
         with self._lock:
             now = time.monotonic()
             if force or now - self._checked_at >= self.settings.check_interval_seconds:
+                if self.stop_file is not None and self.stop_file.exists():
+                    raise DiskSpaceError(
+                        f"Disk safety stop is latched at {self.stop_file}. "
+                        "Inspect storage and free space, then remove this file "
+                        "and restart processing."
+                    )
                 previous_error = self._error
                 self._error = None
                 for row in disk_status(self.paths, self.settings):
@@ -98,6 +106,24 @@ class DiskGuard:
                     elif path in self._warned:
                         LOGGER.info("Disk space recovered at %s", path)
                         self._warned.remove(path)
+                if self._error and self.stop_file is not None:
+                    self._error += (
+                        f" Safety stop: {self.stop_file}; inspect storage, remove "
+                        "the marker after freeing space, then restart services."
+                    )
+                    try:
+                        self.stop_file.parent.mkdir(parents=True, exist_ok=True)
+                        with self.stop_file.open("a") as marker:
+                            marker.write(self._error + "\n")
+                            marker.flush()
+                            os.fsync(marker.fileno())
+                        directory = os.open(self.stop_file.parent, os.O_RDONLY)
+                        try:
+                            os.fsync(directory)
+                        finally:
+                            os.close(directory)
+                    except OSError:
+                        LOGGER.exception("Cannot persist disk safety stop")
                 if self._error and previous_error is None:
                     LOGGER.error("%s", self._error)
                 self._checked_at = now
@@ -106,8 +132,10 @@ class DiskGuard:
 
 
 @lru_cache(maxsize=16)
-def _guard(paths, settings_json):
-    return DiskGuard(paths, DiskConfig.model_validate_json(settings_json))
+def _guard(paths, settings_json, stop_file):
+    return DiskGuard(
+        paths, DiskConfig.model_validate_json(settings_json), stop_file=stop_file
+    )
 
 
 def get_disk_guard(*, extra_paths=()):
@@ -115,7 +143,11 @@ def get_disk_guard(*, extra_paths=()):
     paths = tuple(
         sorted({*storage_paths(), *(Path(path).resolve() for path in extra_paths)})
     )
-    return _guard(paths, settings.model_dump_json())
+    stop_file = (
+        Path(config.get("consumer", "output_dir", "outputs")).resolve()
+        / ".disk-space-stop"
+    )
+    return _guard(paths, settings.model_dump_json(), stop_file)
 
 
 def check_disk_space(*, extra_paths=(), force=False):

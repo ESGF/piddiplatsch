@@ -1,6 +1,7 @@
 [Unit]
 Description=Maintain Piddiplatsch archives and completed output
 RequiresMountsFor=/var/lib/piddi
+ConditionPathExists=!/var/lib/piddi/.disk-space-stop
 
 [Service]
 Type=oneshot

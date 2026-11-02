@@ -7,7 +7,7 @@ from pathlib import Path
 from piddiplatsch.config import config
 from piddiplatsch.core.messages import SourceMessage
 from piddiplatsch.core.routing import ProjectRouter
-from piddiplatsch.exceptions import MaxErrorsExceededError
+from piddiplatsch.exceptions import DiskSpaceError, MaxErrorsExceededError
 from piddiplatsch.monitoring.disk import get_disk_guard
 from piddiplatsch.monitoring.progress import BaseProgress, get_progress
 from piddiplatsch.monitoring.stats import stats
@@ -191,6 +191,8 @@ class ProcessingPipeline:
                 if callable(process):
                     return process(key, value, source_message.source)
             return self.processor.process(key, value)
+        except DiskSpaceError:
+            raise
         except Exception as e:
             logger.exception(f"Error processing message {key}")
             failure_value = (

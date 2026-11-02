@@ -23,7 +23,12 @@ from piddiplatsch.core.pipeline import (
     process_messages,
 )
 from piddiplatsch.core.registry import get_plugins
-from piddiplatsch.exceptions import BatchError, CatalogError, MaxErrorsExceededError
+from piddiplatsch.exceptions import (
+    BatchError,
+    CatalogError,
+    DiskSpaceError,
+    MaxErrorsExceededError,
+)
 from piddiplatsch.monitoring.disk import check_disk_space
 from piddiplatsch.monitoring.progress import get_progress
 from piddiplatsch.monitoring.stats import stats
@@ -316,6 +321,8 @@ class SyncWorker:
                                     plugin.name,
                                     reason,
                                 )
+                    except DiskSpaceError:
+                        raise
                     except Exception as exc:
                         blocked.add(plugin.name)
                         self.errors.append(f"{plugin.name}: {exc}")

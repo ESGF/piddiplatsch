@@ -10,6 +10,7 @@ from piddiplatsch.maintenance import (
     clean_status_history,
     compress_closed_dumps,
 )
+from piddiplatsch.monitoring.disk import check_disk_space
 from piddiplatsch.output_maintenance import maintain_outputs
 
 
@@ -19,6 +20,8 @@ class MaintainCommand(Command):
 
     def execute(self):
         try:
+            if not self.dry_run:
+                check_disk_space(force=True)
             paths = compress_closed_dumps(dry_run=self.dry_run)
             outputs = maintain_outputs(dry_run=self.dry_run)
             removed = clean_published_work(dry_run=self.dry_run)

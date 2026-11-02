@@ -29,6 +29,8 @@ dump_max_events = 100000
 
 [disk]
 enabled = true
+# Warn below 40 GiB; below 20 GiB, latch a stop for manual inspection.
+# After freeing space, remove <output_dir>/.disk-space-stop and restart services.
 warn_free_gib = 40
 stop_free_gib = 20
 check_interval_seconds = 10

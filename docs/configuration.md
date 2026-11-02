@@ -399,8 +399,16 @@ processing. Below the stop threshold, harvest stops before processing or
 acknowledging the next message. Mapping and publication stop new work; sync keeps
 incomplete work unpublished or ready for retry. Completed server writes can be
 repeated on retry. This is a headroom guard rather than a disk reservation: other
-processes and large writes can consume space between checks. Free space before
-restarting a stopped job. Set `enabled = false` only for a deliberate override.
+processes and large writes can consume space between checks.
+
+A critical reading (or inability to check storage) creates
+`<consumer.output_dir>/.disk-space-stop`. This persistent safety stop blocks new
+processing even after free space recovers or the VM reboots. The deployed systemd
+services skip starts while the marker exists, including sync and maintenance
+timer runs. Inspect storage, free space, remove the marker, then restart services;
+see [disk safety recovery](operations.md#disk-safety-recovery). Set
+`enabled = false` only for a deliberate application override; systemd still
+honors an existing marker.
 
 ## Dataset version lookup
 
