@@ -1,132 +1,72 @@
 # Recovery
 
-Fix the cause of a failure, then repeat the normal command. Failure and skipped
-files are for inspection. Commands do not read them as inputs, and there is no
-`retry` command.
+The fresh-start format uses one `piddi.db` and saved JSONL batches. Existing
+per-project databases and old manifests are not migrated. See
+[Operations](operations.md) for command examples and paths.
 
-## Find the failed record
+## Harvest interruption
 
-Failures include the STAC record, error, and available project and source details:
+The catalog update, independent work snapshot, and shared Kafka checkpoint commit
+together. On restart, already stored topic/partition offsets are skipped, including
+non-idempotent patches. An unresolved event stops harvesting before its checkpoint
+or broker acknowledgement advances.
 
-```text
-outputs/<project>/failures/r0/failed_items_<date>.jsonl
-outputs/<project>/skipped/skipped_items_<date>.jsonl
-```
+Raw archives carry source coordinates and the original payload. Use repeatable
+`harvest --archive FILE` inputs to replay them, including compressed numbered
+parts. Shared Kafka checkpoints require a complete harvest rebuild across stored
+projects; project-only harvest cleanup cannot safely rewind a shared partition.
 
-Records without a resolved project use the global `failures/` or `skipped/`
-directory. Original Kafka messages are in `outputs/dump/`.
+## Mapping interruption
 
-## Restart harvest
+A building batch does not advance work. Retry normal map/sync; the selected
+snapshots remain pending. Building artifacts may remain for inspection.
 
-Harvest stops on an unresolved event and leaves it unacknowledged. Repair the
-configuration, source data, remote service, or storage problem, then run:
+A sealed batch has durable Handle/failure files, checksums, and exact work-ID
+outcomes. If the process stopped before database acknowledgement, the next batch
+command verifies the files and repeats the acknowledgement transaction. Repeated
+acknowledgement cannot repeat the batch totals. A checksum error or missing source
+work blocks that batch; restore the matching database and output together.
 
-```bash
-piddi harvest
-```
+Mapping validation failures become invalid work with an explanation, while
+unprocessed snapshots stay pending. Partial Handle output for a rejected entry is
+rolled back before sealing.
 
-Local checkpoints skip events already saved, so stored patches are not applied
-twice. Harvest has no option to skip an unresolved event.
+## Publication interruption
 
-A patch without a local base triggers a remote STAC fetch. Recovered items stay
-marked for refresh on later events and startup. If STAC is behind Kafka, wait
-for it to catch up and repeat harvest before mapping. Remote recovery uses
-current state and cannot restore missing historical versions.
-See [Remote current-item recovery](operations.md#remote-current-item-recovery).
+Failed publication leaves work mapped. Retry `publish` or `sync` using the saved
+output. Older failed publication blocks newer batches in that project, while
+other projects can continue. The same Handle stays ordered within each batch.
 
-Do not delete catalogs as a restart step. If you need a rebuild, stop other users
-of the catalog and follow [Rebuild catalogs](operations.md#rebuild-catalogs).
-Rebuilding depends on retained Kafka history and available remote items.
+The saved `publication-progress.jsonl` journal records successful output positions
+per Handle, tied to the immutable output checksum. Each success is durable before
+a later write to that Handle starts. Retries skip completed positions and defer
+later updates after a failure. A torn final journal line is repaired on restart.
+A crash between remote HTTP success and its journal append can repeat that last
+write; earlier completed Handle versions are not replayed. The local system does not promise exactly-once remote execution. Successful
+work-state transitions and batch totals are nevertheless committed together and
+are idempotent on recovery. If acknowledgement completed before archival, the
+next run archives the batch without republishing it.
 
-## Repeat mapping or publication
+## Explicit retries and reset
 
-Mapping stops at `plugins.<project>.max_errors`. Fix the cause, then select the same
-catalog items again:
+`retry --project NAME ID...` requeues invalid snapshots only before the project has
+recorded successful publication and when no newer work was mapped/published.
+Finish its original saved batch first. Otherwise harvest a correction as a new
+event or explicitly reset the whole project's retained processing history.
 
-```bash
-piddi map --project cmip6 --date yesterday
-# Or repeat part of a date range
-piddi map --project cmip6 --from 2026-10-08 --to yesterday --offset 1000 --limit 1000
-```
+`reset --project NAME` previews an ordered project replay. With `--apply`, after
+harvest and all batch commands are stopped, it updates work in place without
+copying the database, archives project output under `reset-archives/`, clears
+project summaries, and requeues retained work.
+Catalog records and shared checkpoints remain intact. Retention-deleted work
+requires original archive replay into a fresh database.
 
-Map appends to daily Handle files, so repeated mapping can add duplicate records.
-Inspect the output before publishing. Mapping offsets count catalog items;
-publication offsets count Handle records. These are different units.
+## Storage
 
-```bash
-piddi publish --project cmip6 --date yesterday --retries 3
-```
-
-Publication keeps its inputs and writes a receipt for every result. Repeating
-an input overwrites the same Handles and can repeat earlier successful writes.
-`--retries` handles temporary HTTP failures within the run.
-See [Deferred publication](operations.md#deferred-publication) for ordering and
-selection rules.
-
-## Scheduled batch recovery
-
-Sync saves rejected records and their errors in `failures.jsonl` alongside each
-batch's `handles.jsonl`. Only successful items' Handles are included; partial
-output from a rejected item is removed. Both files are saved durably before the
-processed items leave the pending queue. Rejected items are not automatically
-retried; a later harvested update to an item queues it again.
-
-Reaching the project's `max_errors` limit stops further mapping for the project in that
-sync run, but seals and publishes the processed portion first. Unprocessed items
-remain pending for the next run. Raising the limit allows more records to be
-inspected per batch; it does not require fixing previously rejected records.
-Below the limit, sync continues mapping and publishing normally.
-
-Storage errors and unexpected interruptions still leave `.building-*`
-directories for inspection and keep the unsealed batch's source items pending.
-After fixing an infrastructure problem, repeat `piddi sync`. Existing
-`.building-*` directories from older versions are diagnostic only and are not
-publication inputs. Sync does not remove old diagnostics or monitoring history.
-
-Failed publication keeps the fixed batch under `batches/<project>/ready/`.
-Fix the cause, then repeat `piddi sync`. It retries that batch before newer work
-for the project. Successful batches move to
-`batches/<project>/published/YYYY/MM/DD/<batch-id>/`, using the UTC date in the
-batch ID. Older flat archives remain valid and do not need to be moved.
-A crash can repeat Handle writes already sent to the server.
-
-A checksum or catalog generation mismatch blocks publication. Inspect the batch
-before making changes. Stop sync before cleaning catalogs, and finish or
-explicitly archive the old ready queue first.
-
-Back up catalogs, `.harvest-state.json`, and the batch directory together.
-Catalog progress can refer to saved batches that have not yet been published.
-
-## Reset processing from the current catalog
-
-To map one project's existing STAC records again, use `reset`. This does not
-replay Kafka or dumps, and it preserves the project's STAC records and Kafka
-checkpoints. Other projects are not reset.
-
-Stop harvest and sync first, including the sync timer. Preview the configured
-paths, then apply the reset:
-
-```bash
-piddi reset --project cmip6plus
-piddi reset --project cmip6plus --apply
-piddi sync --project cmip6plus --force-map
-```
-
-Use the same configuration and working directory as the service; pass
-`--config /etc/piddi/piddi.toml` before the command when needed. Run the commands
-as the service user so new files have the correct ownership.
-
-The reset backs up the catalog and monitoring databases using SQLite's backup
-API, archives project batches and project output, clears the project's
-monitoring counters, and marks all its catalog items pending with a fresh mapping
-generation. Backups are under
-`<output_dir>/reset-backups/<timestamp>-<project>-<id>/`. Archiving moves files;
-it does not reclaim their disk space. Shared monitoring run history and shared
-publication receipt files remain available. The reset itself does not publish
-or delete Handles on the server. The subsequent sync intentionally republishes
-the selected project's current Handles.
-
-Resume harvest and the sync timer after checking the result. If reset fails,
-leave services stopped and inspect the printed backup directory. Catalog and
-monitoring changes use separate SQLite transactions; the saved databases are
-recovery copies if the host stops during reset.
+Do not delete database journals or edit batch payloads to bypass recovery checks.
+Back up SQLite using its backup API or with all processes stopped. Keep its output
+batches and harvest control file with it. Maintenance never runs `VACUUM`.
+Database work cleanup removes only published work older than its retention limit.
+Completed batch JSONL and closed receipts are compressed by default; their
+removal is a separate opt-in policy (`maintenance.output_retention_days = 0`
+keeps them indefinitely). DB summaries and Kafka dumps survive output removal.

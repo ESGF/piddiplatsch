@@ -36,10 +36,12 @@ sync stay off until you enable them.
 
 Deployment also installs `piddi-maintenance.service` and its daily timer. The
 timer is enabled with harvest by default and runs at 02:00 UTC with up to fifteen
-minutes of randomized delay. It compresses only prior-day raw dumps. Override
+minutes of randomized delay. It compresses prior-day raw dumps and completed
+batch output/closed receipts. Output removal is opt-in through
+`maintenance.output_retention_days` (default `0`, keep indefinitely). Override
 `piddi_enable_maintenance_timer: false` in `deploy/ansible/custom.yml` to keep it
 disabled. The job runs as `piddi` at low CPU and I/O priority and never publishes
-Handles. See [Closed raw dumps](operations.md#closed-raw-dumps).
+Handles. See [Monitoring and maintenance](operations.md#monitoring-and-maintenance).
 
 ### 2. Start harvest
 
@@ -113,7 +115,7 @@ For settings changes only, edit the relevant file and run `make play`:
 
 Do not edit `/etc/piddi/piddi.toml` directly; Ansible replaces it.
 Changing mapping settings does not remap old items automatically. See
-[Operations](operations.md#scheduled-immutable-batches) if you need to rebuild Handles.
+[Operations](operations.md#invalid-work-and-replay) if you need to rebuild Handles.
 
 ## Monitor
 

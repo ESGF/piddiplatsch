@@ -158,15 +158,36 @@ Map reads local catalogs and does not contact STAC.
 [catalog]
 enabled = true
 backend = "sqlite"
+ignore_unknown_projects = false # Enable to archive, count, and continue.
 version_history = false
 kafka_commit_batch_size = 100
 kafka_commit_interval_seconds = 1.0
-# directory = "/var/lib/piddi/catalog"
+# directory = "/var/lib/piddi"
 ```
 
-The default directory is `<consumer.output_dir>/catalog`. SQLite is the supported
-backend. `enabled` controls catalog writes during harvest. Map always reads
-catalogs, even if harvest catalog writes are disabled.
+The shared database defaults to `<consumer.output_dir>/piddi.db`. Set
+`catalog.directory` to change its directory. SQLite is the supported backend.
+`enabled` controls catalog/work writes during harvest. Map always reads database
+work snapshots. This format requires a fresh output directory; there is no legacy
+schema migration.
+
+`ignore_unknown_projects` defaults to `false`: an unknown project stops harvest
+without advancing its checkpoint or acknowledging the event. Set it to `true` to
+archive the event in `dump/unknown_projects_<day>_<part>.jsonl`, count it as
+filtered under its project identifier, advance the shared checkpoint, and
+continue. The dedicated archive must be durable before the checkpoint advances;
+an archive failure still stops harvest. It uses the same day/count rotation and
+closed-file compression as the ordinary all-event archive.
+
+Override the boolean setting for one run with `harvest --ignore-unknown-projects`
+or `harvest --stop-on-unknown-projects`. These flags do not change the saved
+configuration and require catalog-backed harvesting.
+
+These filtered counts appear in run statistics, logs, and per-project live
+status (`top --json`), not the batch mapping/publication totals. Unknown
+events create no catalog or work rows. Missing/conflicting project identities
+and malformed envelopes still stop harvest in both modes. Registered projects are
+harvested even when disabled for automatic mapping/publication.
 
 Keep `version_history` disabled for the first fill. Enable it to link each dataset
 to the nearest older version in the same local catalog. Map's `--version-history`
@@ -185,40 +206,69 @@ max_wait_seconds = 3600
 max_items = 2000
 publish_workers = 4
 publish_retries = 3
+retention_days = 0 # Disabled; set e.g. 30 to enable published-work cleanup.
 # directory = "/var/lib/piddi/batches"
 ```
 
-Sync maps a project when either 1,000 distinct items have changed or the oldest
-pending change has waited one hour. Repeated changes to one item count once.
-`sync --force-map` skips the wait for pending items.
+Sync maps a project when either 1,000 work entries are pending or the oldest
+has waited one hour. Every event has an independent snapshot, including repeated
+updates to the same item. `sync --force-map` skips these waiting thresholds.
+Manual `map` processes pending work immediately.
 
-`max_items` limits catalog items per batch. An item's dataset and file Handles
-stay together. Ready batches publish during the same sync run, even when no new
-mapping is due. Failed publication stays ready for the next run.
+`max_items` caps each project batch at 2,000 work entries by default. It does not
+limit Handles or bytes; an entry's dataset and file Handles stay together. Sync
+processes one batch per eligible project in round robin order. Project processing
+is sequential; `publish_workers` only controls concurrent Handle requests within
+the current batch. `publish_retries` controls temporary HTTP retries. Sync's
+`--workers` and `--retries` override these values for one run.
 
-`plugins.<project>.max_errors` limits mapping errors within a batch. Rejected items are
-saved in the batch's `failures.jsonl` and removed from the pending queue along
-with successful items after durable sealing. At the error limit, sync seals
-processed work, publishes valid Handles, and stops mapping that project for this
-run. The next run continues with unprocessed items. A harvested update queues a
-rejected item again. Raising the error limit allows more records to be inspected
-without requiring repairs to earlier rejected items.
+`plugins.<project>.max_errors` limits mapping errors per batch. Mapping stores
+invalid work and its explanation, rolls back partial Handle output for the failed
+entry, and seals the successfully processed prefix. At the limit it pauses that
+project until the next run. Unprocessed work remains pending. A later correction
+is a new event; it does not overwrite or automatically retry invalid snapshots.
 
-These limits count catalog items, not Handles or bytes. With ten Handles per
-item, a full default batch contains about 20,000 Handles and takes roughly
-80 seconds to publish at 250 Handles per second, plus mapping time. Larger batches reduce
-directory counts but increase the work repeated after a publication failure.
-Existing site configurations retain their explicit limits; update both
-`trigger_items = 1000` and `max_items = 2000` to use these defaults. Existing ready
-batches retain their original size.
+Publication failures leave work mapped and its saved batch ready. Older pending
+work and failed older publication prevent newer output from overtaking it within
+the same project. Other projects continue. Database acknowledgements and batch
+summaries commit together, so recovery cannot double count them.
 
-`publish_workers` sets concurrent Handle requests. `publish_retries` sets retries
-for each temporary HTTP failure. Sync's `--workers` and `--retries` options
-override these values for one run, including publication of existing ready batches.
+`retention_days` defaults to 0, disabling database work cleanup. All work rows
+remain until you explicitly set a positive period, such as 30 days. Once enabled,
+`piddi maintain` removes only work that entered published state before that
+cutoff. Pending, mapped, invalid, catalog, and summary rows remain. Maintenance
+never runs `VACUUM` or deletes JSONL output.
 
-The default directory is `<consumer.output_dir>/batches`. All sync runs must use
-the same directory so they share batches and the worker lock. The Ansible setting
+The batch directory defaults to `<consumer.output_dir>/batches`. Keep it paired
+with its database. All batch commands use a shared lock beside `piddi.db`, even
+when a custom batch directory is configured. The Ansible setting
 `piddi_sync_check_interval` controls how often the timer runs.
+
+## Completed output maintenance
+
+```toml
+[maintenance]
+compress_outputs = true
+output_retention_days = 0 # Keep forever; set e.g. 30 to delete older completed output.
+```
+
+`piddi maintain` and the scheduled maintenance service gzip completed batch
+JSONL (Handles, failures, publication journal) and closed publication receipts.
+Compression is enabled by default; deletion is disabled. This policy is separate
+from `[batch].retention_days`, which controls published work rows in the database.
+
+Only batch archives confirmed published in `piddi.db` are eligible. Ready and
+failed batches remain unchanged. Their referenced receipts are protected, and
+receipt writers hold file locks so maintenance skips active files. Completed
+batch receipts can be compressed immediately; other nonempty receipts wait until
+their last-write UTC day has ended. Compression preserves contents and last-write
+times, and creates a durable `.jsonl.gz` before removing the original.
+
+With `output_retention_days = 30`, archives expire 30 days after publication
+completion, regardless of their creation-date directory. Standalone receipts
+use their last-write time. Both plain and gzip files are eligible for removal.
+Database summaries, Kafka dumps, and pending/invalid work are retained. Use
+`piddi maintain --dry-run` to review compression and deletion paths first.
 
 ## Logging and monitoring
 
@@ -229,7 +279,6 @@ file = "pid.log"
 
 [stats]
 enable_db = true
-db_path = "piddi.db"
 interval_seconds = 30
 summary_interval = 10000
 heartbeat_interval_seconds = 5
@@ -247,14 +296,22 @@ a companion file: `pid.error.log` beside `pid.log`, or `piddi.error.log` beside
 always includes ERROR and CRITICAL, even if the normal level is CRITICAL.
 Terminal-only logging does not create a companion file.
 
-Statistics log every 30 seconds or 10,000 messages as results arrive.
-The monitoring database records harvest and mapping. `piddi top` reads it.
-Publication results are in the logs and JSONL receipts.
+Statistics log every 30 seconds or 10,000 messages as results arrive. One row per
+batch in `piddi.db.stats` records mapped/rejected work, prepared Handles, the alias
+subset, published Handles, and failed attempts. Mapping creates the row;
+publication updates it. Retries reuse the same batch ID. Each batch also records
+`full_events` and `patch_events`, including rejected events. Source types are
+preserved even though mapping reads reconstructed full snapshots.
+`enable_db` enables separate `run` rows for live heartbeats and rate histories
+in the same `stats` table. These rows do not contribute to batch totals.
+No extra tables or separate monitoring database are created.
+`piddi top` reads live harvest, mapping, and publication status. Publication
+results also appear in logs and JSONL receipts.
 
 Heartbeats update every five seconds, even when Kafka is idle. Unfinished runs
-become stale after 15 seconds without a heartbeat. History samples are kept for
-30 days; use `sample_retention_days = 0` to keep them indefinitely.
-See [Logging and statistics](operations.md#logging-and-statistics) for examples.
+become stale after 15 seconds without a heartbeat. Each live run retains up to one hour of rate samples; top shows the last five
+minutes. `sample_retention_days` controls completed run-history retention; zero
+disables that cleanup. See [Monitoring and maintenance](operations.md#monitoring-and-maintenance).
 
 ## Raw dump files
 
@@ -268,9 +325,8 @@ dump_max_events = 100000
 ```
 
 Parts are named `dump_messages_2026-11-01_000001.jsonl`, then `_000002.jsonl`,
-and so on. Restarting resumes the last part and its event count. Existing daily
-files are preserved; numbered parts follow them in filename order. Each line
-still contains the original event payload. The limit counts events, not bytes;
+and so on. Restarting resumes the last part and its event count. Each line contains
+`source` (topic, partition, offset), `key`, and the original event under `payload`. The limit counts events, not bytes;
 individual events can vary greatly in size. Maintenance compresses parts from
 previous UTC days, leaving today's files available for appending.
 
@@ -343,8 +399,16 @@ processing. Below the stop threshold, harvest stops before processing or
 acknowledging the next message. Mapping and publication stop new work; sync keeps
 incomplete work unpublished or ready for retry. Completed server writes can be
 repeated on retry. This is a headroom guard rather than a disk reservation: other
-processes and large writes can consume space between checks. Free space before
-restarting a stopped job. Set `enabled = false` only for a deliberate override.
+processes and large writes can consume space between checks.
+
+A critical reading (or inability to check storage) creates
+`<consumer.output_dir>/.disk-space-stop`. This persistent safety stop blocks new
+processing even after free space recovers or the VM reboots. The deployed systemd
+services skip starts while the marker exists, including sync and maintenance
+timer runs. Inspect storage, free space, remove the marker, then restart services;
+see [disk safety recovery](operations.md#disk-safety-recovery). Set
+`enabled = false` only for a deliberate application override; systemd still
+honors an existing marker.
 
 ## Dataset version lookup
 
@@ -368,3 +432,5 @@ never fetches a patch base from remote STAC. The library `force` bypass and
 failure-file retry runner are removed. Failure files remain diagnostics.
 
 `[stats].history_minutes` is removed; `top` uses the last five minutes.
+`[stats].db_path` is removed; the single `piddi.db` follows `catalog.directory`
+or `consumer.output_dir`.

@@ -1,78 +1,108 @@
-"""SQLite storage for one project's complete, versioned STAC items."""
+"""Project-scoped access to the four-table, shared SQLite work database."""
 
 import json
 import sqlite3
 import zlib
-from collections.abc import Iterator
 from contextlib import contextmanager
-from datetime import UTC, date, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from uuid import uuid4
 
 from piddiplatsch.catalog.base import BaseCatalog, BaseCatalogTransaction
 from piddiplatsch.catalog.models import (
     CatalogEntry,
     KafkaCheckpoint,
-    PendingCatalogChanges,
-    PendingCatalogItem,
+    PendingWork,
+    WorkItem,
 )
 from piddiplatsch.exceptions import CatalogError
 
-_SCHEMA_VERSION = 5
+_SCHEMA_VERSION = 4
+_SCHEMA = """
+CREATE TABLE IF NOT EXISTS catalog_items (
+    project TEXT NOT NULL, collection_id TEXT NOT NULL, item_id TEXT NOT NULL,
+    dataset_id TEXT NOT NULL, version_number INTEGER NOT NULL,
+    stac_blob BLOB NOT NULL, last_update TEXT NOT NULL,
+    PRIMARY KEY (project, collection_id, item_id)
+);
+CREATE INDEX IF NOT EXISTS catalog_versions
+    ON catalog_items(project, collection_id, dataset_id, version_number);
+CREATE TABLE IF NOT EXISTS work_items (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    project TEXT NOT NULL, topic TEXT NOT NULL, partition INTEGER NOT NULL,
+    offset INTEGER NOT NULL, stac_blob BLOB NOT NULL,
+    event_type TEXT NOT NULL CHECK(event_type IN ('full','patch')),
+    state TEXT NOT NULL DEFAULT 'pending' CHECK(state IN ('pending','mapped','invalid','published')),
+    created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
+    batch_id TEXT, message TEXT, handle_count INTEGER NOT NULL DEFAULT 0,
+    UNIQUE(topic, partition, offset)
+);
+CREATE INDEX IF NOT EXISTS work_selection ON work_items(project, state, id);
+CREATE INDEX IF NOT EXISTS work_batches ON work_items(project, batch_id);
+CREATE TABLE IF NOT EXISTS kafka_checkpoints (
+    topic TEXT NOT NULL, partition INTEGER NOT NULL, next_offset INTEGER NOT NULL,
+    PRIMARY KEY(topic, partition)
+);
+CREATE TABLE IF NOT EXISTS stats (
+    kind TEXT NOT NULL CHECK(kind IN ('batch','run')),
+    project TEXT NOT NULL, id TEXT NOT NULL,
+    status TEXT NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
+    mapped_at TEXT, published_at TEXT,
+    items INTEGER NOT NULL DEFAULT 0, invalid_items INTEGER NOT NULL DEFAULT 0,
+    handles INTEGER NOT NULL DEFAULT 0, prepared_handles INTEGER NOT NULL DEFAULT 0,
+    alias_handles INTEGER NOT NULL DEFAULT 0, errors INTEGER NOT NULL DEFAULT 0,
+    full_events INTEGER NOT NULL DEFAULT 0, patch_events INTEGER NOT NULL DEFAULT 0,
+    message TEXT, runtime TEXT,
+    PRIMARY KEY(kind, project, id)
+);
+"""
 
 
-def _decode_entry(row: tuple) -> CatalogEntry:
+def _now():
+    return datetime.now(UTC).isoformat()
+
+
+def _encode(entry):
+    # A snapshot envelope keeps local provenance out of the original STAC item.
+    entry.__post_init__()
+    return zlib.compress(
+        json.dumps(
+            {
+                "collection_id": entry.collection_id,
+                "item": entry.item,
+                "dataset_id": entry.dataset_id,
+                "version_number": entry.version_number,
+                "publication_time": entry.publication_time,
+                "remote_refresh": entry.remote_refresh,
+            },
+            ensure_ascii=False,
+            separators=(",", ":"),
+            allow_nan=False,
+        ).encode(),
+        3,
+    )
+
+
+def _decode(blob):
     try:
-        collection_id, dataset_id, version_number, payload, publication_time = row[:5]
-        recovery = json.loads(row[5]) if len(row) > 5 and row[5] is not None else None
-        item = json.loads(zlib.decompress(payload))
-        return CatalogEntry(
-            collection_id, item, dataset_id, version_number, publication_time, recovery
-        )
+        return CatalogEntry(**json.loads(zlib.decompress(blob)))
     except (ValueError, TypeError, zlib.error) as exc:
-        raise CatalogError(f"Invalid stored catalog entry: {exc}") from exc
+        raise CatalogError(f"Invalid stored STAC snapshot: {exc}") from exc
 
 
 class SQLiteCatalog(BaseCatalog):
-    """Persistent catalog backed by a dedicated project database file.
+    """One project view of piddi.db. Connections belong to one thread.
 
-    Payloads use compact UTF-8 JSON compressed independently with zlib level 3,
-    available in the standard library. Identity/version indexes remain outside
-    the payload. Version 2 adds publication time; version 3 indexes UTC event days.
-    Version 5 tracks distinct pending mapping changes with monotonic sequences.
-    Version 4 adds persistent remote-refresh provenance and a partial index.
-    Writer opens migrate older schemas and backfill dates once with bounded memory.
-    Read-only opens support all versions without migrating or creating files;
-    date selections require version 3.
-
-    One instance belongs to one thread. WAL permits separate instances/processes
-    to read while a writer holds a transaction; writers serialize with a bounded
-    SQLite lock timeout. Streaming uses a separate read connection and a snapshot
-    established on its first query, excluding uncommitted transaction writes.
-    Long-lived iterators can delay WAL reclamation and must be closed promptly.
-    Use local disk, not a network filesystem. Reset reuses space; it does not
-    compact or remove the database. Read-only opens hold a snapshot shared by item
-    iteration and predecessor queries until close.
+    Read-only instances hold a stable snapshot. Writers use short explicit
+    transactions. No legacy schema migration is performed.
     """
 
-    def __init__(
-        self,
-        project: str,
-        path: str | Path,
-        *,
-        timeout: float = 5.0,
-        read_only: bool = False,
-    ):
+    def __init__(self, project, path, *, timeout=5.0, read_only=False):
         super().__init__(project)
-        if str(path) == ":memory:":
-            raise ValueError("SQLiteCatalog requires a persistent database file")
         self.path = Path(path).resolve()
-        self._connection: sqlite3.Connection | None = None
-        self._active_transaction: SQLiteCatalogTransaction | None = None
-        self._read_connections: set[sqlite3.Connection] = set()
-        self._timeout = timeout
         self.read_only = read_only
-        self._schema_version = _SCHEMA_VERSION
+        self._connection = None
+        self._active_transaction = None
+        self._read_connections = set()
         try:
             if read_only:
                 self._connection = sqlite3.connect(
@@ -82,281 +112,65 @@ class SQLiteCatalog(BaseCatalog):
                     isolation_level=None,
                 )
                 self._execute("BEGIN")
-                metadata = self._execute(
-                    "SELECT project, schema_version FROM catalog_metadata WHERE singleton = 1"
-                ).fetchone()
-                self._validate_metadata(metadata)
-                self._schema_version = metadata[1]
+                if (
+                    self._execute("PRAGMA user_version").fetchone()[0]
+                    != _SCHEMA_VERSION
+                ):
+                    raise CatalogError(
+                        "Unsupported database schema; start with a fresh piddi.db"
+                    )
+                self._execute("SELECT project FROM catalog_items LIMIT 0")
             else:
                 self.path.parent.mkdir(parents=True, exist_ok=True)
                 self._connection = sqlite3.connect(
                     self.path, timeout=timeout, isolation_level=None
                 )
-                self._initialize()
+                tables = {
+                    row[0]
+                    for row in self._execute(
+                        "SELECT name FROM sqlite_master WHERE type='table'"
+                    )
+                }
+                if (
+                    tables
+                    and not {
+                        "catalog_items",
+                        "work_items",
+                        "kafka_checkpoints",
+                        "stats",
+                    }
+                    <= tables
+                ):
+                    raise CatalogError(
+                        "Legacy database detected; start with a fresh piddi.db"
+                    )
+                version = self._execute("PRAGMA user_version").fetchone()[0]
+                if version not in (0, _SCHEMA_VERSION):
+                    raise CatalogError("Unsupported database schema")
                 self._execute("PRAGMA journal_mode=WAL")
                 self._execute("PRAGMA synchronous=FULL")
+                self._require_connection().executescript(
+                    "BEGIN IMMEDIATE;\n" + _SCHEMA + "\nPRAGMA user_version=4;\nCOMMIT;"
+                )
         except (OSError, sqlite3.Error, CatalogError) as exc:
             self.close()
-            raise CatalogError(f"Could not open catalog {self.path}: {exc}") from exc
+            raise CatalogError(f"Could not open database {self.path}: {exc}") from exc
 
-    def _validate_metadata(self, metadata) -> None:
-        if (
-            metadata is None
-            or metadata[0] != self.project
-            or metadata[1] not in (1, 2, 3, 4, _SCHEMA_VERSION)
-        ):
-            raise CatalogError(
-                "Catalog project or schema version does not match: "
-                f"stored={metadata!r}, requested={(self.project, _SCHEMA_VERSION)!r}"
-            )
-
-    def _initialize(self) -> None:
-        connection = self._require_connection()
-        connection.execute("BEGIN IMMEDIATE")
-        try:
-            connection.execute(
-                "CREATE TABLE IF NOT EXISTS catalog_metadata ("
-                "singleton INTEGER PRIMARY KEY CHECK (singleton = 1), "
-                "project TEXT NOT NULL, schema_version INTEGER NOT NULL)"
-            )
-            metadata = connection.execute(
-                "SELECT project, schema_version FROM catalog_metadata WHERE singleton = 1"
-            ).fetchone()
-            if metadata is None:
-                connection.execute(
-                    "INSERT INTO catalog_metadata VALUES (1, ?, ?)",
-                    (self.project, _SCHEMA_VERSION),
-                )
-            else:
-                self._validate_metadata(metadata)
-            connection.execute(
-                "CREATE TABLE IF NOT EXISTS items ("
-                "collection_id TEXT NOT NULL, item_id TEXT NOT NULL, "
-                "dataset_id TEXT NOT NULL, version_number INTEGER NOT NULL, "
-                "payload BLOB NOT NULL, publication_time TEXT, event_date TEXT, remote_refresh TEXT, PRIMARY KEY (collection_id, item_id))"
-            )
-            if metadata is not None and metadata[1] == 1:
-                connection.execute("ALTER TABLE items ADD COLUMN publication_time TEXT")
-            if metadata is not None and metadata[1] < 3:
-                connection.execute("ALTER TABLE items ADD COLUMN event_date TEXT")
-                self._backfill_event_dates(connection)
-            if metadata is not None and metadata[1] < 4:
-                connection.execute("ALTER TABLE items ADD COLUMN remote_refresh TEXT")
-                connection.execute(
-                    "UPDATE catalog_metadata SET schema_version = ? WHERE singleton = 1",
-                    (_SCHEMA_VERSION,),
-                )
-            connection.execute(
-                "CREATE INDEX IF NOT EXISTS items_event_dates ON items (event_date, collection_id, item_id)"
-            )
-            connection.execute(
-                "CREATE INDEX IF NOT EXISTS items_remote_refresh ON items (collection_id, item_id) WHERE remote_refresh IS NOT NULL"
-            )
-            connection.execute(
-                "CREATE INDEX IF NOT EXISTS items_versions "
-                "ON items (collection_id, dataset_id, version_number, item_id)"
-            )
-            connection.execute(
-                "CREATE TABLE IF NOT EXISTS checkpoints ("
-                "topic TEXT NOT NULL, partition INTEGER NOT NULL, "
-                "next_offset INTEGER NOT NULL, "
-                "PRIMARY KEY (topic, partition)) WITHOUT ROWID"
-            )
-            self._initialize_pending(connection)
-            connection.execute(
-                "UPDATE catalog_metadata SET schema_version = ? WHERE singleton = 1",
-                (_SCHEMA_VERSION,),
-            )
-            connection.execute("COMMIT")
-        except BaseException:
-            connection.execute("ROLLBACK")
-            raise
-
-    @staticmethod
-    def _initialize_pending(connection):
-        connection.execute(
-            "CREATE TABLE IF NOT EXISTS mapping_state (singleton INTEGER PRIMARY KEY "
-            "CHECK (singleton = 1), generation TEXT NOT NULL, sequence INTEGER NOT NULL)"
-        )
-        connection.execute(
-            "CREATE TABLE IF NOT EXISTS pending_items (collection_id TEXT NOT NULL, "
-            "item_id TEXT NOT NULL, sequence INTEGER NOT NULL, pending_since TEXT NOT NULL, "
-            "PRIMARY KEY (collection_id, item_id)) WITHOUT ROWID"
-        )
-        connection.execute(
-            "CREATE UNIQUE INDEX IF NOT EXISTS pending_sequence ON pending_items (sequence)"
-        )
-        if connection.execute("SELECT 1 FROM mapping_state").fetchone() is None:
-            connection.execute(
-                "INSERT INTO mapping_state VALUES (1, ?, 0)", (uuid4().hex,)
-            )
-            # Existing items become pending once; migrate using metadata only.
-            connection.execute(
-                "INSERT INTO pending_items SELECT collection_id, item_id, ROW_NUMBER() OVER (ORDER BY collection_id, item_id), ? FROM items",
-                (datetime.now(UTC).isoformat(),),
-            )
-            connection.execute(
-                "UPDATE mapping_state SET sequence = (SELECT COALESCE(MAX(sequence), 0) FROM pending_items)"
-            )
-
-    def _require_pending_index(self):
-        self._require_connection()
-        if self._schema_version < 5:
-            raise CatalogError(
-                "Catalog mapping index is missing; run harvest once to upgrade"
-            )
-
-    def pending_changes(self, max_sequence: int | None = None) -> PendingCatalogChanges:
-        self._require_pending_index()
-        generation, sequence = self._execute(
-            "SELECT generation, sequence FROM mapping_state WHERE singleton = 1"
-        ).fetchone()
-        sql = "SELECT COUNT(*), MIN(pending_since) FROM pending_items"
-        parameters = ()
-        if max_sequence is not None:
-            sql += " WHERE sequence <= ?"
-            parameters = (max_sequence,)
-        count, oldest = self._execute(sql, parameters).fetchone()
-        return PendingCatalogChanges(
-            generation,
-            count,
-            datetime.fromisoformat(oldest) if oldest else None,
-            sequence,
-        )
-
-    def iter_pending(self, limit: int, max_sequence: int | None = None):
-        self._require_pending_index()
-        if type(limit) is not int or limit < 1:
-            raise ValueError("limit must be a positive integer")
-        cursor = self._execute(
-            "SELECT collection_id, item_id, sequence FROM pending_items WHERE sequence <= ? ORDER BY sequence LIMIT ?",
-            (
-                (
-                    max_sequence
-                    if max_sequence is not None
-                    else self.pending_changes().sequence
-                ),
-                limit,
-            ),
-        )
-        try:
-            for collection, item_id, sequence in cursor:
-                yield PendingCatalogItem(self.get_item(collection, item_id), sequence)
-        except sqlite3.Error as exc:
-            raise CatalogError(
-                f"Could not stream pending catalog items: {exc}"
-            ) from exc
-        finally:
-            if self._connection is not None:
-                cursor.close()
-
-    def acknowledge_mapped(self, generation: str, sequence: int) -> None:
-        if type(sequence) is not int or sequence < 0:
-            raise ValueError("sequence must be a nonnegative integer")
-        with self.transaction():
-            current = self.pending_changes()
-            if current.generation != generation or sequence > current.sequence:
-                raise CatalogError(
-                    "Batch belongs to a different catalog generation or future sequence"
-                )
-            self._execute("DELETE FROM pending_items WHERE sequence <= ?", (sequence,))
-
-    @staticmethod
-    def _backfill_event_dates(connection: sqlite3.Connection) -> None:
-        cursor = connection.execute(
-            "SELECT collection_id, dataset_id, version_number, payload, publication_time, item_id FROM items"
-        )
-        try:
-            while rows := cursor.fetchmany(256):
-                updates = []
-                for row in rows:
-                    day = _decode_entry(row[:5]).event_date
-                    updates.append((day.isoformat() if day else None, row[0], row[5]))
-                connection.executemany(
-                    "UPDATE items SET event_date = ? WHERE collection_id = ? AND item_id = ?",
-                    updates,
-                )
-        finally:
-            cursor.close()
-
-    def latest_event_date(self) -> date | None:
-        self._require_date_index()
-        value = self._execute("SELECT MAX(event_date) FROM items").fetchone()[0]
-        try:
-            return date.fromisoformat(value) if value is not None else None
-        except ValueError as exc:
-            raise CatalogError(
-                f"Invalid indexed catalog event date: {value!r}"
-            ) from exc
-
-    def _require_date_index(self) -> None:
-        self._require_connection()
-        if self._schema_version < 3:
-            raise CatalogError(
-                "Catalog date index is missing; run harvest once to upgrade before using date selectors"
-            )
-
-    def _require_connection(self) -> sqlite3.Connection:
+    def _require_connection(self):
         if self._connection is None:
             raise CatalogError("Catalog is closed")
         return self._connection
 
-    def _execute(self, sql: str, parameters: tuple = ()) -> sqlite3.Cursor:
+    def _execute(self, sql, parameters=()):
         try:
             return self._require_connection().execute(sql, parameters)
         except (sqlite3.Error, OverflowError) as exc:
-            raise CatalogError(f"SQLite catalog operation failed: {exc}") from exc
-
-    def _entry_select(self) -> str:
-        publication = "publication_time" if self._schema_version >= 2 else "NULL"
-        recovery = "remote_refresh" if self._schema_version >= 4 else "NULL"
-        # Column expressions are fixed internal constants, never user input.
-        return f"SELECT collection_id, dataset_id, version_number, payload, {publication}, {recovery} FROM items"  # noqa: S608
-
-    def get_item(self, collection_id: str, item_id: str) -> CatalogEntry | None:
-        sql = self._entry_select() + " WHERE collection_id = ? AND item_id = ?"
-        row = self._execute(
-            sql,
-            (collection_id, item_id),
-        ).fetchone()
-        return None if row is None else _decode_entry(row)
-
-    def find_previous_version(
-        self, collection_id: str, dataset_id: str, version_number: int
-    ) -> str | None:
-        row = self._execute(
-            "SELECT item_id FROM items "
-            "WHERE collection_id = ? AND dataset_id = ? AND version_number < ? "
-            "ORDER BY version_number DESC, item_id DESC LIMIT 1",
-            (collection_id, dataset_id, version_number),
-        ).fetchone()
-        return None if row is None else row[0]
-
-    def find_versions(
-        self, collection_id: str, dataset_id: str, limit: int = 100
-    ) -> list[str]:
-        if type(limit) is not int or limit < 1:
-            raise ValueError("limit must be a positive integer")
-        return [
-            row[0]
-            for row in self._execute(
-                "SELECT item_id FROM items WHERE collection_id = ? AND dataset_id = ? "
-                "ORDER BY version_number DESC, item_id DESC LIMIT ?",
-                (collection_id, dataset_id, limit),
-            ).fetchall()
-        ]
-
-    def get_checkpoint(self, topic: str, partition: int) -> KafkaCheckpoint | None:
-        row = self._execute(
-            "SELECT topic, partition, next_offset FROM checkpoints "
-            "WHERE topic = ? AND partition = ?",
-            (topic, partition),
-        ).fetchone()
-        return None if row is None else KafkaCheckpoint(*row)
+            if self._active_transaction is not None:
+                self._active_transaction._failed = True
+            raise CatalogError(f"SQLite operation failed: {exc}") from exc
 
     @contextmanager
-    def transaction(self) -> Iterator[BaseCatalogTransaction]:
-        self._require_connection()
+    def transaction(self):
         if self.read_only:
             raise CatalogError("Catalog is read-only")
         if self._active_transaction is not None:
@@ -377,222 +191,398 @@ class SQLiteCatalog(BaseCatalog):
         finally:
             self._active_transaction = None
 
+    def get_item(self, collection_id, item_id):
+        row = self._execute(
+            "SELECT stac_blob FROM catalog_items WHERE project=? AND collection_id=? AND item_id=?",
+            (self.project, collection_id, item_id),
+        ).fetchone()
+        return _decode(row[0]) if row else None
+
+    def find_previous_version(self, collection_id, dataset_id, version_number):
+        row = self._execute(
+            "SELECT item_id FROM catalog_items WHERE project=? AND collection_id=? AND dataset_id=? "
+            "AND version_number<? ORDER BY version_number DESC, item_id DESC LIMIT 1",
+            (self.project, collection_id, dataset_id, version_number),
+        ).fetchone()
+        return row[0] if row else None
+
+    def find_versions(self, collection_id, dataset_id, limit=100):
+        if type(limit) is not int or limit < 1:
+            raise ValueError("limit must be a positive integer")
+        return [
+            row[0]
+            for row in self._execute(
+                "SELECT item_id FROM catalog_items WHERE project=? AND collection_id=? "
+                "AND dataset_id=? ORDER BY version_number DESC, item_id DESC LIMIT ?",
+                (self.project, collection_id, dataset_id, limit),
+            )
+        ]
+
+    def get_checkpoint(self, topic, partition):
+        row = self._execute(
+            "SELECT topic, partition, next_offset FROM kafka_checkpoints WHERE topic=? AND partition=?",
+            (topic, partition),
+        ).fetchone()
+        return KafkaCheckpoint(*row) if row else None
+
+    def latest_event_date(self):
+        # No source-date columns: the normal queue uses local insertion order.
+        return max(
+            (entry.event_date for entry in self.iter_items() if entry.event_date),
+            default=None,
+        )
+
     def iter_items(
         self,
         *,
-        collection_id: str | None = None,
-        from_date: date | None = None,
-        to_date: date | None = None,
-        remote_refresh_only: bool = False,
-    ) -> Iterator[CatalogEntry]:
-        self._require_connection()
-        dated = from_date is not None or to_date is not None
-        if dated:
-            self._require_date_index()
-        reader = None
+        collection_id=None,
+        from_date=None,
+        to_date=None,
+        remote_refresh_only=False,
+    ):
+        sql = "SELECT stac_blob FROM catalog_items WHERE project=?"
+        params = [self.project]
+        if collection_id is not None:
+            sql += " AND collection_id=?"
+            params.append(collection_id)
+        reader = (
+            self._require_connection()
+            if self.read_only
+            else sqlite3.connect(
+                self.path.as_uri() + "?mode=ro", uri=True, isolation_level=None
+            )
+        )
         cursor = None
         try:
-            # URI mode prevents accidentally recreating a removed database.
-            reader = (
-                self._require_connection()
-                if self.read_only
-                else sqlite3.connect(
-                    self.path.as_uri() + "?mode=ro",
-                    uri=True,
-                    timeout=self._timeout,
-                    isolation_level=None,
-                )
-            )
             if not self.read_only:
                 self._read_connections.add(reader)
                 reader.execute("BEGIN")
-            sql = self._entry_select()
-            parameters = []
-            conditions = []
-            if remote_refresh_only:
-                if self._schema_version < 4:
-                    return
-                conditions.append("remote_refresh IS NOT NULL")
-            if collection_id is not None:
-                conditions.append("collection_id = ?")
-                parameters.append(collection_id)
-            if from_date is not None:
-                conditions.append("event_date >= ?")
-                parameters.append(from_date.isoformat())
-            if to_date is not None:
-                conditions.append("event_date <= ?")
-                parameters.append(to_date.isoformat())
-            if conditions:
-                sql += " WHERE " + " AND ".join(conditions)
-            order = (
-                "event_date, collection_id, item_id"
-                if dated
-                else "collection_id, item_id"
-            )
-            cursor = reader.execute(sql + " ORDER BY " + order, parameters)
-            while True:
+            cursor = reader.execute(sql + " ORDER BY collection_id, item_id", params)
+            for row in cursor:
                 self._require_connection()
-                row = cursor.fetchone()
-                if row is None:
-                    break
-                yield _decode_entry(row)
+                entry = _decode(row[0])
+                if remote_refresh_only and entry.remote_refresh is None:
+                    continue
+                if from_date is not None and (
+                    entry.event_date is None or entry.event_date < from_date
+                ):
+                    continue
+                if to_date is not None and (
+                    entry.event_date is None or entry.event_date > to_date
+                ):
+                    continue
+                yield entry
         except sqlite3.Error as exc:
-            raise CatalogError(f"Could not stream SQLite catalog: {exc}") from exc
+            raise CatalogError(f"Could not stream catalog: {exc}") from exc
         finally:
-            if reader is not None:
-                if self.read_only:
-                    if self._connection is not None and cursor is not None:
-                        cursor.close()
-                else:
-                    self._read_connections.discard(reader)
-                    reader.close()
-
-    def reset(self) -> None:
-        with self.transaction():
-            self._execute("DELETE FROM items")
-            self._execute("DELETE FROM checkpoints")
-            self._execute("DELETE FROM pending_items")
-            self._execute(
-                "UPDATE mapping_state SET generation = ?, sequence = 0 WHERE singleton = 1",
-                (uuid4().hex,),
-            )
-
-    def close(self) -> None:
-        try:
-            for reader in self._read_connections:
+            if self.read_only:
+                if self._connection is not None and cursor is not None:
+                    cursor.close()
+            else:
+                self._read_connections.discard(reader)
                 reader.close()
-            if self._connection is not None:
-                # sqlite3.close rolls back any uncommitted transaction.
-                self._connection.close()
-        except sqlite3.Error as exc:
-            raise CatalogError(f"Could not close SQLite catalog: {exc}") from exc
-        finally:
-            self._read_connections.clear()
-            self._connection = None
-            self._active_transaction = None
 
-    def compact(self) -> None:
-        self._require_connection()
-        if self.read_only:
-            raise CatalogError("Catalog is read-only")
-        if self._active_transaction is not None or self._read_connections:
-            raise CatalogError(
-                "Cannot compact with an active transaction or read iterator"
+    def pending_work(self, max_id=None):
+        frontier = self._execute(
+            "SELECT COALESCE(MAX(id),0) FROM work_items WHERE project=?",
+            (self.project,),
+        ).fetchone()[0]
+        count, oldest = self._execute(
+            "SELECT COUNT(*), MIN(created_at) FROM work_items WHERE project=? AND state='pending' AND id<=?",
+            (self.project, frontier if max_id is None else max_id),
+        ).fetchone()
+        return PendingWork(
+            count,
+            datetime.fromisoformat(oldest) if oldest else None,
+            frontier,
+        )
+
+    def _work_selection(self, frontier, from_date, to_date, after_id):
+        sql = "FROM work_items WHERE project=? AND state='pending' AND id>? AND id<=?"
+        params = [self.project, after_id, frontier]
+        if from_date is not None:
+            sql += " AND created_at>=?"
+            params.append(
+                datetime.combine(from_date, datetime.min.time(), UTC).isoformat()
             )
+        if to_date is not None:
+            sql += " AND created_at<?"
+            params.append(
+                datetime.combine(
+                    to_date + timedelta(days=1), datetime.min.time(), UTC
+                ).isoformat()
+            )
+        return sql, params
+
+    def iter_pending(
+        self, limit, max_id=None, *, from_date=None, to_date=None, offset=0
+    ):
+        frontier = self.pending_work().last_id if max_id is None else max_id
+        for identity in self.select_work_ids(
+            limit, frontier, from_date=from_date, to_date=to_date, offset=offset
+        ):
+            yield self.get_work(identity)
+
+    def select_work_ids(
+        self, limit, frontier, *, from_date=None, to_date=None, offset=0, after_id=0
+    ):
+        if type(limit) is not int or limit < 1:
+            raise ValueError("limit must be a positive integer")
+        sql, params = self._work_selection(frontier, from_date, to_date, after_id)
+        return [
+            row[0]
+            for row in self._execute(
+                "SELECT id " + sql + " ORDER BY id LIMIT ? OFFSET ?",
+                (*params, limit, offset),
+            )
+        ]
+
+    def skip_work(self, limit, frontier, *, from_date=None, to_date=None):
+        sql, params = self._work_selection(frontier, from_date, to_date, 0)
+        # Aggregate in SQLite so even a large offset uses bounded Python memory.
+        return self._execute(
+            "SELECT COUNT(*), COALESCE(MAX(id),0) FROM (SELECT id "  # noqa: S608 - only fixed internal SQL fragments
+            + sql
+            + " ORDER BY id LIMIT ?)",
+            (*params, limit),
+        ).fetchone()
+
+    def get_work(self, identity):
+        row = self._execute(
+            "SELECT stac_blob,event_type FROM work_items WHERE project=? AND id=?",
+            (self.project, identity),
+        ).fetchone()
+        if row is None:
+            raise CatalogError(f"Work entry {identity} is missing")
+        return WorkItem(_decode(row[0]), identity, row[1])
+
+    def seal_batch(self, batch_id, outcomes):
+        """Commit one retained batch summary with its work-state transitions."""
+        with self.transaction():
+            items = invalid = handles = aliases = full = patches = 0
+            existing = self._execute(
+                "SELECT 1 FROM stats WHERE kind='batch' AND project=? AND id=?",
+                (self.project, batch_id),
+            ).fetchone()
+            for outcome in outcomes:
+                identity, error = outcome["id"], outcome.get("error")
+                row = self._execute(
+                    "SELECT state,batch_id,event_type FROM work_items WHERE project=? AND id=?",
+                    (self.project, identity),
+                ).fetchone()
+                desired = "invalid" if error is not None else "mapped"
+                if row is None:
+                    raise CatalogError(
+                        "Batch source work is missing; refusing stale batch"
+                    )
+                state = row[:2]
+                if state == (desired, batch_id) or state == ("published", batch_id):
+                    if not existing:
+                        raise CatalogError("Batch statistics are missing")
+                    continue
+                if state != ("pending", None) or existing:
+                    raise CatalogError("Work already belongs to another batch or state")
+                prepared = outcome.get("handle_count") if error is None else 0
+                alias_count = outcome.get("alias_count", 0) if error is None else 0
+                if type(prepared) is not int or prepared < 0:
+                    raise CatalogError("Missing or invalid prepared Handle count")
+                if type(alias_count) is not int or not 0 <= alias_count <= prepared:
+                    raise CatalogError("Invalid alias Handle count")
+                self._execute(
+                    "UPDATE work_items SET state=?,batch_id=?,message=?,updated_at=?,handle_count=? WHERE id=?",
+                    (desired, batch_id, error, _now(), prepared, identity),
+                )
+                items += int(error is None)
+                invalid += int(error is not None)
+                handles += prepared
+                aliases += alias_count
+                full += int(row[2] == "full")
+                patches += int(row[2] == "patch")
+            if existing:
+                return
+            if not items and not invalid:
+                raise CatalogError("Cannot seal an empty batch")
+            now = _now()
+            self._execute(
+                "INSERT INTO stats(kind,project,id,status,created_at,updated_at,mapped_at,"
+                "items,invalid_items,prepared_handles,alias_handles,errors,full_events,patch_events) "
+                "VALUES ('batch',?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                (
+                    self.project,
+                    batch_id,
+                    "ready" if items else "invalid",
+                    now,
+                    now,
+                    now,
+                    items,
+                    invalid,
+                    handles,
+                    aliases,
+                    invalid,
+                    full,
+                    patches,
+                ),
+            )
+
+    def publish_batch(self, batch_id, handle_count, *, error=None):
+        """Update the same batch row; only full completion counts as published."""
+        with self.transaction():
+            row = self._execute(
+                "SELECT status,prepared_handles FROM stats WHERE kind='batch' AND project=? AND id=?",
+                (self.project, batch_id),
+            ).fetchone()
+            if row is None:
+                raise CatalogError("Batch statistics are missing")
+            status, prepared = row
+            if type(handle_count) is not int or handle_count != prepared:
+                raise CatalogError(
+                    "Publication Handle count does not match the prepared batch"
+                )
+            if status == "published":
+                return
+            now = _now()
+            if error is not None:
+                self._execute(
+                    "UPDATE work_items SET message=? WHERE project=? AND batch_id=? AND state='mapped'",
+                    (error, self.project, batch_id),
+                )
+                self._execute(
+                    "UPDATE stats SET status='publication_failed',errors=errors+1,message=?,updated_at=? "
+                    "WHERE kind='batch' AND project=? AND id=?",
+                    (error, now, self.project, batch_id),
+                )
+            else:
+                self._execute(
+                    "UPDATE work_items SET state='published',message=NULL,updated_at=? "
+                    "WHERE project=? AND batch_id=? AND state='mapped'",
+                    (now, self.project, batch_id),
+                )
+                self._execute(
+                    "UPDATE stats SET status='published',handles=prepared_handles,published_at=?,updated_at=?,message=NULL "
+                    "WHERE kind='batch' AND project=? AND id=?",
+                    (now, now, self.project, batch_id),
+                )
+
+    def retry_invalid(self, identities):
+        with self.transaction():
+            for identity in identities:
+                row = self._execute(
+                    "SELECT state FROM work_items WHERE project=? AND id=?",
+                    (self.project, identity),
+                ).fetchone()
+                if row != ("invalid",):
+                    raise CatalogError(f"Work entry {identity} is not invalid")
+                if self._execute(
+                    "SELECT 1 FROM stats WHERE kind='batch' AND project=? AND handles>0 LIMIT 1",
+                    (self.project,),
+                ).fetchone():
+                    raise CatalogError(
+                        "This project has published output; harvest a correction or reset the complete project for ordered replay"
+                    )
+                if self._execute(
+                    "SELECT 1 FROM work_items WHERE project=? AND id>? AND state IN ('mapped','published') LIMIT 1",
+                    (self.project, identity),
+                ).fetchone():
+                    raise CatalogError(
+                        "A newer snapshot was mapped or published; retry would risk a stale overwrite. Harvest a correction instead"
+                    )
+                self._execute(
+                    "UPDATE work_items SET state='pending',batch_id=NULL,message=NULL,updated_at=? WHERE id=?",
+                    (_now(), identity),
+                )
+
+    def reset(self):
+        with self.transaction():
+            if self._execute(
+                "SELECT 1 FROM catalog_items WHERE project<>? UNION ALL SELECT 1 FROM work_items WHERE project<>? LIMIT 1",
+                (self.project, self.project),
+            ).fetchone():
+                raise CatalogError(
+                    "Project-only harvest cleaning is unsafe with shared Kafka checkpoints; start with a fresh database"
+                )
+            self._execute("DELETE FROM catalog_items WHERE project=?", (self.project,))
+            self._execute("DELETE FROM work_items WHERE project=?", (self.project,))
+            self._execute("DELETE FROM kafka_checkpoints")
+
+    def compact(self):
+        if (
+            self.read_only
+            or self._active_transaction is not None
+            or self._read_connections
+        ):
+            raise CatalogError("Cannot compact a read-only or active database")
         if self._execute("PRAGMA wal_checkpoint(TRUNCATE)").fetchone()[0]:
             raise CatalogError(
                 "Cannot compact while another connection holds a WAL snapshot"
             )
         self._execute("VACUUM")
-        if self._execute("PRAGMA wal_checkpoint(TRUNCATE)").fetchone()[0]:
-            raise CatalogError("Could not checkpoint compacted catalog")
+
+    def close(self):
+        for reader in self._read_connections:
+            reader.close()
+        self._read_connections.clear()
+        if self._connection is not None:
+            self._connection.close()
+        self._connection = None
+        self._active_transaction = None
 
 
 class SQLiteCatalogTransaction(BaseCatalogTransaction):
-    """Transaction handle owned by ``SQLiteCatalog.transaction()``."""
-
-    def __init__(self, catalog: SQLiteCatalog):
+    def __init__(self, catalog):
         self._catalog = catalog
         self._failed = False
 
-    def _require_active(self) -> None:
+    def _require_active(self):
         self._catalog._require_connection()
         if self._catalog._active_transaction is not self:
             raise CatalogError("Catalog transaction is no longer active")
 
-    def get_item(self, collection_id: str, item_id: str) -> CatalogEntry | None:
+    def get_item(self, *args):
         self._require_active()
-        return self._catalog.get_item(collection_id, item_id)
+        return self._catalog.get_item(*args)
 
-    def find_previous_version(
-        self, collection_id: str, dataset_id: str, version_number: int
-    ) -> str | None:
+    def find_previous_version(self, *args):
         self._require_active()
-        return self._catalog.find_previous_version(
-            collection_id, dataset_id, version_number
-        )
+        return self._catalog.find_previous_version(*args)
 
-    def find_versions(
-        self, collection_id: str, dataset_id: str, limit: int = 100
-    ) -> list[str]:
+    def find_versions(self, *args, **kwargs):
         self._require_active()
-        return self._catalog.find_versions(collection_id, dataset_id, limit)
+        return self._catalog.find_versions(*args, **kwargs)
 
-    def get_checkpoint(self, topic: str, partition: int) -> KafkaCheckpoint | None:
+    def get_checkpoint(self, *args):
         self._require_active()
-        return self._catalog.get_checkpoint(topic, partition)
+        return self._catalog.get_checkpoint(*args)
 
-    def latest_event_date(self) -> date | None:
+    def latest_event_date(self):
         self._require_active()
         return self._catalog.latest_event_date()
 
-    def pending_changes(self, max_sequence: int | None = None):
+    def pending_work(self, *args):
         self._require_active()
-        return self._catalog.pending_changes(max_sequence)
+        return self._catalog.pending_work(*args)
 
-    def iter_pending(self, limit, max_sequence: int | None = None):
+    def iter_pending(self, *args, **kwargs):
         self._require_active()
-        return self._catalog.iter_pending(limit, max_sequence)
+        return self._catalog.iter_pending(*args, **kwargs)
 
-    def put_item(self, entry: CatalogEntry) -> None:
+    def put_item(self, entry):
         self._require_active()
         try:
-            # Revalidate because callers can mutate the entry's item dictionary.
-            entry.__post_init__()
-            payload = zlib.compress(
-                json.dumps(
-                    entry.item,
-                    ensure_ascii=False,
-                    separators=(",", ":"),
-                    allow_nan=False,
-                ).encode("utf-8"),
-                level=3,
-            )
-            previous = self._catalog._execute(
-                "SELECT payload, publication_time FROM items WHERE collection_id = ? AND item_id = ?",
-                (entry.collection_id, entry.item_id),
-            ).fetchone()
-            changed = previous is None or previous != (payload, entry.publication_time)
-            day = entry.event_date
+            blob = _encode(entry)
             self._catalog._execute(
-                "INSERT INTO items VALUES (?, ?, ?, ?, ?, ?, ?, ?) "
-                "ON CONFLICT(collection_id, item_id) DO UPDATE SET "
-                "dataset_id = excluded.dataset_id, version_number = excluded.version_number, "
-                "payload = excluded.payload, publication_time = excluded.publication_time, "
-                "event_date = excluded.event_date, remote_refresh = excluded.remote_refresh",
+                "INSERT INTO catalog_items VALUES (?,?,?,?,?,?,?) "
+                "ON CONFLICT(project,collection_id,item_id) DO UPDATE SET dataset_id=excluded.dataset_id,"
+                "version_number=excluded.version_number,stac_blob=excluded.stac_blob,last_update=excluded.last_update",
                 (
+                    self._catalog.project,
                     entry.collection_id,
                     entry.item_id,
                     entry.dataset_id,
                     entry.version_number,
-                    payload,
-                    entry.publication_time,
-                    day.isoformat() if day else None,
-                    (
-                        json.dumps(
-                            entry.remote_refresh, separators=(",", ":"), allow_nan=False
-                        )
-                        if entry.remote_refresh is not None
-                        else None
-                    ),
+                    blob,
+                    _now(),
                 ),
             )
-            if changed:
-                self._catalog._execute(
-                    "UPDATE mapping_state SET sequence = sequence + 1 WHERE singleton = 1"
-                )
-                sequence = self._catalog._execute(
-                    "SELECT sequence FROM mapping_state WHERE singleton = 1"
-                ).fetchone()[0]
-                self._catalog._execute(
-                    "INSERT INTO pending_items VALUES (?, ?, ?, ?) ON CONFLICT(collection_id, item_id) DO UPDATE SET sequence = excluded.sequence",
-                    (
-                        entry.collection_id,
-                        entry.item_id,
-                        sequence,
-                        datetime.now(UTC).isoformat(),
-                    ),
-                )
         except (
             ValueError,
             TypeError,
@@ -603,19 +593,38 @@ class SQLiteCatalogTransaction(BaseCatalogTransaction):
             self._failed = True
             raise CatalogError(f"Could not store catalog item: {exc}") from exc
 
-    def set_checkpoint(self, checkpoint: KafkaCheckpoint) -> None:
+    def add_work(self, entry, source, *, event_type="full"):
         self._require_active()
         try:
-            previous = self.get_checkpoint(checkpoint.topic, checkpoint.partition)
-            if previous is not None and checkpoint.next_offset < previous.next_offset:
-                raise CatalogError(
-                    "Checkpoint cannot move backwards; reset before replay"
-                )
+            if event_type not in ("full", "patch"):
+                raise ValueError("Work event_type must be full or patch")
+            timestamp = _now()
             self._catalog._execute(
-                "INSERT INTO checkpoints VALUES (?, ?, ?) "
-                "ON CONFLICT(topic, partition) DO UPDATE SET next_offset = excluded.next_offset",
-                (checkpoint.topic, checkpoint.partition, checkpoint.next_offset),
+                "INSERT INTO work_items "
+                "(project,topic,partition,offset,stac_blob,event_type,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?)",
+                (
+                    self._catalog.project,
+                    source.topic,
+                    source.partition,
+                    source.offset,
+                    _encode(entry),
+                    event_type,
+                    timestamp,
+                    timestamp,
+                ),
             )
-        except (OverflowError, CatalogError) as exc:
+        except (ValueError, TypeError, OverflowError, CatalogError) as exc:
             self._failed = True
-            raise CatalogError(f"Could not store catalog checkpoint: {exc}") from exc
+            raise CatalogError(f"Could not store work snapshot: {exc}") from exc
+
+    def set_checkpoint(self, checkpoint):
+        self._require_active()
+        previous = self.get_checkpoint(checkpoint.topic, checkpoint.partition)
+        if previous is not None and checkpoint.next_offset < previous.next_offset:
+            self._failed = True
+            raise CatalogError("Checkpoint cannot move backwards; reset before replay")
+        self._catalog._execute(
+            "INSERT INTO kafka_checkpoints VALUES (?,?,?) "
+            "ON CONFLICT(topic,partition) DO UPDATE SET next_offset=excluded.next_offset",
+            (checkpoint.topic, checkpoint.partition, checkpoint.next_offset),
+        )

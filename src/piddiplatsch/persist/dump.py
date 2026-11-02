@@ -1,6 +1,7 @@
 import fcntl
 import json
 import logging
+import os
 import re
 from pathlib import Path
 
@@ -61,6 +62,13 @@ class _DumpWriter(DailyJsonlWriter):
                 self._size = None
             with path.open("a", encoding="utf-8") as stream:
                 stream.write(line)
+                stream.flush()
+                os.fsync(stream.fileno())
+            descriptor = os.open(path.parent, os.O_RDONLY)
+            try:
+                os.fsync(descriptor)
+            finally:
+                os.close(descriptor)
             self._count += 1
             self._size = path.stat().st_size
             return path
@@ -71,11 +79,13 @@ class DumpRecorder(RecorderBase):
     LOG_LEVEL = logging.DEBUG
     DUMP_DIR: Path | None = None
 
-    def __init__(self, root_dir: Path | None = None) -> None:
+    def __init__(
+        self, root_dir: Path | None = None, *, prefix: str = "dump_messages"
+    ) -> None:
         configured_dir = (
             Path(config.get("consumer", {}).get("output_dir", "outputs")) / "dump"
         )
-        super().__init__(root_dir or self.DUMP_DIR or configured_dir, "dump_messages")
+        super().__init__(root_dir or self.DUMP_DIR or configured_dir, prefix)
         self.writer = _DumpWriter(
             self.root_dir, int(config.get("consumer", "dump_max_events", 100000))
         )

@@ -19,7 +19,6 @@ class StatsConfig(BaseModel):
     interval_seconds: float = Field(default=30, gt=0)
     summary_interval: int = Field(default=10000, gt=0)
     enable_db: bool = True
-    db_path: str = "piddi.db"
     heartbeat_interval_seconds: float = Field(default=5, gt=0)
     sample_interval_seconds: float = Field(default=15, gt=0)
     sample_retention_days: float = Field(default=30, ge=0)
@@ -28,6 +27,10 @@ class StatsConfig(BaseModel):
     @model_validator(mode="before")
     @classmethod
     def _reject_removed_window(cls, data):
+        if isinstance(data, dict) and "db_path" in data:
+            raise ValueError(
+                "[stats].db_path is removed; piddi.db lives under catalog.directory or consumer.output_dir"
+            )
         if isinstance(data, dict) and "history_minutes" in data:
             raise ValueError(
                 "[stats].history_minutes is not supported; top uses the last five minutes"
@@ -227,6 +230,7 @@ class CatalogConfig(BaseModel):
 
     enabled: bool = Field(default=True, strict=True)
     backend: Literal["sqlite"] = "sqlite"
+    ignore_unknown_projects: bool = Field(default=False, strict=True)
     directory: str | None = Field(default=None, min_length=1)
     kafka_commit_batch_size: int = Field(default=100, ge=1, strict=True)
     kafka_commit_interval_seconds: float = Field(default=1.0, gt=0)
@@ -242,6 +246,14 @@ class BatchConfig(BaseModel):
     max_items: int = Field(default=2000, ge=1, strict=True)
     publish_workers: int = Field(default=4, ge=1, strict=True)
     publish_retries: int = Field(default=3, ge=0, strict=True)
+    retention_days: int = Field(default=0, ge=0, strict=True)
+
+
+class MaintenanceConfig(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    compress_outputs: bool = Field(default=True, strict=True)
+    output_retention_days: int = Field(default=0, ge=0, strict=True)
 
 
 class DiskConfig(BaseModel):
@@ -307,6 +319,7 @@ class AppConfig(BaseModel):
     lookup: LookupConfig | None = None
     catalog: CatalogConfig | None = None
     batch: BatchConfig | None = None
+    maintenance: MaintenanceConfig | None = None
     disk: DiskConfig | None = None
     schema_config: SchemaConfig | None = Field(None, alias="schema")
     logging_config: LoggingConfig | None = Field(None, alias="logging")

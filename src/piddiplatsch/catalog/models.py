@@ -79,7 +79,7 @@ class CatalogEntry:
 
 @dataclass(frozen=True)
 class KafkaCheckpoint:
-    """Next offset to consume in one topic/partition for this project.
+    """Next offset to consume in one topic/partition, shared across projects.
 
     This is a local durable checkpoint, independent of Kafka group commits.
     Advancing it requires durable handling of every preceding consumed record,
@@ -101,16 +101,16 @@ class KafkaCheckpoint:
 
 
 @dataclass(frozen=True)
-class PendingCatalogChanges:
-    """Distinct dirty items and their oldest pending time in a catalog snapshot."""
+class PendingWork:
+    """Pending event snapshots, their oldest creation time, and a run frontier."""
 
-    generation: str
     count: int
     oldest_at: datetime | None
-    sequence: int
+    last_id: int
 
 
 @dataclass(frozen=True)
-class PendingCatalogItem:
+class WorkItem:
     entry: CatalogEntry
-    sequence: int
+    id: int
+    event_type: str = "full"

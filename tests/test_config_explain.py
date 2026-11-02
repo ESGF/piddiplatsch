@@ -74,3 +74,12 @@ def test_explain_unknown_project(explained_config):
     result = CliRunner().invoke(cli, ["config", "explain", "--project", "missing"])
     assert result.exit_code != 0
     assert "not found" in result.output
+
+
+def test_explain_catalog_defaults_to_shared_output_directory(explained_config):
+    explained_config._set("consumer", "output_dir", "fresh-output")
+    explained_config._set("catalog", "directory", None)
+    result = explain()
+    assert result.exit_code == 0, result.output
+    assert 'Catalog directory: "fresh-output"  <- consumer.output_dir' in result.output
+    assert 'Catalog directory: "fresh-output/catalog"' not in result.output

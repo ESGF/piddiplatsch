@@ -11,7 +11,7 @@ from piddiplatsch.exceptions import CatalogError
 def get_catalog_directory() -> Path:
     return Path(
         config.get("catalog", "directory")
-        or Path(config.get("consumer", "output_dir", "outputs")) / "catalog"
+        or Path(config.get("consumer", "output_dir", "outputs"))
     )
 
 
@@ -27,7 +27,7 @@ def get_catalog_path(
     backend = backend or config.get("catalog", "backend", "sqlite")
     if backend != "sqlite":
         raise CatalogError(f"Unsupported catalog backend: {backend!r}")
-    return (directory or get_catalog_directory()) / f"{project}.sqlite"
+    return (directory or get_catalog_directory()) / "piddi.db"
 
 
 def open_catalog(

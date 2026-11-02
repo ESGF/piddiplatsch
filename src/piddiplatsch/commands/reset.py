@@ -25,13 +25,15 @@ class ResetCommand(Command):
             click.echo(
                 f"Archive old output: {batches / project} and {output / project}"
             )
-            click.echo(f"Clear {project} monitoring counters: {statistics}")
+            click.echo(f"Clear {project} daily summaries: {statistics}")
             if not self.apply:
                 click.echo(
                     "Preview only. Stop harvest and sync, then add --apply to perform the reset."
                 )
                 return
-            count, backup = reset_processing(config, project)
+            count, archive = reset_processing(config, project)
         except (CatalogError, ValueError, OSError, RuntimeError, sqlite3.Error) as exc:
             raise click.ClickException(str(exc)) from exc
-        click.echo(f"Queued {count:,} existing {project} items. Backups: {backup}")
+        click.echo(
+            f"Queued {count:,} retained {project} work entries. Output archive: {archive}"
+        )

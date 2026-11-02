@@ -17,5 +17,6 @@ nav:
   - Advanced:
       - Deployment reference: deployment-reference.md
       - Recovery: recovery.md
+      - Work-stream design: work-stream-design.md
   - Talks: talks.md
   - Building the documentation: building.md

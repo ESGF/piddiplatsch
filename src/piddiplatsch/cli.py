@@ -161,7 +161,7 @@ def sync(
 @click.option(
     "--apply",
     is_flag=True,
-    help="Back up output, clear project counters, and requeue catalog items; default is a preview.",
+    help="Archive project output, clear project summaries, and requeue retained work; default is a preview.",
 )
 def reset(project: str, apply: bool) -> None:
     """Reset project processing, preserving STAC records and Kafka checkpoints.
@@ -203,6 +203,18 @@ def reset(project: str, apply: bool) -> None:
     multiple=True,
     help="Clear and rebuild one project's catalog; repeat for several projects.",
 )
+@click.option(
+    "--archive",
+    "archives",
+    multiple=True,
+    type=click.Path(exists=True, dir_okay=False, path_type=Path),
+    help="Replay a coordinate-bearing JSONL or JSONL.gz archive instead of Kafka; repeat for parts.",
+)
+@click.option(
+    "--ignore-unknown-projects/--stop-on-unknown-projects",
+    default=None,
+    help="Ignore and archive unknown projects, or stop (default: catalog.ignore_unknown_projects, false).",
+)
 @click.pass_context
 def harvest(
     ctx: click.Context,
@@ -211,6 +223,8 @@ def harvest(
     catalog: bool | None,
     clean_catalog: bool,
     clean_projects: tuple[str, ...],
+    archives: tuple[Path, ...],
+    ignore_unknown_projects: bool | None,
 ) -> None:
     """Harvest Kafka messages into raw JSONL and local catalogs without mapping."""
     commands.HarvestCommand(
@@ -220,6 +234,8 @@ def harvest(
         catalog=catalog,
         clean_catalog=clean_catalog,
         clean_projects=clean_projects,
+        archives=archives,
+        ignore_unknown_projects=ignore_unknown_projects,
     ).execute()
 
 
@@ -232,7 +248,7 @@ def harvest(
     "input_date",
     metavar="DATE",
     callback=_parse_date_selector,
-    help=f"Select a catalog event day ({DATE_FORMATS}; default: last).",
+    help=f"Select a work creation day in UTC ({DATE_FORMATS}; default: all pending).",
 )
 @click.option(
     "--from",
@@ -252,7 +268,7 @@ def harvest(
     "--catalog-dir",
     "directory",
     type=click.Path(file_okay=False, path_type=Path),
-    help="Read project catalogs from this directory (overrides [catalog].directory).",
+    help="Read piddi.db from this directory (overrides [catalog].directory).",
 )
 @click.option(
     "--project",
@@ -272,14 +288,14 @@ def harvest(
 @click.option(
     "--limit",
     type=click.IntRange(min=1),
-    help="Stop after mapping this many catalog items in total.",
+    help="Stop after mapping this many pending work entries in total.",
 )
 @click.option(
     "--offset",
     type=click.IntRange(min=0),
     default=0,
     show_default=True,
-    help="Skip this many catalog items before mapping.",
+    help="Skip this many pending work entries before mapping.",
 )
 @click.option(
     "--version-history/--no-version-history",
@@ -300,7 +316,7 @@ def map_messages(
     version_history: bool | None,
     handle_profile: str | None,
 ) -> None:
-    """Map complete local catalog items through plugins into Handle JSONL."""
+    """Map pending work snapshots into durable Handle JSONL batches."""
     commands.MapCommand(
         verbose=ctx.obj["verbose"],
         directory=directory,
@@ -328,21 +344,21 @@ def map_messages(
     "input_date",
     metavar="DATE",
     callback=_parse_date_selector,
-    help=f"Select a dated Handle file ({DATE_FORMATS}; default: last).",
+    help=f"Queued publication accepts all batches; file selection ({DATE_FORMATS}; default: all pending).",
 )
 @click.option(
     "--from",
     "from_date",
     metavar="DATE",
     callback=_parse_range_date,
-    help="First date to publish, inclusive (YYYY-MM-DD, today, yesterday, today-N). Requires --to.",
+    help="Reserved for explicit file selection; queued batches must publish in order.",
 )
 @click.option(
     "--to",
     "to_date",
     metavar="DATE",
     callback=_parse_range_date,
-    help="Last date to publish, inclusive (YYYY-MM-DD, today, yesterday, today-N). Requires --from.",
+    help="Reserved for explicit file selection; queued batches must publish in order.",
 )
 @click.option(
     "--project", help="Validate that every selected Handle belongs to this project."
@@ -420,12 +436,52 @@ def publish(
     ).execute()
 
 
+@cli.command("retry")
+@click.argument("work_ids", nargs=-1, required=True, type=click.IntRange(min=1))
+@click.option(
+    "--project", required=True, help="Project owning these invalid work entries."
+)
+def retry(work_ids, project):
+    """Retry invalid work when no newer output can be overwritten."""
+    from piddiplatsch.catalog.api import get_catalog_directory, open_catalog
+    from piddiplatsch.core.registry import get_plugin
+    from piddiplatsch.exceptions import CatalogError
+    from piddiplatsch.runners.sync import SyncWorker, _worker_lock
+
+    try:
+        project = get_plugin(project).name
+        with _worker_lock(get_catalog_directory()) as acquired:
+            if not acquired:
+                raise ValueError(
+                    "A batch worker is running; retry when it has finished"
+                )
+            worker = SyncWorker(projects=(project,), require_configured=False)
+            with open_catalog(project) as catalog:
+                for identity in work_ids:
+                    row = catalog._execute(
+                        "SELECT batch_id FROM work_items WHERE project=? AND id=?",
+                        (project, identity),
+                    ).fetchone()
+                    if (
+                        row
+                        and row[0]
+                        and (worker.root / project / "ready" / row[0]).exists()
+                    ):
+                        raise ValueError(
+                            "Finish this saved batch with sync or publish before retrying its invalid work"
+                        )
+                catalog.retry_invalid(work_ids)
+    except (CatalogError, OSError, ValueError) as exc:
+        raise click.ClickException(str(exc)) from exc
+    click.echo(f"Requeued {len(work_ids)} invalid work entries for {project}.")
+
+
 @cli.command("maintain")
 @click.option(
     "--dry-run", is_flag=True, help="List closed dumps without compressing them."
 )
 def maintain(dry_run: bool):
-    """Compress raw dumps dated before today in UTC; no retention deletion."""
+    """Compress closed dumps and delete expired published work; never VACUUM."""
     commands.MaintainCommand(dry_run=dry_run).execute()
 
 
@@ -496,7 +552,7 @@ def config_explain(
     "--db",
     "db_path",
     type=click.Path(path_type=Path, dir_okay=False),
-    help="Monitoring database (defaults to stats.db_path from configuration).",
+    help="Shared piddi.db (defaults to catalog.directory or consumer.output_dir).",
 )
 @click.option("--project", help="Show only one project.")
 @click.option("--once", is_flag=True, help="Print one snapshot and exit.")
@@ -528,10 +584,12 @@ def top(
     stale_after_seconds: float | None,
 ) -> None:
     """Watch current processing progress, separated by project."""
+    from piddiplatsch.catalog.api import get_catalog_directory
+
     stats_config = config.get("stats", {})
     commands.TopCommand(
         verbose=ctx.obj["verbose"],
-        db_path=db_path or Path(stats_config.get("db_path", "piddi.db")),
+        db_path=db_path or get_catalog_directory() / "piddi.db",
         project=project,
         once=once,
         json_output=json_output,

@@ -13,8 +13,8 @@ from piddiplatsch.catalog.base import (
 from piddiplatsch.catalog.models import (
     CatalogEntry,
     KafkaCheckpoint,
-    PendingCatalogChanges,
-    PendingCatalogItem,
+    PendingWork,
+    WorkItem,
 )
 from piddiplatsch.exceptions import CatalogError
 
@@ -25,6 +25,6 @@ __all__ = [
     "CatalogEntry",
     "CatalogError",
     "KafkaCheckpoint",
-    "PendingCatalogChanges",
-    "PendingCatalogItem",
+    "PendingWork",
+    "WorkItem",
 ]

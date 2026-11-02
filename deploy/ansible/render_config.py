@@ -11,7 +11,6 @@ import toml
 PRODUCTION_DEFAULTS = {
     "consumer": {"output_dir": "/var/lib/piddi"},
     "logging": {"file": "/var/log/piddi/piddi.log"},
-    "stats": {"db_path": "/var/lib/piddi/piddi.db"},
 }
 
 

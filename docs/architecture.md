@@ -6,28 +6,26 @@ CMIP6, CMIP6Plus, CMIP7, and CORDEX-CMIP6 through project plugins.
 ## Processing stages
 
 ```text
-Kafka -> raw JSONL + local STAC catalogs       harvest
-local catalogs -> daily Handle JSONL          map
-Handle JSONL -> Handle service + receipts     publish
-local catalogs -> fixed batches -> publish   sync
+Kafka or archived JSONL -> raw archive + piddi.db       harvest
+pending work snapshots -> immutable Handle batches    map
+saved batches -> Handle service + work progress       publish
+pending work -> project batches -> publication        sync
 ```
 
-Harvest is the continuous service. It stores a raw copy of each message and
-updates complete STAC items in one SQLite catalog per project. Full publications
-replace an item's state; patches update its stored base. Older dataset versions
-stay available for version links.
+Harvest maintains one SQLite database with four application tables:
+`catalog_items`, `work_items`, `kafka_checkpoints`, and `stats`. It archives each
+Kafka event before committing catalog updates, an independent full work snapshot,
+and its shared topic/partition checkpoint together. Repeated events are skipped;
+new events remain independent even when their payloads match.
 
-Map reads a local snapshot and prepares dataset and file Handles. It does not
-contact Kafka, remote STAC, or a Handle service. It checks the fields it needs
-from the STAC item and validates the resulting Handle records with Pydantic.
-It does not validate the entire input against a complete STAC schema.
+Map reads pending snapshots and writes dataset/file Handles to project batches.
+It stays offline and validates the fields and Handle records it needs rather
+than the entire STAC schema. Publication retries use the saved files. Sync runs
+one project batch at a time, round robin, capped at 2,000 work entries by default.
+Projects never write to the same Handle; parallel project execution is deferred.
 
-Publish sends prepared Handle records to the REST service and writes a receipt
-for every result. It keeps the input files.
-
-Sync combines mapping and publication for pending catalog changes. It saves
-fixed batches before publishing and tracks which changes have been mapped.
-A timer runs sync regularly; each run exits when its work is done.
+See the [storage and work-stream design](work-stream-design.md) for schema,
+state transitions, ordering, summary durability, and recovery limits.
 
 ## Project routing
 
@@ -41,8 +39,11 @@ Conflicting identities are rejected. `collection_id` works for full publications
 and patches. The plugin registry rejects duplicate names and overlapping project
 identifiers at startup.
 
-Harvest stores every registered project it encounters. Unknown projects and
-invalid events stop catalog harvest without acknowledging the failed event.
+Harvest stores every registered project it encounters. Unknown projects stop
+harvest by default. `catalog.ignore_unknown_projects = true` instead durably archives
+them separately, counts them as filtered, and advances the shared checkpoint
+without catalog/work rows. Invalid events and missing/conflicting project
+identities still stop harvest without acknowledging the failed event.
 
 Mapping uses `consumer.projects`, repeated `--project` options, or
 `--all-projects`. Sync uses the configured selection and can restrict it with
@@ -73,7 +74,8 @@ use resolved PIDs so dataset and file links stay consistent.
 ## Catalogs and recovery
 
 SQLite stores compressed STAC items and indexes item identity, dataset version,
-and event day. Each transaction saves the item and its Kafka checkpoint together.
+and project-scoped dataset versions. Each transaction saves the catalog item,
+work snapshot, and shared Kafka checkpoint together.
 Local checkpoints prevent duplicate Kafka events from applying a patch twice.
 
 If a patch has no local base, harvest fetches the current remote STAC item.
@@ -87,18 +89,17 @@ collection, and dataset. Indexed queries avoid scanning item payloads.
 
 ## Output
 
-Manual mapping writes `outputs/<project>/handles/handles_<date>.jsonl`.
-Dates follow the UTC event day, so map and publish can use matching selectors.
-Each record includes the project name.
+Map and sync write batches under `outputs/batches/<project>/`. Each includes
+`handles.jsonl`, `failures.jsonl`, and a manifest recording exact work IDs,
+outcomes, settings, counts, and checksums. Failed publication keeps output ready.
+Completed batches are archived under `published/YYYY/MM/DD/` within the project.
 
-Sync writes fixed batches under `outputs/batches/<project>/`. Each batch includes
-Handle JSONL and a manifest with settings, counts, and a checksum. Failed
-publication leaves the batch ready for another attempt.
+Raw events go to `outputs/dump/` before processing. Each archive record includes
+source coordinates, key, and original payload. Date/count rotation preserves
+replay order. Failure files are for inspection; replay uses original archives.
 
-Raw Kafka messages go to the shared `outputs/dump/` directory before routing.
-Failure files contain records and error details for inspection. Recovery repeats
-normal commands; failure files are not command inputs.
-See [Operations](operations.md) for paths, selection, and publication rules.
+Batch summaries, live heartbeats, and recent rate samples live in the shared
+database. `piddi top` reads only that database; output files remain publication artifacts.
 
 ## Kafka consumer groups
 
@@ -127,5 +128,5 @@ Map and sync do not consume Kafka.
 | `testing/processing.py` | Fixture replay helpers. |
 
 Runners close their input streams on completion, errors, limits, or interruption.
-A caller that supplies a progress display keeps ownership of it. Legacy retry
-library helpers remain for compatibility, but there is no retry CLI command.
+A caller that supplies a progress display keeps ownership of it. The `retry`
+command requeues invalid work only when the conservative ordering checks allow it.

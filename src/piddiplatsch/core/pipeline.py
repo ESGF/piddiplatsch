@@ -7,7 +7,7 @@ from pathlib import Path
 from piddiplatsch.config import config
 from piddiplatsch.core.messages import SourceMessage
 from piddiplatsch.core.routing import ProjectRouter
-from piddiplatsch.exceptions import MaxErrorsExceededError
+from piddiplatsch.exceptions import DiskSpaceError, MaxErrorsExceededError
 from piddiplatsch.monitoring.disk import get_disk_guard
 from piddiplatsch.monitoring.progress import BaseProgress, get_progress
 from piddiplatsch.monitoring.stats import stats
@@ -172,12 +172,27 @@ class ProcessingPipeline:
         try:
             logger.debug(f"Processing message: {key}")
             if self.dump_recorder is not None:
-                self.dump_recorder.record(key, value)
+                archive = (
+                    {
+                        "source": {
+                            "topic": source_message.source.topic,
+                            "partition": source_message.source.partition,
+                            "offset": source_message.source.offset,
+                        },
+                        "key": key,
+                        "payload": value,
+                    }
+                    if source_message
+                    else value
+                )
+                self.dump_recorder.record(key, archive)
             if source_message is not None:
                 process = getattr(self.processor, "process_with_source", None)
                 if callable(process):
                     return process(key, value, source_message.source)
             return self.processor.process(key, value)
+        except DiskSpaceError:
+            raise
         except Exception as e:
             logger.exception(f"Error processing message {key}")
             failure_value = (

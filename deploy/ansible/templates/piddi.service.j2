@@ -4,6 +4,7 @@ Documentation=https://github.com/ESGF/piddiplatsch
 Wants=network-online.target
 After=network-online.target
 RequiresMountsFor=/var/lib/piddi
+ConditionPathExists=!/var/lib/piddi/.disk-space-stop
 
 [Service]
 Type=simple

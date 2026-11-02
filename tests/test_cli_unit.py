@@ -1,7 +1,6 @@
 """Unit tests for CLI module."""
 
 import warnings
-from datetime import date, timedelta
 from unittest.mock import patch
 
 import pytest
@@ -17,7 +16,6 @@ from piddiplatsch.commands import (
     PublishCommand,
     SyncCommand,
 )
-from piddiplatsch.config import config
 from piddiplatsch.consumer import HarvestProcessor
 from piddiplatsch.monitoring.progress import NoOpProgress, Progress
 from piddiplatsch.result import (
@@ -90,7 +88,7 @@ class TestCLIBasics:
         assert "harvest" in result.output
         assert "map" in result.output
         assert "publish" in result.output
-        assert "retry" not in result.output
+        assert "retry" in result.output
 
     @patch("piddiplatsch.consumer.start_consumer")
     def test_consume_command_is_removed(self, start_consumer, runner):
@@ -237,12 +235,12 @@ class TestMapCommand:
             ],
         )
         assert result.exit_code == 0, result.output
-        assert "Mapped 3/3 catalog items" in result.output
+        assert "Mapped 3/3 work entries" in result.output
         kwargs = mapper.call_args.kwargs
         assert isinstance(kwargs.pop("progress"), NoOpProgress)
         assert kwargs == {
             "directory": tmp_path,
-            "input_date": "last",
+            "input_date": None,
             "from_date": None,
             "to_date": None,
             "projects": ("cmip6",),
@@ -269,10 +267,10 @@ class TestMapCommand:
         assert result.exit_code == 2
         mapper.assert_not_called()
 
-    def test_map_requires_harvested_project(self, runner):
+    def test_map_without_harvest_has_no_pending_work(self, runner):
         result = runner.invoke(cli, ["map", "--project", "cmip6"])
-        assert result.exit_code == 1
-        assert "run harvest first" in result.output
+        assert result.exit_code == 0
+        assert "No pending work found" in result.output
 
     @patch("piddiplatsch.commands.map.map_catalog")
     def test_map_rejects_named_and_all_projects(self, mapper, runner):
@@ -288,7 +286,7 @@ class TestMapCommand:
         assert result.exit_code == 0, result.output
         assert mapper.call_args.kwargs["version_history"] is False
         assert mapper.call_args.kwargs["projects"] == "all"
-        assert "No catalog items found" in result.output
+        assert "No pending work found" in result.output
 
 
 class TestPublishCommand:
@@ -307,56 +305,6 @@ class TestPublishCommand:
         assert "--date" in result.output
         assert "--from" in result.output
         assert "--to" in result.output
-
-    @pytest.mark.parametrize("relative", (False, True))
-    @patch("piddiplatsch.commands.publish.HandlePublisher")
-    def test_publish_selects_inclusive_date_range(
-        self, publisher_cls, runner, tmp_path, relative
-    ):
-        end = date.today() - timedelta(days=1)
-        start = end - timedelta(days=3)
-        handles_dir = tmp_path / "cmip6" / "handles"
-        handles_dir.mkdir(parents=True)
-        selected = tuple(
-            handles_dir / f"handles_{day.isoformat()}.jsonl"
-            for day in (start, start + timedelta(days=2), end)
-        )
-        for source in reversed(selected):
-            source.touch()
-        for day in (start - timedelta(days=1), end + timedelta(days=1)):
-            (handles_dir / f"handles_{day.isoformat()}.jsonl").touch()
-        (handles_dir / "handles_last.jsonl").touch()
-        (handles_dir / "handles_2026-02-30.jsonl").touch()
-        (
-            handles_dir / f"handles_{(start + timedelta(days=1)).isoformat()}.jsonl"
-        ).mkdir()
-        config._set("consumer", "output_dir", str(tmp_path))
-        publisher_cls.return_value.run.return_value = PublishResult(
-            total=3, succeeded=3
-        )
-
-        result = runner.invoke(
-            cli,
-            [
-                "publish",
-                "--project",
-                "CMIP6",
-                "--from",
-                "today-4" if relative else start.isoformat(),
-                "--to",
-                "today-1" if relative else end.isoformat(),
-                "--offset",
-                "1",
-                "--limit",
-                "2",
-            ],
-        )
-
-        assert result.exit_code == 0, result.output
-        publisher_cls.return_value.run.assert_called_once()
-        assert publisher_cls.return_value.run.call_args.args[0] == selected
-        assert publisher_cls.return_value.run.call_args.kwargs["offset"] == 1
-        assert publisher_cls.return_value.run.call_args.kwargs["limit"] == 2
 
     @pytest.mark.parametrize(
         ("args", "message"),
@@ -382,14 +330,6 @@ class TestPublishCommand:
         publisher_cls.assert_not_called()
 
     @patch("piddiplatsch.commands.publish.HandlePublisher")
-    def test_publish_range_requires_project(self, publisher_cls, runner):
-        result = runner.invoke(cli, ["publish", "--from", "yesterday", "--to", "today"])
-
-        assert result.exit_code == 2
-        assert "requires --project" in result.output
-        publisher_cls.assert_not_called()
-
-    @patch("piddiplatsch.commands.publish.HandlePublisher")
     def test_publish_rejects_path_and_range(self, publisher_cls, runner, tmp_path):
         result = runner.invoke(
             cli,
@@ -407,20 +347,6 @@ class TestPublishCommand:
 
         assert result.exit_code == 2
         assert "cannot be combined" in result.output
-        publisher_cls.assert_not_called()
-
-    @patch("piddiplatsch.commands.publish.HandlePublisher")
-    def test_publish_range_requires_matching_files(
-        self, publisher_cls, runner, tmp_path
-    ):
-        config._set("consumer", "output_dir", str(tmp_path))
-        result = runner.invoke(
-            cli,
-            ["publish", "--project", "cmip6", "--from", "today", "--to", "today"],
-        )
-
-        assert result.exit_code == 1
-        assert "No dated cmip6 Handle files found from" in result.output
         publisher_cls.assert_not_called()
 
     @patch("piddiplatsch.commands.publish.HandlePublisher")
@@ -445,102 +371,6 @@ class TestPublishCommand:
         assert publisher_cls.return_value.run.call_args.kwargs["retries"] == 0
         assert publisher_cls.return_value.run.call_args.kwargs["retry_delay"] == 1.0
         assert publisher_cls.return_value.run.call_args.kwargs["workers"] == 4
-
-    @patch("piddiplatsch.commands.publish.HandlePublisher")
-    def test_publish_resolves_project_date_from_output_dir(
-        self, publisher_cls, runner, tmp_path
-    ):
-        output_dir = tmp_path / "outputs"
-        source = output_dir / "cmip6" / "handles" / "handles_2026-08-27.jsonl"
-        source.parent.mkdir(parents=True)
-        source.touch()
-        config._set("consumer", "output_dir", str(output_dir))
-        publisher_cls.return_value.run.return_value = PublishResult(
-            total=1, succeeded=1
-        )
-
-        result = runner.invoke(
-            cli,
-            ["publish", "--project", "CMIP6", "--date", "2026-08-27"],
-        )
-
-        assert result.exit_code == 0
-        assert publisher_cls.return_value.run.call_args.args[0] == (source,)
-        assert publisher_cls.return_value.run.call_args.kwargs["project"] == "CMIP6"
-
-    @pytest.mark.parametrize("date_args", ((), ("--date", "last")))
-    @patch("piddiplatsch.commands.publish.HandlePublisher")
-    def test_publish_defaults_to_latest_project_file(
-        self, publisher_cls, runner, tmp_path, date_args
-    ):
-        handles_dir = tmp_path / "outputs" / "cmip6" / "handles"
-        handles_dir.mkdir(parents=True)
-        older = handles_dir / "handles_2026-08-26.jsonl"
-        latest = handles_dir / "handles_2026-08-28.jsonl"
-        malformed = handles_dir / "handles_latest.jsonl"
-        for source in (older, latest, malformed):
-            source.touch()
-        config._set("consumer", "output_dir", str(tmp_path / "outputs"))
-        publisher_cls.return_value.run.return_value = PublishResult(
-            total=1, succeeded=1
-        )
-
-        result = runner.invoke(cli, ["publish", "--project", "CMIP6", *date_args])
-
-        assert result.exit_code == 0
-        assert publisher_cls.return_value.run.call_args.args[0] == (latest,)
-
-    @patch("piddiplatsch.commands.publish.HandlePublisher")
-    def test_publish_resolves_relative_date(self, publisher_cls, runner, tmp_path):
-        output_dir = tmp_path / "outputs"
-        selected_date = date.today() - timedelta(days=1)
-        source = (
-            output_dir
-            / "cmip6"
-            / "handles"
-            / f"handles_{selected_date.isoformat()}.jsonl"
-        )
-        source.parent.mkdir(parents=True)
-        source.touch()
-        config._set("consumer", "output_dir", str(output_dir))
-        publisher_cls.return_value.run.return_value = PublishResult(
-            total=1, succeeded=1
-        )
-
-        result = runner.invoke(
-            cli,
-            ["publish", "--project", "cmip6", "--date", "yesterday"],
-        )
-
-        assert result.exit_code == 0
-        assert publisher_cls.return_value.run.call_args.args[0] == (source,)
-
-    @patch("piddiplatsch.commands.publish.HandlePublisher")
-    def test_publish_date_requires_project(self, publisher_cls, runner):
-        result = runner.invoke(cli, ["publish", "--date", "2026-08-27"])
-
-        assert result.exit_code == 2
-        assert "--date requires --project" in result.output
-        publisher_cls.assert_not_called()
-
-    @patch("piddiplatsch.commands.publish.HandlePublisher")
-    def test_publish_latest_requires_a_dated_handle_file(
-        self, publisher_cls, runner, tmp_path
-    ):
-        config._set("consumer", "output_dir", str(tmp_path / "outputs"))
-        result = runner.invoke(cli, ["publish", "--project", "cmip6"])
-
-        assert result.exit_code == 1
-        assert "No dated cmip6 Handle files found" in result.output
-        publisher_cls.assert_not_called()
-
-    @patch("piddiplatsch.commands.publish.HandlePublisher")
-    def test_publish_without_path_or_project_is_rejected(self, publisher_cls, runner):
-        result = runner.invoke(cli, ["publish"])
-
-        assert result.exit_code == 2
-        assert "Provide PATH or --project" in result.output
-        publisher_cls.assert_not_called()
 
     @patch("piddiplatsch.commands.publish.HandlePublisher")
     def test_publish_rejects_path_and_date(self, publisher_cls, runner, tmp_path):
@@ -857,3 +687,42 @@ class TestConfigCommand:
 
         assert result.exit_code == 2
         assert "--key requires --section" in result.output
+
+
+@pytest.mark.parametrize(
+    "options",
+    [
+        ["--date", "last"],
+        ["--from", "yesterday", "--to", "today"],
+        ["--limit", "1"],
+        ["--offset", "1"],
+    ],
+)
+def test_queued_publication_requires_complete_ordered_batches(runner, options):
+    result = runner.invoke(cli, ["publish", "--project", "cmip6", *options])
+    assert result.exit_code == 2
+    assert "complete batches in order" in result.output
+
+
+def test_queued_publication_defaults_to_configured_projects(runner, monkeypatch):
+    from unittest.mock import MagicMock
+
+    worker = MagicMock(errors=[], published_handles=17)
+    factory = MagicMock(return_value=worker)
+    monkeypatch.setattr("piddiplatsch.runners.sync.SyncWorker", factory)
+    result = runner.invoke(cli, ["publish"])
+    assert result.exit_code == 0, result.output
+    worker.run.assert_called_once_with(publish_only=True)
+    assert "Published 17 Handles" in result.output
+
+
+def test_managed_batch_file_cannot_bypass_queued_publication(runner, tmp_path):
+    from piddiplatsch.config import config
+
+    config._set("consumer", "output_dir", str(tmp_path))
+    source = tmp_path / "batches/cmip6/ready/example/handles.jsonl"
+    source.parent.mkdir(parents=True)
+    source.touch()
+    result = runner.invoke(cli, ["publish", str(source)])
+    assert result.exit_code == 2
+    assert "without PATH" in result.output

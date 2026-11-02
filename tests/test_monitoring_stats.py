@@ -10,8 +10,8 @@ from piddiplatsch.consumer import HarvestProcessor, start_consumer
 from piddiplatsch.monitoring.stats import (
     ConsoleReporter,
     CounterKey,
-    SQLiteReporter,
     Stats,
+    StatusReporter,
     concise_error,
 )
 from piddiplatsch.monitoring.status import read_status
@@ -56,47 +56,6 @@ def test_console_summary_labels_operation_and_keeps_raw_details_at_debug(
         ConsoleReporter().log(summary)
     assert f"[{operation}] Stats snapshot:" in caplog.text
     assert "details-only" in caplog.text
-
-
-def test_schema_two_history_is_readable_and_migrated_without_loss(tmp_path):
-    db_path = tmp_path / "monitor.db"
-    stats = Stats(enable_db=False)
-    stats.configure_for_run(
-        enable_db=True,
-        db_path=str(db_path),
-        command="map",
-        selected_projects=("cmip6",),
-        heartbeat_interval_seconds=60,
-    )
-    stats.record_result(
-        ProcessingResult(key="one", success=True, plugin="cmip6", num_handles=3)
-    )
-    stats.close(status="completed")
-    original = read_status(db_path)["runs"]
-    original[0].pop("heartbeat_age_seconds")
-    with sqlite3.connect(db_path) as connection:
-        for table in ("monitor_project_stats", "monitor_samples"):
-            for column in ("catalog_writes", "catalog_refreshes"):
-                connection.execute(f"ALTER TABLE {table} DROP COLUMN {column}")
-        connection.execute(
-            "UPDATE monitor_meta SET value = '2' WHERE key = 'schema_version'"
-        )
-    legacy = read_status(db_path)
-    legacy["runs"][0].pop("heartbeat_age_seconds")
-    assert legacy["schema_version"] == 2
-    assert legacy["runs"] == original
-    with sqlite3.connect(db_path) as connection:
-        assert (
-            connection.execute(
-                "SELECT value FROM monitor_meta WHERE key = 'schema_version'"
-            ).fetchone()[0]
-            == "2"
-        )
-    SQLiteReporter(str(db_path)).close()
-    migrated = read_status(db_path)
-    migrated["runs"][0].pop("heartbeat_age_seconds")
-    assert migrated["schema_version"] == 3
-    assert migrated["runs"] == original
 
 
 @pytest.mark.parametrize("enable_db", [False, True])
@@ -233,6 +192,7 @@ def test_timestamps_are_utc():
 
 def test_project_status_is_persisted_with_run_heartbeat(tmp_path):
     db_path = tmp_path / "piddi.db"
+    config._set("catalog", "directory", str(tmp_path))
     s = Stats(enable_db=False)
     s.configure_for_run(
         enable_db=True,
@@ -272,7 +232,7 @@ def test_project_status_is_persisted_with_run_heartbeat(tmp_path):
     s.close(status="completed")
 
     status = read_status(db_path)
-    assert status["schema_version"] == 3
+    assert status["schema_version"] == 1
     assert status["runs"][0]["state"] == "completed"
     assert status["runs"][0]["selected_projects"] == ["cmip6", "cmip7"]
     projects = {row["project"]: row for row in status["runs"][0]["projects"]}
@@ -288,7 +248,8 @@ def test_project_status_is_persisted_with_run_heartbeat(tmp_path):
 
 def test_read_status_can_filter_project(tmp_path):
     db_path = tmp_path / "piddi.db"
-    reporter = SQLiteReporter(str(db_path))
+    config._set("catalog", "directory", str(tmp_path))
+    reporter = StatusReporter(str(db_path))
     reporter.close()
 
     status = read_status(db_path, project="cmip7")
@@ -297,7 +258,8 @@ def test_read_status_can_filter_project(tmp_path):
 
 def test_fresh_database_contains_only_current_monitoring_tables(tmp_path):
     db_path = tmp_path / "piddi.db"
-    reporter = SQLiteReporter(str(db_path))
+    config._set("catalog", "directory", str(tmp_path))
+    reporter = StatusReporter(str(db_path))
     reporter.close()
 
     with sqlite3.connect(db_path) as connection:
@@ -308,11 +270,11 @@ def test_fresh_database_contains_only_current_monitoring_tables(tmp_path):
             )
         }
 
-    assert tables == {
-        "monitor_meta",
-        "monitor_runs",
-        "monitor_project_stats",
-        "monitor_samples",
+    assert tables - {"sqlite_sequence"} == {
+        "catalog_items",
+        "work_items",
+        "kafka_checkpoints",
+        "stats",
     }
 
 
@@ -336,8 +298,8 @@ def test_consumer_entrypoint_without_monitoring_opt_in_does_not_create_database(
     tmp_path, processor
 ):
     db_path = tmp_path / "piddi.db"
+    config._set("catalog", "directory", str(tmp_path))
     config._set("stats", "enable_db", True)
-    config._set("stats", "db_path", str(db_path))
 
     start_consumer(processor=processor, direct_messages=[("one", {"value": 1})])
 
@@ -346,8 +308,8 @@ def test_consumer_entrypoint_without_monitoring_opt_in_does_not_create_database(
 
 def test_consumer_entrypoint_creates_configured_monitoring_database(tmp_path):
     db_path = tmp_path / "piddi.db"
+    config._set("catalog", "directory", str(tmp_path))
     config._set("stats", "enable_db", True)
-    config._set("stats", "db_path", str(db_path))
 
     start_consumer(
         "publications",
@@ -368,8 +330,8 @@ def test_consumer_entrypoint_creates_configured_monitoring_database(tmp_path):
 
 def test_consumer_monitoring_respects_disabled_database_config(tmp_path):
     db_path = tmp_path / "piddi.db"
+    config._set("catalog", "directory", str(tmp_path))
     config._set("stats", "enable_db", False)
-    config._set("stats", "db_path", str(db_path))
 
     start_consumer(
         processor=_MappingProcessor(),
@@ -378,3 +340,90 @@ def test_consumer_monitoring_respects_disabled_database_config(tmp_path):
     )
 
     assert not db_path.exists()
+
+
+def test_concurrent_heartbeats_preserve_runs_and_durable_totals(tmp_path, monkeypatch):
+    from concurrent.futures import ThreadPoolExecutor
+
+    from piddiplatsch.catalog.sqlite import SQLiteCatalog
+    from piddiplatsch.maintenance import clean_status_history
+
+    database = tmp_path / "piddi.db"
+    config._set("catalog", "directory", str(tmp_path))
+    now = datetime.datetime.now(datetime.UTC)
+    started = (now - datetime.timedelta(days=40)).isoformat()
+    reporters = [StatusReporter(database), StatusReporter(database)]
+    counters = dict.fromkeys(
+        (
+            "consumed",
+            "routed",
+            "filtered",
+            "succeeded",
+            "skipped",
+            "failed",
+            "handles",
+            "catalog_writes",
+            "catalog_refreshes",
+        ),
+        0,
+    )
+    summaries = [
+        dict(
+            run=dict(
+                run_id=str(index),
+                command=command,
+                status="completed",
+                started_at=started,
+                finished_at=started,
+                selected_projects=["cmip7"],
+            ),
+            projects={"cmip7": dict(counters, consumed=index)},
+        )
+        for index, command in enumerate(("harvest", "publish"))
+    ]
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        futures = [
+            executor.submit(reporter.heartbeat, summary, force_sample=True)
+            for reporter, summary in zip(reporters, summaries, strict=True)
+        ]
+        for future in futures:
+            future.result()
+    for reporter in reporters:
+        reporter.close()
+    with SQLiteCatalog("cmip7", database) as catalog:
+        from piddiplatsch.catalog import CatalogEntry
+        from piddiplatsch.core.messages import KafkaSource
+
+        with catalog.transaction() as transaction:
+            transaction.add_work(
+                CatalogEntry("CMIP7", {"id": "one"}, "dataset", 1),
+                KafkaSource("topic", 0, 0),
+            )
+        catalog.seal_batch(
+            "batch", [{"id": 1, "error": None, "handle_count": 3, "alias_count": 1}]
+        )
+        catalog.publish_batch("batch", 3)
+    # Reading a complete snapshot needs no status, batch, or disk inspection.
+    monkeypatch.setattr(
+        "piddiplatsch.monitoring.disk.disk_status",
+        lambda: pytest.fail("top must only read its database"),
+    )
+    status = read_status(database)
+    assert {run["run_id"] for run in status["runs"]} == {"0", "1"}
+    assert status["handle_totals"] == [
+        dict(
+            project="cmip7",
+            mapped_items=1,
+            prepared=3,
+            published=3,
+            errors=0,
+            full_events=1,
+            patch_events=0,
+        )
+    ]
+    assert not (tmp_path / "status").exists()
+    assert clean_status_history(dry_run=True) == 2
+    assert len(read_status(database)["runs"]) == 2
+    assert clean_status_history() == 2
+    assert read_status(database)["runs"] == []
+    assert read_status(database)["handle_totals"] == status["handle_totals"]

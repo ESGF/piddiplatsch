@@ -22,9 +22,9 @@ def test_config_commands_do_not_import_network_clients(tmp_path, command):
     source_root = Path(__file__).resolve().parents[1] / "src"
     config_path = Path(__file__).resolve().parent / "config.toml"
     if command[0] == "top":
-        from piddiplatsch.monitoring.stats import SQLiteReporter
+        from piddiplatsch.catalog.sqlite import SQLiteCatalog
 
-        SQLiteReporter(str(tmp_path / "monitor.db")).close()
+        SQLiteCatalog("cmip6", tmp_path / "monitor.db").close()
     # A fresh process is essential: other tests may already have imported Kafka.
     script = """
 import importlib.abc
@@ -146,7 +146,7 @@ if sys.argv[3] == 'map':
         args=['--config', sys.argv[4], 'map', '--all-projects', '--date', 'all', '--catalog-dir', sys.argv[1], '--version-history'],
         standalone_mode=False,
     )
-    assert list(Path('outputs/cmip6/handles').glob('*.jsonl'))
+    assert list(Path('outputs/batches/cmip6/ready').glob('*/handles.jsonl'))
 assert 'requests' not in sys.modules
 assert '_brotli' not in sys.modules
 """

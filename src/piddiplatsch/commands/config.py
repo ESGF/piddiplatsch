@@ -102,7 +102,7 @@ class ConfigExplainCommand(Command):
             "catalog.directory" if catalog_directory else "consumer.output_dir"
         )
         catalog_directory = catalog_directory or str(
-            Path(config.get("consumer", "output_dir", "outputs")) / "catalog"
+            Path(config.get("consumer", "output_dir", "outputs"))
         )
         show("Catalog directory", catalog_directory, directory_source)
         click.echo(
@@ -136,7 +136,6 @@ class ConfigExplainCommand(Command):
         for label, section, key in (
             ("Output path", "consumer", "output_dir"),
             ("Log path", "logging", "file"),
-            ("Database path", "stats", "db_path"),
         ):
             value = config.get(section, key)
             if section == "logging" and self.log_override is not None:
@@ -148,6 +147,23 @@ class ConfigExplainCommand(Command):
                 else "terminal" if section == "logging" else None
             )
             show(label, resolved, f"{section}.{key}")
+        show(
+            "Database path",
+            str(
+                (
+                    Path(
+                        config.get("catalog", "directory")
+                        or config.get("consumer", "output_dir", "outputs")
+                    )
+                    / "piddi.db"
+                ).resolve()
+            ),
+            (
+                "catalog.directory"
+                if config.get("catalog", "directory")
+                else "consumer.output_dir"
+            ),
+        )
         click.echo(f"Database enabled: {json.dumps(config.get('stats', 'enable_db'))}")
 
 

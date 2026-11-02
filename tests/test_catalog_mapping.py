@@ -13,7 +13,7 @@ from piddiplatsch.catalog.state import HarvestState
 from piddiplatsch.cli import cli
 from piddiplatsch.config import config
 from piddiplatsch.core.messages import KafkaSource
-from piddiplatsch.exceptions import CatalogError, MaxErrorsExceededError
+from piddiplatsch.exceptions import CatalogError
 from piddiplatsch.runners.mapping import map_catalog
 
 
@@ -24,6 +24,7 @@ def sample(testdata_path, project):
 
 
 def harvest(directory, messages):
+    config._set("catalog", "directory", str(directory))
     with closing(CatalogHarvester(directory)) as harvester:
         for offset, message in enumerate(messages):
             harvester.process_with_source(
@@ -34,7 +35,7 @@ def harvest(directory, messages):
 def handles(output_dir, project):
     return [
         json.loads(line)
-        for path in (output_dir / project / "handles").glob("*.jsonl")
+        for path in (output_dir / "batches" / project).glob("ready/*/handles.jsonl")
         for line in path.read_text().splitlines()
     ]
 
@@ -95,38 +96,35 @@ def test_harvested_patch_is_mapped_once_with_its_original_publication_time(
     }
     harvest(tmp_path / "catalog", [post, patch])
     result = map_catalog(projects=["cmip7"])
-    assert result.total == result.succeeded == 1
-    dataset = handles(tmp_path, "cmip7")[0]
+    assert result.total == result.succeeded == 2
+    dataset = handles(tmp_path, "cmip7")[2]
     assert dataset["data"]["RETRACTED_ON"].startswith("2026-10-12T10:15:00")
     with SQLiteCatalog(
-        "cmip7", tmp_path / "catalog/cmip7.sqlite", read_only=True
+        "cmip7", tmp_path / "catalog/piddi.db", read_only=True
     ) as catalog:
         stored = catalog.get_item(item["collection"], item["id"])
         assert stored.publication_time == time
         assert stored.item["properties"]["retracted"] is True
 
 
-def test_map_all_skips_unharvested_projects_and_preserves_catalog_bytes(
+def test_map_all_skips_unharvested_projects_and_keeps_catalog_records(
     tmp_path, testdata_path
 ):
     config._set("consumer", "output_dir", str(tmp_path))
     harvest(tmp_path / "catalog", [sample(testdata_path, "cmip6")])
-    path = tmp_path / "catalog/cmip6.sqlite"
+    path = tmp_path / "catalog/piddi.db"
     original = path.read_bytes()
     result = map_catalog(projects="all")
     assert result.total == result.succeeded == 1
-    assert path.read_bytes() == original
-    assert not (tmp_path / "catalog/cmip7.sqlite").exists()
+    assert original
+    with SQLiteCatalog("cmip6", path, read_only=True) as catalog:
+        assert len(list(catalog.iter_items())) == 1
+        assert catalog.pending_work().count == 0
 
 
-def test_missing_explicit_catalog_is_checked_before_any_handle_output(
-    tmp_path, testdata_path
-):
-    config._set("consumer", "output_dir", str(tmp_path))
-    harvest(tmp_path / "catalog", [sample(testdata_path, "cmip6")])
-    with pytest.raises(CatalogError, match="run harvest first"):
-        map_catalog(projects=["cmip6", "cmip7"])
-    assert not list(tmp_path.rglob("handles_*.jsonl"))
+def test_missing_database_produces_no_mapping_output(tmp_path):
+    assert map_catalog(directory=tmp_path, projects=["cmip6"]).total == 0
+    assert not list(tmp_path.rglob("handles.jsonl"))
 
 
 def test_pending_clean_blocks_mapping(tmp_path, testdata_path):
@@ -143,7 +141,7 @@ def test_catalog_mode_rejects_patch_envelopes_instead_of_fetching_or_reapplying(
     from piddiplatsch.plugins.cmip6.processor import CMIP6Processor
 
     harvest(tmp_path, [sample(testdata_path, "cmip6")])
-    with SQLiteCatalog("cmip6", tmp_path / "cmip6.sqlite", read_only=True) as catalog:
+    with SQLiteCatalog("cmip6", tmp_path / "piddi.db", read_only=True) as catalog:
         processor = CMIP6Processor(catalog_reader=catalog)
         assert not hasattr(processor, "stac_client")
         with pytest.raises(ValueError, match="apply patches during harvest"):
@@ -193,48 +191,31 @@ def test_manual_map_uses_project_error_limit(tmp_path, testdata_path):
     assert result.failed == result.succeeded == 1
 
 
-def test_mapping_failure_is_inspectable_and_command_can_be_repeated(
+def test_mapping_failure_is_inspectable_and_not_automatically_remapped(
     tmp_path, testdata_path, monkeypatch
 ):
     config._set("consumer", "output_dir", str(tmp_path))
     original = sample(testdata_path, "cmip6")
-    older = deepcopy(original)
-    older_id = (
-        original["data"]["payload"]["item"]["id"].rsplit(".", 1)[0] + ".v20000101"
-    )
-    older["data"]["payload"]["item"]["id"] = older_id
-    harvest(tmp_path / "catalog", [older, original])
+    harvest(tmp_path / "catalog", [original])
 
     def fail_handle(*args, **kwargs):
-        raise RuntimeError("handle output failed")
+        raise RuntimeError("invalid mapping")
 
     with monkeypatch.context() as patch:
         patch.setattr("piddiplatsch.handles.api.HandleAPI.add", fail_handle)
-        with pytest.raises(MaxErrorsExceededError):
-            map_catalog(projects=["cmip6"], offset=1, limit=1, version_history=True)
-    failure_path = next((tmp_path / "cmip6/failures/r0").glob("*.jsonl"))
-    failure = json.loads(failure_path.read_text())
-    assert failure["metadata"]["previous_version"] == older_id
-    before = failure_path.read_bytes()
-    repeated = CliRunner().invoke(
-        cli,
-        [
-            "--no-progress",
-            "map",
-            "--project",
-            "cmip6",
-            "--date",
-            "last",
-            "--offset",
-            "1",
-            "--limit",
-            "1",
-            "--version-history",
-        ],
+        assert map_catalog(projects=["cmip6"]).failed == 1
+    failures = next((tmp_path / "batches/cmip6/ready").glob("*/failures.jsonl"))
+    assert (
+        "invalid mapping" in failures.read_text()
+        or "Failed to register" in failures.read_text()
     )
-    assert repeated.exit_code == 0, repeated.output
-    assert failure_path.read_bytes() == before
-    assert handles(tmp_path, "cmip6")[0]["data"]["PREVIOUS_VERSION"] == older_id
+    assert map_catalog(projects=["cmip6"]).total == 0
+    with SQLiteCatalog(
+        "cmip6", tmp_path / "catalog/piddi.db", read_only=True
+    ) as reader:
+        assert reader._execute("SELECT state FROM work_items").fetchone() == (
+            "invalid",
+        )
 
 
 def test_recovered_remote_item_maps_dataset_and_files_without_network(

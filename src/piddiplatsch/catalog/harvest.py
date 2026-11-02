@@ -11,12 +11,14 @@ from piddiplatsch.catalog.base import BaseCatalog, BaseCatalogTransaction
 from piddiplatsch.catalog.models import CatalogEntry, KafkaCheckpoint
 from piddiplatsch.catalog.remote import fetch_current_item
 from piddiplatsch.catalog.state import HarvestState
+from piddiplatsch.config import config
 from piddiplatsch.core.messages import KafkaSource
 from piddiplatsch.core.plugin import normalize_project_id
 from piddiplatsch.core.registry import get_plugins
 from piddiplatsch.core.routing import extract_project_id
 from piddiplatsch.exceptions import CatalogError
 from piddiplatsch.monitoring.disk import get_disk_guard
+from piddiplatsch.persist.dump import DumpRecorder
 from piddiplatsch.result import ProcessingResult
 
 LOGGER = logging.getLogger(__name__)
@@ -40,6 +42,7 @@ class CatalogHarvester:
         *,
         backend: str = "sqlite",
         clean_projects: tuple[str, ...] = (),
+        ignore_unknown_projects: bool | None = None,
     ):
         self.disk_guard = get_disk_guard(extra_paths=(directory,))
         self.disk_guard.check(force=True)
@@ -47,6 +50,14 @@ class CatalogHarvester:
             raise ValueError(f"Unsupported catalog backend: {backend!r}")
         self.directory = Path(directory)
         self.backend = backend
+        self.ignore_unknown_projects = (
+            config.get("catalog", "ignore_unknown_projects", False)
+            if ignore_unknown_projects is None
+            else ignore_unknown_projects
+        )
+        if type(self.ignore_unknown_projects) is not bool:
+            raise ValueError("catalog.ignore_unknown_projects must be a boolean")
+        self._unknown_recorder = None
         self.plugins = get_plugins("all")
         self._plugins_by_project = {
             project_id: plugin
@@ -59,24 +70,44 @@ class CatalogHarvester:
             known_projects = set(self.project_names)
             if set(clean_projects) - known_projects:
                 raise ValueError("Clean projects must be registered plugin names")
+            path = get_catalog_path(self.project_names[0], directory=self.directory)
+            if clean_projects and path.exists():
+                catalog = self._get_catalog(self.project_names[0])
+                stored = {
+                    row[0]
+                    for row in catalog._execute(
+                        "SELECT DISTINCT project FROM catalog_items UNION SELECT DISTINCT project FROM work_items"
+                    )
+                }
+                if stored - set(clean_projects):
+                    raise CatalogError(
+                        "Project-only harvest cleaning is unsafe with shared Kafka checkpoints; use --clean-catalog for a complete rebuild"
+                    )
             if clean_projects:
                 self._state.request_clean(clean_projects)
-            # Upgrade existing catalogs even when Kafka has no new messages.
-            for project in self.project_names:
-                if get_catalog_path(
-                    project, directory=self.directory, backend=self.backend
-                ).is_file():
-                    self._get_catalog(project)
             if set(self._state.pending_clean) - known_projects:
                 raise CatalogError("Pending clean references an unregistered project")
-            for project in self._state.pending_clean:
-                # Do not create empty databases for projects never harvested.
-                if get_catalog_path(
-                    project, directory=self.directory, backend=self.backend
-                ).exists():
-                    catalog = self._get_catalog(project)
-                    catalog.reset()
-                    catalog.compact()
+            if self._state.pending_clean and path.exists():
+                catalog = self._get_catalog(self.project_names[0])
+                with catalog.transaction():
+                    stored = {
+                        row[0]
+                        for row in catalog._execute(
+                            "SELECT DISTINCT project FROM catalog_items UNION SELECT DISTINCT project FROM work_items"
+                        )
+                    }
+                    if stored - set(self._state.pending_clean):
+                        raise CatalogError(
+                            "Pending clean must include every stored project because Kafka checkpoints are shared"
+                        )
+                    catalog._execute("DELETE FROM catalog_items")
+                    catalog._execute("DELETE FROM work_items")
+                    catalog._execute("DELETE FROM kafka_checkpoints")
+                    catalog._execute("DELETE FROM stats")
+            # Open project views for recovered-item refresh without migration.
+            if path.exists():
+                for project in self.project_names:
+                    self._get_catalog(project)
             self._state.complete_clean()
             self._refresh_recovered_items()
         except BaseException:
@@ -104,7 +135,7 @@ class CatalogHarvester:
 
     def _get_catalog(self, project: str) -> BaseCatalog:
         if project not in self._catalogs:
-            # Plugin names become filenames; reject unsafe third-party names.
+            # Plugin names also become spool directories; reject unsafe names.
             if Path(project).name != project or project in {".", ".."}:
                 raise CatalogError(f"Unsafe catalog project name: {project!r}")
             self._catalogs[project] = open_catalog(
@@ -168,9 +199,15 @@ class CatalogHarvester:
         if not isinstance(metadata, dict):
             raise ValueError("Publication metadata must be an object")
         self.disk_guard.check()
-        project = self.plugin_name_for(value)
-        if project is None:
-            raise CatalogError("Publication project is missing or not registered")
+        project_id = extract_project_id(value)
+        if project_id is None:
+            raise CatalogError("Publication project is missing")
+        plugin = self._plugins_by_project.get(normalize_project_id(project_id))
+        if plugin is None:
+            if self.ignore_unknown_projects:
+                return self._ignore_unknown(key, value, source, project_id)
+            raise CatalogError(f"Publication project is not registered: {project_id!r}")
+        project = plugin.name
         catalog = self._get_catalog(project)
         result = ProcessingResult(
             key=key, success=True, project=project, plugin=project
@@ -214,11 +251,59 @@ class CatalogHarvester:
                         recovery,
                     )
             transaction.put_item(entry)
+            transaction.add_work(
+                entry, source, event_type="patch" if method == "PATCH" else "full"
+            )
             transaction.set_checkpoint(
                 KafkaCheckpoint(source.topic, source.partition, source.offset + 1)
             )
+        result.event_type = "patch" if method == "PATCH" else "full"
         result.catalog_written = True
         result.catalog_refreshed = recovery is not None
+        return result
+
+    def _ignore_unknown(self, key, value, source, project_id):
+        # Checkpoints belong to the source partition, not the project view.
+        catalog = self._get_catalog(self.project_names[0])
+        result = ProcessingResult(
+            key=key,
+            success=True,
+            project=normalize_project_id(project_id),
+            filtered=True,
+            filtered_reason="Unknown project ignored",
+        )
+        with catalog.transaction() as transaction:
+            checkpoint = transaction.get_checkpoint(source.topic, source.partition)
+            if checkpoint is not None and source.offset < checkpoint.next_offset:
+                result.filtered_reason = "Kafka message already harvested"
+                return result
+            if self._unknown_recorder is None:
+                self._unknown_recorder = DumpRecorder(prefix="unknown_projects")
+            # This dedicated archive is mandatory even when the caller did not
+            # request the ordinary all-event dump. It must precede the checkpoint.
+            path = self._unknown_recorder.record(
+                key,
+                {
+                    "source": {
+                        "topic": source.topic,
+                        "partition": source.partition,
+                        "offset": source.offset,
+                    },
+                    "key": key,
+                    "payload": value,
+                },
+            )
+            transaction.set_checkpoint(
+                KafkaCheckpoint(source.topic, source.partition, source.offset + 1)
+            )
+        LOGGER.warning(
+            "[harvest] Ignored unknown project %r at %s/%d/%d; archived in %s",
+            project_id,
+            source.topic,
+            source.partition,
+            source.offset,
+            path,
+        )
         return result
 
     def _validated_entry(

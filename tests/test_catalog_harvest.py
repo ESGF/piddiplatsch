@@ -65,10 +65,10 @@ def test_real_publications_are_cached_without_handle_validation(
         )
         assert result.success
         assert result.num_handles == 0
-    assert [path.name for path in (tmp_path / "catalog").glob("*.sqlite")] == [
-        f"{project}.sqlite"
+    assert [path.name for path in (tmp_path / "catalog").glob("piddi.db")] == [
+        "piddi.db"
     ]
-    with SQLiteCatalog(project, tmp_path / "catalog" / f"{project}.sqlite") as catalog:
+    with SQLiteCatalog(project, tmp_path / "catalog" / "piddi.db") as catalog:
         assert (
             catalog.get_item(payload["collection_id"], payload["item"]["id"]).item
             == payload["item"]
@@ -100,11 +100,17 @@ def test_patch_replay_is_idempotent_and_new_updates_replace_existing_item(
         restarted.process_with_source(
             "new-version", publication(version=2), KafkaSource("topic", 0, 3)
         )
-    with SQLiteCatalog("cmip6", directory / "cmip6.sqlite") as catalog:
+    with SQLiteCatalog("cmip6", directory / "piddi.db") as catalog:
         assert catalog.get_item("CMIP6", "CMIP6.dataset.v1").item["properties"][
             "updates"
         ] == ["one", "one"]
         assert catalog.get_checkpoint("topic", 0).next_offset == 4
+        assert [work.event_type for work in catalog.iter_pending(10)] == [
+            "full",
+            "patch",
+            "patch",
+            "full",
+        ]
         assert (
             catalog.find_previous_version("CMIP6", "CMIP6.dataset", 2)
             == "CMIP6.dataset.v1"
@@ -136,7 +142,7 @@ def test_missing_base_stops_before_acknowledgement_and_records_source(tmp_path):
             pipeline.close_progress()
     acknowledge.assert_not_called()
     following_ack.assert_not_called()
-    with SQLiteCatalog("cmip6", tmp_path / "catalog/cmip6.sqlite") as catalog:
+    with SQLiteCatalog("cmip6", tmp_path / "catalog/piddi.db") as catalog:
         assert catalog.get_checkpoint("topic", 2) is None
         assert list(catalog.iter_items()) == []
     failure = json.loads(
@@ -148,7 +154,9 @@ def test_missing_base_stops_before_acknowledgement_and_records_source(tmp_path):
         "offset": 10,
     }
     dumped = json.loads(next((tmp_path / "dump").glob("*.jsonl")).read_text())
-    assert dumped == patch
+    assert dumped["payload"] == patch
+    assert dumped["key"] == "patch"
+    assert dumped["source"] == {"topic": "topic", "partition": 2, "offset": 10}
 
 
 @pytest.mark.parametrize(
@@ -168,7 +176,7 @@ def test_invalid_patch_preserves_item_and_checkpoint(tmp_path, operations):
             harvester.process_with_source(
                 "patch", patch_message(operations), KafkaSource("topic", 0, 1)
             )
-    with SQLiteCatalog("cmip6", tmp_path / "cmip6.sqlite") as catalog:
+    with SQLiteCatalog("cmip6", tmp_path / "piddi.db") as catalog:
         assert (
             catalog.get_item("CMIP6", "CMIP6.dataset.v1").item
             == publication()["data"]["payload"]["item"]
@@ -178,7 +186,7 @@ def test_invalid_patch_preserves_item_and_checkpoint(tmp_path, operations):
 
 def test_acknowledgement_observes_durable_catalog_state(tmp_path):
     def acknowledge():
-        with SQLiteCatalog("cmip6", tmp_path / "cmip6.sqlite") as catalog:
+        with SQLiteCatalog("cmip6", tmp_path / "piddi.db") as catalog:
             assert catalog.get_item("CMIP6", "CMIP6.dataset.v1") is not None
             assert catalog.get_checkpoint("topic", 0).next_offset == 1
 
@@ -233,9 +241,9 @@ def test_harvest_cli_creates_project_databases_and_commits_after_store(
         for p in client.commit.call_args.kwargs["offsets"]
     ] == [("topic", 0, 2)]
     client.close.assert_called_once()
-    assert sorted(
-        path.name for path in (tmp_path / "outputs/catalog").glob("*.sqlite")
-    ) == ["cmip6.sqlite", "cmip7.sqlite"]
+    assert sorted(path.name for path in (tmp_path / "outputs").glob("piddi.db")) == [
+        "piddi.db"
+    ]
     assert not list((tmp_path / "outputs").rglob("handles_*.jsonl"))
 
 
@@ -253,7 +261,7 @@ def test_raw_only_harvest_retains_previous_behavior(tmp_path, monkeypatch):
         "kafka", "group.id"
     )
     client.commit.assert_not_called()
-    assert not (tmp_path / "outputs/catalog").exists()
+    assert not (tmp_path / "outputs/piddi.db").exists()
 
 
 def test_kafka_commit_failure_can_be_replayed_without_reapplying_patch(tmp_path):
@@ -278,7 +286,7 @@ def test_kafka_commit_failure_can_be_replayed_without_reapplying_patch(tmp_path)
         assert restarted.process_with_source(
             "patch", patch, KafkaSource("topic", 0, 1)
         ).filtered
-    with SQLiteCatalog("cmip6", tmp_path / "cmip6.sqlite") as catalog:
+    with SQLiteCatalog("cmip6", tmp_path / "piddi.db") as catalog:
         assert catalog.get_item("CMIP6", "CMIP6.dataset.v1").item["properties"][
             "updates"
         ] == ["one"]
@@ -348,12 +356,13 @@ def test_configured_catalog_directory_and_disable_setting(tmp_path, monkeypatch)
     monkeypatch.setattr("piddiplatsch.consumer.signal.signal", MagicMock())
     result = CliRunner().invoke(cli, ["--no-progress", "harvest", "--limit", "1"])
     assert result.exit_code == 0, result.output
-    assert (directory / "cmip6.sqlite").exists()
+    assert (directory / "piddi.db").exists()
     config._set("catalog", "enabled", False)
     client.poll.return_value = kafka_message(publication("CMIP7"))
     result = CliRunner().invoke(cli, ["--no-progress", "harvest", "--limit", "1"])
     assert result.exit_code == 0, result.output
-    assert not (directory / "cmip7.sqlite").exists()
+    with SQLiteCatalog("cmip7", directory / "piddi.db", read_only=True) as catalog:
+        assert list(catalog.iter_items()) == []
 
 
 def test_remote_recovery_never_reapplies_patch_and_survives_restart(
@@ -382,7 +391,7 @@ def test_remote_recovery_never_reapplies_patch_and_survives_restart(
         assert harvester.process_with_source(
             "patch", patch, KafkaSource("topic", 0, 5)
         ).filtered
-    with SQLiteCatalog("cmip6", tmp_path / "cmip6.sqlite", read_only=True) as catalog:
+    with SQLiteCatalog("cmip6", tmp_path / "piddi.db", read_only=True) as catalog:
         entry = catalog.get_item("CMIP6", "CMIP6.dataset.v1")
         assert entry.item == current
         assert entry.remote_refresh["trigger"] == {
@@ -391,6 +400,7 @@ def test_remote_recovery_never_reapplies_patch_and_survives_restart(
             "offset": 5,
         }
         assert entry.remote_refresh["endpoint"] == "https://stac.example"
+        assert catalog.get_work(1).event_type == "patch"
         assert entry.remote_refresh["fetched_at"]
         assert list(catalog.iter_items(remote_refresh_only=True)) == [entry]
         assert catalog.get_checkpoint("topic", 0).next_offset == 6
@@ -405,7 +415,7 @@ def test_remote_recovery_never_reapplies_patch_and_survives_restart(
         # An older full publication cannot regress the recovered item or clear mode.
         harvester.process_with_source("post", publication(), KafkaSource("topic", 0, 7))
     assert len(calls) == 4
-    with SQLiteCatalog("cmip6", tmp_path / "cmip6.sqlite", read_only=True) as catalog:
+    with SQLiteCatalog("cmip6", tmp_path / "piddi.db", read_only=True) as catalog:
         entry = catalog.get_item("CMIP6", "CMIP6.dataset.v1")
         assert entry.item == current
         assert entry.remote_refresh["trigger"]["offset"] == 5
@@ -445,7 +455,7 @@ def test_remote_recovery_failures_are_atomic(tmp_path, monkeypatch, fault):
             harvester.process_with_source(
                 "patch", patch_message([]), KafkaSource("topic", 0, 0)
             )
-    with SQLiteCatalog("cmip6", tmp_path / "cmip6.sqlite") as catalog:
+    with SQLiteCatalog("cmip6", tmp_path / "piddi.db") as catalog:
         assert catalog.get_item("CMIP6", "CMIP6.dataset.v1") is None
         assert catalog.get_checkpoint("topic", 0) is None
 
@@ -466,6 +476,6 @@ def test_failed_refresh_retains_previous_item_and_checkpoint(tmp_path, monkeypat
             )
     with pytest.raises(CatalogError, match="Remote refresh failed"):
         CatalogHarvester(tmp_path)
-    with SQLiteCatalog("cmip6", tmp_path / "cmip6.sqlite", read_only=True) as catalog:
+    with SQLiteCatalog("cmip6", tmp_path / "piddi.db", read_only=True) as catalog:
         assert catalog.get_item("CMIP6", "CMIP6.dataset.v1").item == item
         assert catalog.get_checkpoint("topic", 0).next_offset == 1

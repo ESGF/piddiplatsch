@@ -117,262 +117,89 @@ class ConsoleReporter(StatsReporter):
         logger.debug("[%s] Stats snapshot: %s", operation, summary)
 
 
-class SQLiteReporter(StatsReporter):
+class StatusReporter(StatsReporter):
+    """Live heartbeats and bounded rate histories in the shared stats table."""
+
     def __init__(
-        self,
-        db_path: str = "piddi.db",
-        sample_interval_seconds: float = 15.0,
-        sample_retention_days: float = 30.0,
+        self, db_path=None, sample_interval_seconds=15.0, sample_retention_days=30.0
     ):
-        self._conn = sqlite3.connect(db_path, check_same_thread=False)
-        self._conn.execute("PRAGMA busy_timeout = 5000")
-        self._conn.execute("PRAGMA journal_mode = WAL")
-        self._cursor = self._conn.cursor()
+        from pathlib import Path
+
+        from piddiplatsch.catalog.api import get_catalog_directory
+        from piddiplatsch.catalog.sqlite import SQLiteCatalog
+
+        database = Path(db_path) if db_path else get_catalog_directory() / "piddi.db"
+        with SQLiteCatalog("_monitor", database):
+            pass
+        self.connection = sqlite3.connect(database, timeout=5, check_same_thread=False)
         self._lock = threading.RLock()
-        self.sample_interval_seconds = max(0.1, sample_interval_seconds)
-        self.sample_retention_days = max(0.0, sample_retention_days)
-        self._last_sample_at: datetime.datetime | None = None
-        self._last_prune_at: datetime.datetime | None = None
-        self._cursor.executescript("""
-            CREATE TABLE IF NOT EXISTS monitor_meta (
-                key TEXT PRIMARY KEY,
-                value TEXT NOT NULL
-            );
-            CREATE TABLE IF NOT EXISTS monitor_runs (
-                run_id TEXT PRIMARY KEY,
-                command TEXT NOT NULL,
-                pid INTEGER NOT NULL,
-                hostname TEXT NOT NULL,
-                started_at TEXT NOT NULL,
-                heartbeat_at TEXT NOT NULL,
-                finished_at TEXT,
-                status TEXT NOT NULL,
-                topic TEXT,
-                consumer_group TEXT,
-                selected_projects TEXT NOT NULL,
-                last_message_at TEXT,
-                last_success_at TEXT,
-                last_error_at TEXT,
-                error_summary TEXT
-            );
-            CREATE INDEX IF NOT EXISTS idx_monitor_runs_heartbeat
-                ON monitor_runs(heartbeat_at);
-
-            CREATE TABLE IF NOT EXISTS monitor_project_stats (
-                run_id TEXT NOT NULL,
-                project TEXT NOT NULL,
-                consumed INTEGER NOT NULL DEFAULT 0,
-                routed INTEGER NOT NULL DEFAULT 0,
-                filtered INTEGER NOT NULL DEFAULT 0,
-                succeeded INTEGER NOT NULL DEFAULT 0,
-                skipped INTEGER NOT NULL DEFAULT 0,
-                failed INTEGER NOT NULL DEFAULT 0,
-                handles INTEGER NOT NULL DEFAULT 0,
-                updated_at TEXT NOT NULL,
-                PRIMARY KEY (run_id, project),
-                FOREIGN KEY (run_id) REFERENCES monitor_runs(run_id)
-            );
-            CREATE INDEX IF NOT EXISTS idx_monitor_project_stats_project
-                ON monitor_project_stats(project);
-
-            CREATE TABLE IF NOT EXISTS monitor_samples (
-                run_id TEXT NOT NULL,
-                project TEXT NOT NULL,
-                sampled_at TEXT NOT NULL,
-                consumed INTEGER NOT NULL,
-                routed INTEGER NOT NULL,
-                filtered INTEGER NOT NULL,
-                succeeded INTEGER NOT NULL,
-                skipped INTEGER NOT NULL,
-                failed INTEGER NOT NULL,
-                handles INTEGER NOT NULL,
-                PRIMARY KEY (run_id, project, sampled_at),
-                FOREIGN KEY (run_id) REFERENCES monitor_runs(run_id)
-            );
-            CREATE INDEX IF NOT EXISTS idx_monitor_samples_project_time
-                ON monitor_samples(project, sampled_at);
-            """)
-        # Additive migration preserves historical counters and samples.
-        # Serialize concurrent harvest/map startup before inspecting columns.
-        self._conn.execute("BEGIN IMMEDIATE")
-        run_columns = {
-            row[1] for row in self._conn.execute("PRAGMA table_info(monitor_runs)")
-        }
-        for name, kind in (("expected_handles", "INTEGER"), ("batch_id", "TEXT")):
-            if name not in run_columns:
-                self._conn.execute(f"ALTER TABLE monitor_runs ADD COLUMN {name} {kind}")
-        for table in ("monitor_project_stats", "monitor_samples"):
-            columns = {
-                row[1] for row in self._conn.execute(f"PRAGMA table_info({table})")
-            }
-            for name in ("catalog_writes", "catalog_refreshes"):
-                if name not in columns:
-                    self._conn.execute(
-                        f"ALTER TABLE {table} ADD COLUMN {name} INTEGER NOT NULL DEFAULT 0"
-                    )
-        self._conn.execute(
-            "INSERT OR REPLACE INTO monitor_meta (key, value) VALUES ('schema_version', '3')"
-        )
-        self._conn.commit()
         self._closed = False
+        self.samples = []
+        self.sample_interval_seconds = sample_interval_seconds
+        self._last_sample = 0.0
 
-    def log(self, summary: dict):
-        if self._closed:
-            raise RuntimeError("SQLiteReporter is closed")
+    def log(self, summary):
+        self.heartbeat(summary)
+
+    def heartbeat(self, summary, *, force_sample=False):
         with self._lock:
-            self._persist(summary)
-            self._conn.commit()
+            if self._closed or not summary.get("run"):
+                return
+            now = datetime.datetime.now(datetime.UTC)
+            run = dict(summary["run"])
+            run["heartbeat_at"] = now.isoformat()
+            for key in ("last_message_at", "last_success_at", "last_error_at"):
+                run[key] = summary.get(key.replace("_at", "_time"))
+            projects = [
+                dict(project=name, updated_at=now.isoformat(), **values)
+                for name, values in summary.get("projects", {}).items()
+            ]
+            if (
+                force_sample
+                or time.monotonic() - self._last_sample >= self.sample_interval_seconds
+            ):
+                self.samples.extend(
+                    dict(row, sampled_at=now.isoformat()) for row in projects
+                )
+                self._last_sample = time.monotonic()
+            cutoff = (now - datetime.timedelta(hours=1)).isoformat()
+            self.samples = [row for row in self.samples if row["sampled_at"] >= cutoff]
+            from piddiplatsch.monitoring.disk import disk_status
 
-    def heartbeat(self, summary: dict, *, force_sample: bool = False) -> None:
-        """Refresh run liveness and periodically append a historical sample."""
-        if self._closed:
-            return
-        with self._lock:
-            self._persist(summary, force_sample=force_sample)
-            self._conn.commit()
-
-    def _persist(self, summary: dict, *, force_sample: bool = False) -> None:
-        now = datetime.datetime.now(datetime.UTC)
-        self._write_status(summary, now)
-        sample_due = (
-            self._last_sample_at is None
-            or (now - self._last_sample_at).total_seconds()
-            >= self.sample_interval_seconds
-        )
-        if force_sample or sample_due:
-            self._write_samples(summary, now)
-            self._last_sample_at = now
-            self._prune_samples(now)
-
-    def _write_status(self, summary: dict, now: datetime.datetime) -> None:
-        run = summary.get("run")
-        if not run:
-            return
-        timestamp = now.isoformat()
-        self._cursor.execute(
-            """
-            INSERT INTO monitor_runs (
-                run_id, command, pid, hostname, started_at, heartbeat_at,
-                finished_at, status, topic, consumer_group, selected_projects,
-                last_message_at, last_success_at, last_error_at, error_summary,
-                expected_handles, batch_id
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            ON CONFLICT(run_id) DO UPDATE SET
-                heartbeat_at=excluded.heartbeat_at,
-                finished_at=excluded.finished_at,
-                status=excluded.status,
-                last_message_at=excluded.last_message_at,
-                last_success_at=excluded.last_success_at,
-                last_error_at=excluded.last_error_at,
-                error_summary=excluded.error_summary
-            """,
-            (
-                run["run_id"],
-                run["command"],
-                run["pid"],
-                run["hostname"],
-                run["started_at"],
-                timestamp,
-                run.get("finished_at"),
-                run["status"],
-                run.get("topic"),
-                run.get("consumer_group"),
-                json.dumps(run.get("selected_projects", [])),
-                summary.get("last_message_time"),
-                summary.get("last_success_time"),
-                summary.get("last_error_time"),
-                run.get("error_summary"),
-                run.get("expected_handles"),
-                run.get("batch_id"),
-            ),
-        )
-        for project, counters in summary.get("projects", {}).items():
-            self._cursor.execute(
-                """
-                INSERT INTO monitor_project_stats (
-                    run_id, project, consumed, routed, filtered, succeeded,
-                    skipped, failed, handles, updated_at, catalog_writes, catalog_refreshes
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                ON CONFLICT(run_id, project) DO UPDATE SET
-                    consumed=excluded.consumed, routed=excluded.routed,
-                    filtered=excluded.filtered, succeeded=excluded.succeeded,
-                    skipped=excluded.skipped, failed=excluded.failed,
-                    handles=excluded.handles, updated_at=excluded.updated_at,
-                    catalog_writes=excluded.catalog_writes,
-                    catalog_refreshes=excluded.catalog_refreshes
-                """,
-                (
-                    run["run_id"],
-                    project,
-                    counters["consumed"],
-                    counters["routed"],
-                    counters["filtered"],
-                    counters["succeeded"],
-                    counters["skipped"],
-                    counters["failed"],
-                    counters["handles"],
-                    timestamp,
-                    counters.get("catalog_writes", 0),
-                    counters.get("catalog_refreshes", 0),
-                ),
-            )
-
-    def _write_samples(self, summary: dict, now: datetime.datetime) -> None:
-        run = summary.get("run")
-        if not run:
-            return
-        timestamp = now.isoformat()
-        for project, counters in summary.get("projects", {}).items():
-            self._cursor.execute(
-                """
-                INSERT INTO monitor_samples (
-                    run_id, project, sampled_at, consumed, routed, filtered,
-                    succeeded, skipped, failed, handles, catalog_writes, catalog_refreshes
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """,
-                (
-                    run["run_id"],
-                    project,
-                    timestamp,
-                    counters["consumed"],
-                    counters["routed"],
-                    counters["filtered"],
-                    counters["succeeded"],
-                    counters["skipped"],
-                    counters["failed"],
-                    counters["handles"],
-                    counters.get("catalog_writes", 0),
-                    counters.get("catalog_refreshes", 0),
-                ),
-            )
-
-    def _prune_samples(self, now: datetime.datetime) -> None:
-        if self.sample_retention_days == 0:
-            return
-        if self._last_prune_at and (now - self._last_prune_at).total_seconds() < 3600:
-            return
-        cutoff = now - datetime.timedelta(days=self.sample_retention_days)
-        self._cursor.execute(
-            "DELETE FROM monitor_samples WHERE sampled_at < ?", (cutoff.isoformat(),)
-        )
-        self._last_prune_at = now
+            storage = disk_status()
+            # Each run/project owns its row. Heartbeats never update batch totals.
+            with self.connection:
+                for row in projects or [{"project": ""}]:
+                    name = row["project"]
+                    payload = dict(
+                        run=run,
+                        storage=storage,
+                        projects=[row] if name else [],
+                        samples=[
+                            sample
+                            for sample in self.samples
+                            if sample["project"] == name
+                        ],
+                    )
+                    self.connection.execute(
+                        "INSERT INTO stats(kind,project,id,status,created_at,updated_at,runtime) "
+                        "VALUES ('run',?,?,?,?,?,?) ON CONFLICT(kind,project,id) DO UPDATE SET "
+                        "status=excluded.status,updated_at=excluded.updated_at,runtime=excluded.runtime",
+                        (
+                            name,
+                            run["run_id"],
+                            run["status"],
+                            run["started_at"],
+                            now.isoformat(),
+                            json.dumps(payload),
+                        ),
+                    )
 
     def close(self):
-        if getattr(self, "_closed", False):
-            return
-        try:
-            self._lock.acquire()
-            try:
-                self._cursor.close()
-            except Exception:
-                pass
-            try:
-                self._conn.close()
-            except Exception:
-                pass
-        finally:
-            self._closed = True
-            self._lock.release()
+        with self._lock:
+            if not self._closed:
+                self._closed = True
+                self.connection.close()
 
 
 # -----------------------
@@ -417,6 +244,8 @@ class Stats:
                     "handles",
                     "catalog_writes",
                     "catalog_refreshes",
+                    "full_events",
+                    "patch_events",
                 ),
                 0,
             )
@@ -435,8 +264,8 @@ class Stats:
 
         # Reporters
         self.reporters: list[StatsReporter] = [ConsoleReporter()]
-        if enable_db and db_path:
-            self.reporters.append(SQLiteReporter(db_path=db_path))
+        if enable_db:
+            self.reporters.append(StatusReporter(db_path=db_path))
 
         self._closed = False
         self._initialized = True
@@ -467,6 +296,8 @@ class Stats:
                     "handles",
                     "catalog_writes",
                     "catalog_refreshes",
+                    "full_events",
+                    "patch_events",
                 ),
                 0,
             )
@@ -517,10 +348,10 @@ class Stats:
             self.log_interval_seconds = log_interval_seconds
         if log_interval_messages is not None:
             self.log_interval_messages = log_interval_messages
-        if enable_db and db_path:
+        if enable_db:
             try:
                 self.reporters.append(
-                    SQLiteReporter(
+                    StatusReporter(
                         db_path=db_path,
                         sample_interval_seconds=sample_interval_seconds,
                         sample_retention_days=sample_retention_days,
@@ -528,9 +359,9 @@ class Stats:
                 )
             except Exception:
                 logger.exception(
-                    "Failed to initialize SQLiteReporter; continuing without DB reporter"
+                    "Failed to initialize StatusReporter; continuing without DB reporter"
                 )
-        if enable_db and any(isinstance(r, SQLiteReporter) for r in self.reporters):
+        if enable_db and any(isinstance(r, StatusReporter) for r in self.reporters):
             self._run = {
                 "run_id": uuid.uuid4().hex,
                 "command": command,
@@ -573,7 +404,7 @@ class Stats:
     def _heartbeat_once(self, *, force_sample: bool = False) -> None:
         summary = self.summary()
         for reporter in list(self.reporters):
-            if isinstance(reporter, SQLiteReporter):
+            if isinstance(reporter, StatusReporter):
                 try:
                     reporter.heartbeat(summary, force_sample=force_sample)
                 except Exception:
@@ -585,6 +416,9 @@ class Stats:
         with self._lock:
             counters = self._project_counters[project]
             counters["consumed"] += 1
+            event_type = getattr(result, "event_type", None)
+            if event_type in {"full", "patch"}:
+                counters[event_type + "_events"] += 1
             if result.filtered:
                 counters["filtered"] += 1
                 self.tick()
@@ -892,7 +726,7 @@ def publication_monitor(project: str | None, *, expected_handles=None, batch_id=
         return
     stats.configure_for_run(
         enable_db=True,
-        db_path=settings.get("db_path"),
+        db_path=None,
         command="publish",
         expected_handles=expected_handles,
         batch_id=batch_id,

@@ -50,6 +50,7 @@ def setup(tmp_path, testdata_path):
     )
     sample = json.loads((testdata_path / "publication_samples/cmip7.json").read_text())
     directory = tmp_path / "catalog"
+    config._set("catalog", "directory", str(directory))
     messages = []
 
     def put(version, *, extra=None):
@@ -69,8 +70,8 @@ def setup(tmp_path, testdata_path):
 
 
 def pending(directory):
-    with SQLiteCatalog("cmip7", directory / "cmip7.sqlite", read_only=True) as reader:
-        return reader.pending_changes()
+    with SQLiteCatalog("cmip7", directory / "piddi.db", read_only=True) as reader:
+        return reader.pending_work()
 
 
 def manifests(root):
@@ -97,7 +98,7 @@ def test_count_trigger_seals_and_publishes_then_empty_tick_does_nothing(setup):
     assert manifest["item_count"] == 2
     assert manifest["sha256"]
     assert pending(directory).count == 0
-    assert not list(root.glob("cmip7/handles/handles_*.jsonl"))
+    assert not (root / "cmip7" / "handles").exists()
     original = (batch / "handles.jsonl").read_bytes()
     assert SyncWorker(publisher=publisher).run() == []
     assert len(publisher.calls) == 1
@@ -106,7 +107,7 @@ def test_count_trigger_seals_and_publishes_then_empty_tick_does_nothing(setup):
 
 @pytest.mark.parametrize("force", [False, True])
 def test_sync_map_info_reports_force_setting_and_alias_summary(setup, caplog, force):
-    put, _directory, _root = setup
+    put, directory, _root = setup
     config._set(
         "plugins", "cmip7", {**config.get_plugin("cmip7"), "force_dataset_pid": force}
     )
@@ -128,17 +129,36 @@ def test_sync_map_info_reports_force_setting_and_alias_summary(setup, caplog, fo
         f"{2 if force else 0} alias Handles"
     ) in caplog.messages
     assert "Prepared dataset alias Handle" not in caplog.text
+    from piddiplatsch.monitoring.status import read_status
+
+    status = read_status(directory / "piddi.db")
+    assert status["handle_totals"] == [
+        dict(
+            project="cmip7",
+            mapped_items=2,
+            full_events=2,
+            patch_events=0,
+            prepared=6 if force else 4,
+            published=6 if force else 4,
+            errors=0,
+        )
+    ]
+    with SQLiteCatalog("cmip7", directory / "piddi.db", read_only=True) as reader:
+        assert reader._execute(
+            "SELECT COUNT(*),SUM(alias_handles) FROM stats WHERE kind='batch'"
+        ).fetchone() == (1, 2 if force else 0)
 
 
-def test_hour_trigger_uses_first_pending_change_and_coalesces_patches(setup):
+def test_hour_trigger_preserves_successive_event_snapshots(setup):
     put, directory, root = setup
     put(1)
+    config._set("batch", "trigger_items", 3)
     first = pending(directory)
     put(1, extra={"custom:change": 2})
     updated = pending(directory)
-    assert updated.count == 1
+    assert updated.count == 2
     assert updated.oldest_at == first.oldest_at
-    assert updated.sequence > first.sequence
+    assert updated.last_id > first.last_id
     publisher = Publisher()
     assert (
         SyncWorker(
@@ -151,7 +171,7 @@ def test_hour_trigger_uses_first_pending_change_and_coalesces_patches(setup):
     )
     assert len(worker.run()) == 1
     assert not worker.errors
-    assert manifests(root)[0][1]["item_count"] == 1
+    assert manifests(root)[0][1]["item_count"] == 2
 
 
 def test_batch_boundaries_keep_all_handles_for_each_item(setup):
@@ -187,7 +207,7 @@ def test_changes_during_mapping_remain_pending(setup, monkeypatch):
     assert not worker.errors
     assert pending(directory).count == 1
     assert manifests(root)[0][1]["item_count"] == 2
-    with SQLiteCatalog("cmip7", directory / "cmip7.sqlite", read_only=True) as reader:
+    with SQLiteCatalog("cmip7", directory / "piddi.db", read_only=True) as reader:
         assert (
             next(reader.iter_pending(10)).entry.item["properties"][
                 "custom:arrived-during-map"
@@ -291,12 +311,12 @@ def test_bad_checksum_is_quarantined_and_limit_preserves_progress(setup, caplog)
     assert worker.errors
     assert pending(directory).count == 1
     batch, manifest = manifests(root)[0]
-    assert manifest["item_count"] == manifest["failed_count"] == 1
-    assert manifest["succeeded_count"] == manifest["handle_count"] == 0
-    assert (batch / "handles.jsonl").read_bytes() == b""
+    assert manifest["item_count"] == 2
+    assert manifest["failed_count"] == manifest["succeeded_count"] == 1
+    assert manifest["handle_count"] == 2
     rejected = json.loads((batch / "failures.jsonl").read_text())
     assert rejected["data"]["payload"]["item"] == message["data"]["payload"]["item"]
-    assert rejected["__infos__"]["sequence"] == manifest["sequence"]
+    assert rejected["__infos__"]["last_work_id"] == manifest["last_work_id"]
     assert "Max error limit reached" in manifest["mapping_error"]
     assert not list(root.glob("batches/cmip7/.building-*"))
     assert asset_key in caplog.text
@@ -315,7 +335,7 @@ def test_worker_lock_prevents_overlapping_ticks(setup):
     put(1)
     put(2)
     worker = SyncWorker(publisher=Publisher())
-    with _worker_lock(worker.root) as acquired:
+    with _worker_lock(worker.catalog_directory) as acquired:
         assert acquired
         assert worker.run() == []
     assert pending(directory).count == 2
@@ -327,9 +347,8 @@ def test_error_limit_seals_valid_prefix_and_later_ticks_do_not_remap(setup, limi
     put, directory, root = setup
     config._set("plugins", "cmip7", {**config.get_plugin("cmip7"), "max_errors": limit})
     config._set("batch", "max_items", 100)
-    db = root / "monitor.sqlite"
+    db = directory / "piddi.db"
     config._set("stats", "enable_db", True)
-    config._set("stats", "db_path", str(db))
     put(1)
     bad = put(2)
     asset = next(iter(bad["data"]["payload"]["item"]["assets"].values()))
@@ -344,10 +363,11 @@ def test_error_limit_seals_valid_prefix_and_later_ticks_do_not_remap(setup, limi
     assert "Max error limit reached" in worker.errors[0]
     assert pending(directory).count == 1
     manifest = json.loads((paths[0] / "manifest.json").read_text())
-    assert manifest["item_count"] == 2
-    assert manifest["succeeded_count"] == manifest["failed_count"] == 1
+    assert manifest["item_count"] == 3
+    assert manifest["succeeded_count"] == 2
+    assert manifest["failed_count"] == 1
     assert (
-        manifest["handle_count"] == 2
+        manifest["handle_count"] == 4
     )  # Failed item's dataset Handle was rolled back.
     first_payload = (paths[0] / "handles.jsonl").read_bytes()
     next_tick = SyncWorker(publisher=publisher)
@@ -360,15 +380,14 @@ def test_error_limit_seals_valid_prefix_and_later_ticks_do_not_remap(setup, limi
     def counters():
         with closing(sqlite3.connect(db)) as connection:
             return connection.execute(
-                "SELECT COUNT(*), SUM(p.handles) FROM monitor_project_stats p "
-                "JOIN monitor_runs r USING (run_id) WHERE r.command = 'sync'"
+                "SELECT SUM(items), SUM(handles) FROM stats WHERE project='cmip7'"
             ).fetchone()
 
-    assert counters() == (2, 4)
+    assert counters() == (3, 6)
     files = {path: path.read_bytes() for path in root.rglob("*.json*")}
     for _ in range(3):
         assert SyncWorker(publisher=publisher).run(force_map=True) == []
-    assert counters() == (2, 4)
+    assert counters() == (3, 6)
     assert files == {path: path.read_bytes() for path in root.rglob("*.json*")}
     assert len(publisher.calls) == 2
 
@@ -378,7 +397,7 @@ def test_error_limit_seals_valid_prefix_and_later_ticks_do_not_remap(setup, limi
     assert len(updated.run(force_map=True)) == 1
     assert not updated.errors
     assert pending(directory).count == 0
-    assert counters() == (3, 6)
+    assert counters() == (4, 8)
 
 
 def test_rejected_records_are_verified_before_crash_recovery_acknowledgement(
@@ -402,7 +421,7 @@ def test_rejected_records_are_verified_before_crash_recovery_acknowledgement(
     assert worker.errors
     batch, manifest = manifests(root)[0]
     assert manifest["failed_count"] == 1
-    assert pending(directory).count == 2
+    assert pending(directory).count == 3
     failures = batch / "failures.jsonl"
     original = failures.read_bytes()
     failures.chmod(0o640)
@@ -410,13 +429,13 @@ def test_rejected_records_are_verified_before_crash_recovery_acknowledgement(
     recovered = SyncWorker(publisher=Publisher())
     recovered.run()
     assert "failure checksum/count mismatch" in recovered.errors[0]
-    assert pending(directory).count == 2
+    assert pending(directory).count == 3
     failures.write_bytes(original)
     publisher = Publisher()
     fixed = SyncWorker(publisher=publisher)
     assert fixed.run() == []
     assert not fixed.errors
-    assert pending(directory).count == 0
+    assert pending(directory).count == 1
     assert len(publisher.calls) == 1
     assert len(manifests(root)) == 1
 
@@ -452,13 +471,13 @@ def test_clean_generation_rejects_stale_ready_batch(setup):
     publisher = Publisher()
     publisher.fail = True
     SyncWorker(publisher=publisher).run()
-    with SQLiteCatalog("cmip7", directory / "cmip7.sqlite") as writer:
+    with SQLiteCatalog("cmip7", directory / "piddi.db") as writer:
         writer.reset()
     publisher.fail = False
     worker = SyncWorker(publisher=publisher)
     worker.run()
     assert worker.errors
-    assert "previous catalog generation" in worker.errors[0]
+    assert "source work is missing" in worker.errors[0]
     assert len(publisher.calls) == 1
 
 
@@ -472,7 +491,7 @@ def test_defaults_and_cli_worker_tick(setup, monkeypatch):
     put, _directory, _root = setup
     put(1)
     publisher = Publisher()
-    monkeypatch.setattr("piddiplatsch.runners.sync.HandlePublisher", lambda: publisher)
+    monkeypatch.setattr("piddiplatsch.runners.sync.get_publisher", lambda: publisher)
     result = CliRunner().invoke(cli, ["--silent", "sync", "--force-map"])
     assert result.exit_code == 0, result.output
     assert len(publisher.calls) == 1
@@ -545,7 +564,7 @@ def test_cli_publication_overrides_preserve_config(setup, monkeypatch):
     config._set("batch", "publish_workers", 2)
     config._set("batch", "publish_retries", 5)
     publisher = Publisher()
-    monkeypatch.setattr("piddiplatsch.runners.sync.HandlePublisher", lambda: publisher)
+    monkeypatch.setattr("piddiplatsch.runners.sync.get_publisher", lambda: publisher)
     result = CliRunner().invoke(
         cli,
         ["--silent", "sync", "--force-map", "--workers", "4", "--retries", "0"],
@@ -577,7 +596,7 @@ def test_cli_project_selection_preserves_other_ready_and_pending_work(
     config._set("consumer", "projects", ["cmip6", "cmip7"])
     publisher.fail = False
     publisher.calls.clear()
-    monkeypatch.setattr("piddiplatsch.runners.sync.HandlePublisher", lambda: publisher)
+    monkeypatch.setattr("piddiplatsch.runners.sync.get_publisher", lambda: publisher)
     result = CliRunner().invoke(
         cli, ["--silent", "sync", "--project", "cmip6", "--force-map"]
     )
@@ -609,7 +628,7 @@ def test_invalid_cli_overrides_do_not_publish(setup, monkeypatch, options, error
     put, directory, root = setup
     put(1)
     publisher = Publisher()
-    monkeypatch.setattr("piddiplatsch.runners.sync.HandlePublisher", lambda: publisher)
+    monkeypatch.setattr("piddiplatsch.runners.sync.get_publisher", lambda: publisher)
     result = CliRunner().invoke(cli, ["--silent", "sync", "--force-map", *options])
     assert result.exit_code != 0
     assert error in result.output
@@ -642,16 +661,23 @@ def test_corrupt_ready_payload_blocks_publication_before_ack(setup, monkeypatch)
     assert pending(directory).count == 2
 
 
-def test_identical_harvest_does_not_schedule_another_batch(setup):
+def test_identical_payloads_from_different_events_remain_independent(setup):
     put, directory, root = setup
-    put(1)
+    first_message = put(1)
     first = pending(directory)
     put(1)
-    assert pending(directory) == first
+    assert pending(directory).count == 2
+    with closing(CatalogHarvester(directory)) as harvester:
+        replay = harvester.process_with_source(
+            "key", first_message, KafkaSource("topic", 0, 0)
+        )
+    assert replay.filtered
+    assert pending(directory).count == 2
     SyncWorker(publisher=Publisher()).run(force_map=True)
     assert pending(directory).count == 0
     put(1)
-    assert pending(directory).count == 0
+    assert pending(directory).count == 1
+    assert first.last_id == 1
     assert len(manifests(root)) == 1
 
 
@@ -663,6 +689,7 @@ def test_mapping_failure_below_limit_keeps_valid_items_and_advances_queue(
     config._set(
         "plugins", "cmip7", {**config.get_plugin("cmip7"), "max_errors": max_errors}
     )
+    config._set("batch", "max_items", 100)
     message = put(1)
     put(2)
     item = deepcopy(message["data"]["payload"]["item"])
@@ -672,11 +699,11 @@ def test_mapping_failure_below_limit_keeps_valid_items_and_advances_queue(
     from piddiplatsch.core.registry import get_plugin
 
     dataset_id, version = get_plugin("cmip7").catalog_index(item["id"])
-    with SQLiteCatalog("cmip7", directory / "cmip7.sqlite") as writer:
+    with SQLiteCatalog("cmip7", directory / "piddi.db") as writer:
         with writer.transaction() as transaction:
-            transaction.put_item(
-                CatalogEntry(item["collection"], item, dataset_id, version)
-            )
+            entry = CatalogEntry(item["collection"], item, dataset_id, version)
+            transaction.put_item(entry)
+            transaction.add_work(entry, KafkaSource("invalid", 0, 0))
     publisher = Publisher()
     worker = SyncWorker(publisher=publisher)
     worker.run()
@@ -684,9 +711,10 @@ def test_mapping_failure_below_limit_keeps_valid_items_and_advances_queue(
     assert len(publisher.calls) == 1
     assert pending(directory).count == 0
     batch, manifest = manifests(root)[0]
-    assert manifest["item_count"] == 2
-    assert manifest["succeeded_count"] == manifest["failed_count"] == 1
-    assert manifest["handle_count"] == 2
+    assert manifest["item_count"] == 3
+    assert manifest["succeeded_count"] == 2
+    assert manifest["failed_count"] == 1
+    assert manifest["handle_count"] == 4
     assert item["id"] in (batch / "failures.jsonl").read_text()
     assert not list(root.glob("batches/cmip7/.building-*"))
 
@@ -781,8 +809,8 @@ def test_crash_after_catalog_ack_keeps_newer_changes_on_recovery(setup, monkeypa
     worker = SyncWorker(publisher=Publisher())
 
     def acknowledge_then_crash(batch, manifest):
-        with SQLiteCatalog("cmip7", directory / "cmip7.sqlite") as writer:
-            writer.acknowledge_mapped(manifest["generation"], manifest["sequence"])
+        with SQLiteCatalog("cmip7", directory / "piddi.db") as writer:
+            writer.seal_batch(manifest["batch_id"], manifest["outcomes"])
         raise RuntimeError("crash before manifest acknowledgement")
 
     monkeypatch.setattr(worker, "_acknowledge", acknowledge_then_crash)
@@ -832,3 +860,81 @@ def test_sync_progress_displays_map_and_known_publication_total(setup, monkeypat
         str(call) for call in bars.return_value.set_description_str.call_args_list
     ]
     assert any("sync cmip7 map" in phase and "items:" in phase for phase in phases)
+
+
+def test_full_and_patch_event_types_survive_harvest_mapping_and_publication(setup):
+    from piddiplatsch.monitoring.stats import Stats
+    from piddiplatsch.monitoring.status import read_status
+
+    put, directory, _root = setup
+    original = put(1)
+    payload = original["data"]["payload"]
+    patch = {
+        "data": {
+            "payload": dict(
+                method="PATCH",
+                collection_id=payload["collection_id"],
+                item_id=payload["item"]["id"],
+                patch=[dict(op="add", path="/properties/piddi:test", value="patched")],
+            )
+        }
+    }
+    config._set("batch", "max_items", 10)
+    config._set("stats", "enable_db", True)
+    database = directory / "piddi.db"
+    stats = Stats()
+    stats.configure_for_run(
+        enable_db=True,
+        db_path=str(database),
+        command="harvest",
+        selected_projects=("cmip7",),
+        heartbeat_interval_seconds=60,
+    )
+    with closing(CatalogHarvester(directory)) as harvester:
+        for key, message, offset in (
+            ("duplicate", original, 0),
+            ("full", original, 1),
+            ("patch", patch, 2),
+        ):
+            result = harvester.process_with_source(
+                key, message, KafkaSource("topic", 0, offset)
+            )
+            stats.record_result(result)
+    stats.close(status="completed")
+    before = read_status(database)
+    assert before["event_totals"] == dict(mapped=0, pending=3, invalid=0, total=3)
+    harvested = before["runs"][0]["projects"][0]
+    assert (
+        harvested["consumed"],
+        harvested["filtered"],
+        harvested["full_events"],
+        harvested["patch_events"],
+    ) == (3, 1, 1, 1)
+    health = before["health"]["projects"][0]
+    assert (health["pending_full_events"], health["pending_patch_events"]) == (2, 1)
+    with SQLiteCatalog("cmip7", database, read_only=True) as reader:
+        work = list(reader.iter_pending(10))
+        assert [row.event_type for row in work] == ["full", "full", "patch"]
+        assert work[-1].entry.item["properties"]["piddi:test"] == "patched"
+        assert "piddi:test" not in work[0].entry.item["properties"]
+    publisher = Publisher()
+    worker = SyncWorker(publisher=publisher)
+    worker.run(force_map=True)
+    assert not worker.errors
+    assert len(publisher.calls) == 1
+    after = read_status(database)
+    assert after["event_totals"] == dict(mapped=3, pending=0, invalid=0, total=3)
+    assert after["handle_totals"][0]["full_events"] == 2
+    assert after["handle_totals"][0]["patch_events"] == 1
+    mapped = next(run for run in after["runs"] if run["command"] == "sync")
+    assert (
+        mapped["projects"][0]["full_events"],
+        mapped["projects"][0]["patch_events"],
+    ) == (2, 1)
+    assert (
+        mapped["history"][0]["deltas"]["full_events"],
+        mapped["history"][0]["deltas"]["patch_events"],
+    ) == (2, 1)
+    # Recovery/repeated sync must not reclassify a saved PATCH as a full event.
+    assert SyncWorker(publisher=publisher).run(force_map=True) == []
+    assert read_status(database)["handle_totals"] == after["handle_totals"]

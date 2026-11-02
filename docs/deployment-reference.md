@@ -28,9 +28,9 @@ pending catalog items into separate batches and publishes them.
 | --- | --- |
 | `/opt/piddiplatsch/.conda` | Application environment. |
 | `/etc/piddi/piddi.toml` | Installed configuration. |
-| `/var/lib/piddi/catalog` | Catalogs and `.harvest-state.json`. |
+| `/var/lib/piddi/.harvest-state.json` | Harvest replay generation and clean progress. |
 | `/var/lib/piddi/batches` | Ready and published sync batches. |
-| `/var/lib/piddi/piddi.db` | Monitoring database. |
+| `/var/lib/piddi/piddi.db` | Catalog, work stream, shared checkpoints, retained batch summaries. |
 | `/var/lib/piddi/published` | Publication receipts. |
 | `/var/log/piddi/piddi.log` | Application log. |
 
@@ -93,17 +93,20 @@ Publication receipts are saved under `/var/lib/piddi/published/YYYY/MM/DD/`,
 grouped by UTC date. Existing flat receipt files remain in place.
 
 Failed batches stay in `batches/<project>/ready/` and block newer work for that
-project. Other projects can continue. See [Scheduled batch recovery](recovery.md#scheduled-batch-recovery).
+project. Other projects can continue. See [Scheduled batch recovery](recovery.md#publication-interruption).
 
 ## Backups
 
 Stop Piddi before taking a file-based backup. Save the configuration, catalog
 directory (including `.harvest-state.json`), and batch directory together.
-Keep daily Handle files and receipts according to your site's audit policy.
-Output files and batches have no automatic retention policy.
+Keep immutable batch files and receipts according to your site's audit policy.
+Completed batch output and closed receipts are compressed by default. Optional
+`maintenance.output_retention_days` removes them after a configured age; its
+default `0` keeps them indefinitely. Ready and failed batches are protected.
 
-The maintenance timer compresses closed raw dumps daily; it does not delete old
-archives, receipts, or batches. Control it with `piddi_enable_maintenance_timer`
+The maintenance timer runs daily and compresses closed raw dumps and completed
+output. It never deletes Kafka dumps. Completed batches/receipts are removed only
+when output retention is explicitly enabled. Control it with `piddi_enable_maintenance_timer`
 in Ansible's `custom.yml` (defaults to `piddi_enable_service`). Its command,
 `piddi maintain`, can also be run manually with `--dry-run` for inspection.
 
@@ -123,7 +126,7 @@ Move old application settings from Ansible YAML to `custom.toml`:
 | `piddi_max_errors` | `[plugins.<project>]` `max_errors`; set separately for each affected project. |
 | `piddi_output_dir` | `[consumer]` `output_dir`. |
 | `piddi_log_level`, `piddi_log_file` | `[logging]` `level`, `file`. |
-| `piddi_stats_enable_db`, `piddi_db_path` | `[stats]` `enable_db`, `db_path`. |
+| `piddi_stats_enable_db` | `[stats]` `enable_db` for live heartbeats and rate samples in `piddi.db`. |
 
 The playbook rejects these old YAML variables until they are moved.
 

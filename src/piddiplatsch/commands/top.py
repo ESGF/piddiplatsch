@@ -14,8 +14,7 @@ from rich.table import Table
 from rich.text import Text
 
 from piddiplatsch.monitoring.eta import backlog_estimate
-from piddiplatsch.monitoring.health import read_health
-from piddiplatsch.monitoring.status import read_status
+from piddiplatsch.monitoring.status import read_status, summarize_event_totals
 
 from .base import Command
 
@@ -41,7 +40,6 @@ class TopCommand(Command):
                     stale_after_seconds=self.stale_after_seconds,
                     history_seconds=300,
                 )
-                status["health"] = read_health(self.project)
                 status["backlog_estimate"] = backlog_estimate(status)
             except (FileNotFoundError, ValueError) as exc:
                 raise click.ClickException(str(exc)) from exc
@@ -64,7 +62,11 @@ class TopCommand(Command):
         """Keep the daily operator view to one table and actionable status lines."""
         active = _active_runs(status)
         lines = [_totals_line(status)]
-        starts = [run["started_at"] for run in status["runs"] if run.get("started_at")]
+        starts = (
+            [status["totals_since"]]
+            if status.get("totals_since")
+            else [run["started_at"] for run in status["runs"] if run.get("started_at")]
+        )
         if starts:
             start = min(datetime.fromisoformat(value) for value in starts).astimezone(
                 UTC
@@ -105,6 +107,7 @@ class TopCommand(Command):
             lines.append(
                 Text(
                     f"Harvest: {state} · {rate} events/s (5m avg) · {total:,} events {since}"
+                    + _harvest_event_types(harvest)
                 )
             )
         else:
@@ -113,8 +116,8 @@ class TopCommand(Command):
         for heading in (
             "Project",
             "Catalog items",
-            "Pending items",
-            "Generated handles",
+            "Pending events",
+            "Prepared handles",
             "Published handles",
             "Errors",
             "Activity",
@@ -135,8 +138,8 @@ class TopCommand(Command):
                     if heading
                     in {
                         "Catalog items",
-                        "Pending items",
-                        "Generated handles",
+                        "Pending events",
+                        "Prepared handles",
                         "Published handles",
                         "Errors",
                         "Harvest/s",
@@ -156,6 +159,9 @@ class TopCommand(Command):
                 error_totals[name] = error_totals.get(name, 0) + project.get(
                     "failed", 0
                 )
+        error_totals.update(
+            {name: counts.get("errors", 0) for name, counts in totals.items()}
+        )
         alerts = []
         for name in sorted(names):
             row = health.get(name, {})
@@ -183,6 +189,7 @@ class TopCommand(Command):
                 activity = "publishing"
             if (
                 row.get("failed_batches")
+                or row.get("invalid_items")
                 or _latest_mapping_has_errors(name, status["runs"])
                 or any(
                     p.get("failed", 0)
@@ -232,14 +239,7 @@ class TopCommand(Command):
                 _batch_progress(publishers),
                 eta,
             )
-        backlog = status.get("backlog_estimate", {})
-        if backlog.get("eta_seconds") is not None:
-            end = datetime.fromisoformat(backlog["estimated_end"]).astimezone(UTC)
-            alerts.append(
-                Text(
-                    f"Overall publish ETA: ~{_eta_duration(backlog['eta_seconds'])} ({end:%Y-%m-%d %H:%M} UTC) · current backlog only"
-                )
-            )
+        alerts.extend(_backlog_eta_lines(status.get("backlog_estimate", {})))
         return Group(
             *lines,
             table,
@@ -247,20 +247,53 @@ class TopCommand(Command):
         )
 
 
+def _backlog_eta_lines(backlog):
+    label = (
+        "Overall publish ETA (partial)"
+        if backlog.get("partial")
+        else "Overall publish ETA"
+    )
+    if backlog.get("eta_seconds") is not None:
+        end = datetime.fromisoformat(backlog["estimated_end"]).astimezone(UTC)
+        lines = [
+            Text(
+                f"{label}: ~{_eta_duration(backlog['eta_seconds'])} ({end:%Y-%m-%d %H:%M} UTC) · current backlog only"
+            )
+        ]
+        if backlog.get("rate_source") in {"recent_batch", "mixed"}:
+            lines[0].append(" · using recent batch speed during warm-up")
+    else:
+        reason = backlog.get("reason") or "waiting for an estimate"
+        lines = [Text(f"{label}: unavailable · {reason}", style="dim")]
+    missing = []
+    for project in backlog.get("unestimated_projects", []):
+        pending = project.get("pending_events")
+        count = f"{pending:,} pending events; " if pending is not None else ""
+        missing.append(f"{project['project']} ({count}{project['reason']})")
+    if missing:
+        lines.append(Text("Not estimated: " + "; ".join(missing)))
+    return lines
+
+
 def _totals_line(status: dict) -> Text:
     projects = status["health"]["projects"]
     counts = [row.get("total_items") for row in projects]
-    datasets = (
+    items = (
         sum(counts) if counts and all(value is not None for value in counts) else None
     )
-    generated = [
-        row["prepared"]
-        for row in status.get("handle_totals", [])
-        if row.get("prepared") is not None
-    ]
-    return Text(
-        f"Catalog: {_count(datasets)} datasets · Generated: {_count(sum(generated) if generated else None)} handles (recorded)"
+    events = status.get("event_totals") or summarize_event_totals(
+        projects, status.get("handle_totals", [])
     )
+    return Text(
+        f"Catalog: {_count(items)} items · Mapped: {_count(events['mapped'])} / {_count(events['total'])} events"
+    )
+
+
+def _harvest_event_types(runs):
+    rows = [row for run in runs for row in run["projects"]]
+    full = sum(row.get("full_events", 0) for row in rows)
+    patches = sum(row.get("patch_events", 0) for row in rows)
+    return f" · stored: {full:,} full / {patches:,} patch"
 
 
 def _harvest_trend(runs: list[dict], project: str) -> str:

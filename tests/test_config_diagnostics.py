@@ -23,7 +23,7 @@ def test_explain_reports_file_origins_and_resolved_paths(configured, tmp_path):
     site.write_text('[logging]\nfile = "site.log"\n[handles.defaults]\ntimeout = 23\n')
     local.write_text(
         '[consumer]\noutput_dir = "local-output"\n'
-        '[stats]\ndb_path = "local.db"\n'
+        '[catalog]\ndirectory = "local-data"\n'
         '[plugins.cmip6]\nhandle_prefix = "21.LOCAL"\n'
     )
     configured.load_config_layers(local, site)
@@ -43,7 +43,7 @@ def test_explain_reports_file_origins_and_resolved_paths(configured, tmp_path):
     ):
         assert f"  {label}: {path}" in result.output
         assert result.output.count(str(path)) == 1
-    for path in ("site.log", "local-output", "local.db"):
+    for path in ("site.log", "local-output", "local-data/piddi.db"):
         assert str(tmp_path / path) in result.output
     assert "testpass" not in result.output
 

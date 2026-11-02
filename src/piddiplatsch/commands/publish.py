@@ -6,12 +6,6 @@ from pathlib import Path
 import click
 
 from piddiplatsch.commands.base import FileBatchCommand
-from piddiplatsch.commands.helper import (
-    resolve_all_dated_input,
-    resolve_dated_range_input,
-    resolve_latest_dated_input,
-)
-from piddiplatsch.core.plugin import normalize_project_id
 from piddiplatsch.result import PublishResult
 from piddiplatsch.runners.publish import HandlePublisher
 
@@ -27,6 +21,9 @@ class PublishCommand(FileBatchCommand):
     handle_profile: str | None = None
 
     def execute(self) -> None:
+        if not self.paths:
+            self._publish_batches()
+            return
         paths = self._resolve_paths()
         progress_label = (
             f"publish {self.project} handles" if self.project else "publish handles"
@@ -58,41 +55,56 @@ class PublishCommand(FileBatchCommand):
 
         self._show_result(result, progress.position)
 
-    def _resolve_paths(self) -> tuple[Path, ...]:
+    def _publish_batches(self):
+        from piddiplatsch.exceptions import BatchError, CatalogError
+        from piddiplatsch.runners.sync import SyncWorker
+
         self.validate_input()
-        project_name = normalize_project_id(self.project or "")
-        if self.from_date is not None or self.to_date is not None:
-            if not project_name:
-                raise click.UsageError("--from/--to requires --project")
-            return resolve_dated_range_input(
-                relative_dir=Path(project_name) / "handles",
-                filename_prefix="handles_",
-                missing_label=f"{project_name} Handle",
-                from_date=self.from_date,
-                to_date=self.to_date,
+        if (
+            self.input_date not in (None, "all")
+            or self.from_date
+            or self.to_date
+            or self.limit
+            or self.offset
+        ):
+            raise click.UsageError(
+                "Queued publication processes complete batches in order; date/limit/offset selectors require explicit files"
             )
-        if not self.paths and not project_name:
-            if self.input_date is None:
-                raise click.UsageError("Provide PATH or --project")
-            raise click.UsageError("--date requires --project")
-        if not self.paths and self.input_date in (None, "last"):
-            return resolve_latest_dated_input(
-                relative_dir=Path(project_name) / "handles",
-                filename_prefix="handles_",
-                missing_label=f"{project_name} Handle",
+        try:
+            worker = SyncWorker(
+                projects=(self.project,) if self.project else (),
+                workers=self.workers,
+                retries=self.retries,
+                handle_profile=self.handle_profile,
+                publisher=HandlePublisher(),
             )
-        if self.input_date == "all":
-            return resolve_all_dated_input(
-                relative_dir=Path(project_name) / "handles",
-                filename_prefix="handles_",
-                missing_label=f"{project_name} Handle",
-            )
-        return self.resolve_paths(
-            relative_path=lambda date: Path(project_name)
-            / "handles"
-            / f"handles_{date}.jsonl",
-            missing_label="Handle file",
-        )
+            worker.run(publish_only=True)
+            if worker.errors:
+                raise BatchError("; ".join(worker.errors))
+        except (BatchError, CatalogError, ValueError, OSError) as exc:
+            raise click.ClickException(str(exc)) from exc
+        click.echo(f"Published {worker.published_handles} Handles from queued batches.")
+
+    def _resolve_paths(self) -> tuple[Path, ...]:
+        from piddiplatsch.config import config
+
+        self.validate_input()
+        root = Path(
+            config.get("batch", "directory")
+            or Path(config.get("consumer", "output_dir", "outputs")) / "batches"
+        ).resolve()
+        if root.exists():
+            for source in self.paths:
+                path = source.resolve()
+                if (
+                    path == root
+                    or root in path.parents
+                    or (path.is_dir() and path in root.parents)
+                ):
+                    raise click.UsageError(
+                        "Publish managed batches without PATH using --project, so saved progress and ordering are preserved"
+                    )
+        return self.paths
 
     def _show_result(self, result: PublishResult, last_handle_position: int) -> None:
         if result.total == 0:

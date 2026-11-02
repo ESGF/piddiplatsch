@@ -12,7 +12,7 @@
 # - lookup: dataset version lookup adapters (map uses its catalog snapshot)
 # - catalog: local project catalogs maintained by harvest
 # - batch: scheduled mapping thresholds and ready-batch publication
-# - stats: logging/SQLite reporter settings
+# - stats: logging and live-status settings
 #
 # Full reference defaults; for site setup, start with etc/esgf-example.toml.
 # Apply site overrides in /etc/piddi/piddi.toml and local overrides in custom.toml.
@@ -29,17 +29,24 @@ dump_max_events = 100000
 
 [disk]
 enabled = true
+# Warn below 40 GiB; below 20 GiB, latch a stop for manual inspection.
+# After freeing space, remove <output_dir>/.disk-space-stop and restart services.
 warn_free_gib = 40
 stop_free_gib = 20
 check_interval_seconds = 10
 
 [catalog]
-# Harvest maintains one SQLite database per registered project encountered.
+# Harvest maintains one shared piddi.db with project-scoped catalog/work rows.
 # Missing PATCH bases fetch current remote STAC state without reapplying the patch.
 # Recovered items stay marked for remote refresh on later events and harvest startup.
 # --no-catalog retains the previous raw-dump-only behavior.
 enabled = true
 backend = "sqlite"
+# false: stop harvest on an unknown project without acknowledging its event.
+# true: durably dump it to dump/unknown_projects_*.jsonl, count it as filtered,
+# and continue without creating catalog or work rows for that project.
+# Override for one run: --ignore-unknown-projects or --stop-on-unknown-projects.
+ignore_unknown_projects = false
 # Batch broker acknowledgements after durable local writes. Flush pending offsets
 # on idle, shutdown, limits, and partition revocation. Set batch size 1 for
 # per-message commits (slower on remote brokers).
@@ -48,21 +55,32 @@ kafka_commit_interval_seconds = 1.0
 # Link each dataset version to its nearest strictly older catalog item in map.
 # Keep disabled during initial filling; override with map --version-history.
 version_history = false
-# Default directory: <consumer.output_dir>/catalog. Override if needed:
-# directory = "/var/lib/piddi/catalog"
+# Default database: <consumer.output_dir>/piddi.db. Override its directory:
+# directory = "/var/lib/piddi"
 
 [batch]
-# Per project: map when this many distinct items are pending OR the oldest has
+# Per project: map when this many event snapshots are pending OR the oldest has
 # waited max_wait_seconds. Harvest changes arriving during mapping stay pending.
 trigger_items = 1000
 max_wait_seconds = 3600
-# Maximum catalog items per immutable output batch; never split an item's Handles.
+# Maximum work entries per immutable output batch; never split an entry's Handles.
 max_items = 2000
 # Ready batches publish immediately during the sync tick, in project order.
 publish_workers = 4
 publish_retries = 3
+# Database cleanup is disabled by default. Set a positive number of days to
+# expire published work; retain catalog records and summaries.
+retention_days = 0
 # Default: <consumer.output_dir>/batches. Must be shared by all worker invocations.
 # directory = "/var/lib/piddi/batches"
+
+[maintenance]
+# Gzip completed batch JSONL and closed publication receipts. Ready/failed
+# batches and receipts still needed by ready batches are retained unchanged.
+compress_outputs = true
+# Keep completed output forever by default. Set e.g. 30 to remove it after
+# 30 days. This does not delete Kafka dumps, DB summaries, or pending work.
+output_retention_days = 0
 
 [logging]
 # INFO shows progress summaries. Use -vv/--debug for per-record details.
@@ -209,11 +227,12 @@ interval_seconds = 30
 # Message count threshold before logging a stats snapshot.
 summary_interval = 10000
 
-# Enable SQLite monitoring for map and the mapping phase of sync runs.
+# Enable live heartbeats and rate samples in piddi.db (the same four tables).
+# Each batch has a retained stats row with original full/patch event counts;
+# prepared/published Handle counts include aliases.
+# Batch summaries are committed with work-state transitions even if monitoring is off.
+# Heartbeats use separate run rows and never contribute to batch totals.
 enable_db = true
-
-# Path to SQLite database file (used only if enable_db = true).
-db_path = "piddi.db"
 
 # Heartbeats are written even while Kafka is idle. A monitor considers an
 # unfinished run stale after the second threshold.

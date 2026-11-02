@@ -59,3 +59,25 @@ def test_get_delegates_without_writing_jsonl(tmp_path):
 
     assert backend.get("abc") == {"URL": "https://example.test/abc"}
     assert list(tmp_path.rglob("*.jsonl")) == []
+
+
+@pytest.mark.parametrize("relative", [False, True])
+def test_explicit_batch_path_does_not_create_default_handle_directory(
+    tmp_path, relative
+):
+    from pathlib import Path
+
+    default_output = tmp_path / "unused-output"
+    config._set("consumer", "output_dir", str(default_output))
+    path = Path("batches/batch-one/handles.jsonl")
+    if not relative:
+        path = tmp_path / path
+    backend = JsonlHandleBackend(project="cmip6", output_filename=str(path))
+    backend.add(
+        "abc", {"URL": "https://example.test/abc", "AGGREGATION_LEVEL": "DATASET"}
+    )
+    records = [record for _, _, record in iter_jsonl_records([path])]
+    assert len(records) == 1
+    assert records[0]["URL"] == "https://example.test/abc"
+    assert records[0]["project"] == "cmip6"
+    assert not default_output.exists()

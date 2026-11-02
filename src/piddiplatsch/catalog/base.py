@@ -10,8 +10,8 @@ from typing import Self
 from piddiplatsch.catalog.models import (
     CatalogEntry,
     KafkaCheckpoint,
-    PendingCatalogChanges,
-    PendingCatalogItem,
+    PendingWork,
+    WorkItem,
 )
 
 
@@ -45,21 +45,19 @@ class BaseCatalogReader(ABC):
 
     @abstractmethod
     def latest_event_date(self) -> date | None:
-        """Return the latest dated item's UTC event day without reading payloads."""
+        """Return the latest dated item's UTC event day."""
 
     @abstractmethod
-    def pending_changes(self, max_sequence: int | None = None) -> PendingCatalogChanges:
-        """Count distinct unmapped items without reading payloads."""
+    def pending_work(self, max_id: int | None = None) -> PendingWork:
+        """Count pending event snapshots without reading payloads."""
 
     @abstractmethod
-    def iter_pending(
-        self, limit: int, max_sequence: int | None = None
-    ) -> Iterator[PendingCatalogItem]:
-        """Read oldest pending item sequences from this snapshot, bounded by limit."""
+    def iter_pending(self, limit: int, max_id: int | None = None) -> Iterator[WorkItem]:
+        """Read oldest pending event snapshots from this view, bounded by limit."""
 
     @abstractmethod
     def get_checkpoint(self, topic: str, partition: int) -> KafkaCheckpoint | None:
-        """Read the next offset to consume for this project's source partition."""
+        """Read the shared next offset for a source topic/partition."""
 
 
 class BaseCatalogTransaction(BaseCatalogReader):
@@ -79,6 +77,12 @@ class BaseCatalogTransaction(BaseCatalogReader):
         """
 
     @abstractmethod
+    def add_work(
+        self, entry: CatalogEntry, source, *, event_type: str = "full"
+    ) -> None:
+        """Insert an immutable event snapshot in the catalog/checkpoint transaction."""
+
+    @abstractmethod
     def set_checkpoint(self, checkpoint: KafkaCheckpoint) -> None:
         """Write a checkpoint; reject backwards movement with ``CatalogError``."""
 
@@ -86,7 +90,7 @@ class BaseCatalogTransaction(BaseCatalogReader):
 class BaseCatalog(BaseCatalogReader):
     """One project's persistent catalog, implemented by a storage backend.
 
-    Each project uses a separate database file for embedded backends. Project
+    Project-scoped views share one database file. Project
     routing, STAC validation, version parsing, patches, and Kafka acknowledgement
     remain outside the backend. Importing this interface must not load database
     drivers, configuration, Kafka, or remote clients.
@@ -120,11 +124,10 @@ class BaseCatalog(BaseCatalogReader):
     ) -> Iterator[CatalogEntry]:
         """Stream entries with bounded memory, optionally by inclusive UTC days.
 
-        Unfiltered order is collection/item identity; date-filtered order is
-        event day then collection/item identity. Undated items are excluded from
-        date selections. Apply filtering through metadata indexes, not payloads.
+        Order is collection/item identity, including when filtering by source day. Undated items are excluded from
+        date selections. Source-date and recovery filters inspect compressed snapshot metadata.
 
-        ``remote_refresh_only`` selects marked recovery entries using an index.
+        ``remote_refresh_only`` selects marked recovery entries.
 
         Yield one current complete state per versioned item. Callers must close
         the iterator when stopping early; backends release read resources on close.
@@ -140,12 +143,12 @@ class BaseCatalog(BaseCatalogReader):
         """
 
     @abstractmethod
-    def acknowledge_mapped(self, generation: str, sequence: int) -> None:
-        """Clear dirty entries through a sealed batch's sequence in its generation.
+    def seal_batch(self, batch_id: str, outcomes: list[dict]) -> None:
+        """Commit exact mapping outcomes after batch files are durable, idempotently."""
 
-        Concurrently changed items have newer sequences and remain pending. This
-        is mapping progress, independent of Kafka checkpoints and publication.
-        """
+    @abstractmethod
+    def publish_batch(self, batch_id: str, handle_count: int, *, error=None) -> None:
+        """Update publication progress and the retained batch summary atomically."""
 
     @abstractmethod
     def compact(self) -> None:

@@ -1,73 +1,77 @@
-import json
 import sqlite3
 
+from piddiplatsch.catalog import CatalogEntry
+from piddiplatsch.catalog.sqlite import SQLiteCatalog
 from piddiplatsch.config import config
+from piddiplatsch.core.messages import KafkaSource
 from piddiplatsch.monitoring.health import read_health
 
 
-def test_health_reads_backlog_failed_work_and_last_success_without_migration(tmp_path):
+def seed(path):
+    with SQLiteCatalog("cmip7", path) as writer:
+        with writer.transaction() as transaction:
+            for index in range(5):
+                entry = CatalogEntry("CMIP7", {"id": f"item{index}"}, "dataset", index)
+                transaction.put_item(entry)
+                transaction.add_work(entry, KafkaSource("topic", 0, index))
+        writer.seal_batch("ready", [{"id": 1, "error": None, "handle_count": 3}])
+        writer.publish_batch("ready", 3, error="Server unavailable")
+        writer.seal_batch("done", [{"id": 2, "error": None, "handle_count": 17}])
+        writer.publish_batch("done", 17)
+        writer.seal_batch("invalid", [{"id": 3, "error": "Invalid item"}])
+
+
+def test_health_reads_only_database_without_modifying_it(tmp_path):
     config._set("consumer", "output_dir", str(tmp_path))
-    config._set("consumer", "projects", ["cmip7"])
-    catalog = tmp_path / "catalog/cmip7.sqlite"
-    catalog.parent.mkdir()
-    with sqlite3.connect(catalog) as connection:
-        connection.execute("CREATE TABLE items (id INTEGER PRIMARY KEY)")
-        connection.executemany("INSERT INTO items VALUES (?)", [(1,), (2,), (3,)])
-        connection.execute("CREATE TABLE pending_items (id INTEGER PRIMARY KEY)")
-        connection.executemany("INSERT INTO pending_items VALUES (?)", [(1,), (2,)])
+    catalog = tmp_path / "piddi.db"
+    seed(catalog)
     original = catalog.read_bytes()
-    root = tmp_path / "batches/cmip7"
-    (root / "ready/batch-one").mkdir(parents=True)
-    (root / "ready/batch-one/manifest.json").write_text('{"status":"ready"}')
-    failed = root / ".building-failed/manifest.json"
-    failed.parent.mkdir()
-    failed.write_text('{"status":"failed"}')
-    marker = {"published_at": "2026-10-30T19:00:00+00:00", "handle_count": 17}
-    (root / "last-publication.json").write_text(json.dumps(marker))
+    # Contradictory and corrupt sidecars cannot affect database health.
+    root = tmp_path / "batches/cmip7/ready/fake"
+    root.mkdir(parents=True)
+    (root / "manifest.json").write_text("broken")
+    (root.parent.parent / "last-publication.json").write_text('{"handle_count":999}')
 
-    health = read_health("cmip7")
-
-    assert health["projects"] == [
-        {
-            "project": "cmip7",
-            "total_items": 3,
-            "pending_items": 2,
-            "ready_batches": 1,
-            "failed_batches": 1,
-            "last_publication": marker,
-            "ready_handles": None,
-            "ready_batch_ids": ["batch-one"],
-            "errors": [],
-        }
-    ]
+    row = read_health("cmip7")["projects"][0]
+    marker = row.pop("last_publication")
+    assert marker["handle_count"] == 17
+    assert marker["batch_id"] == "done"
+    assert row == dict(
+        project="cmip7",
+        total_items=5,
+        pending_items=2,
+        pending_full_events=2,
+        pending_patch_events=0,
+        invalid_items=1,
+        ready_batches=1,
+        failed_batches=1,
+        ready_handles=3,
+        ready_batch_ids=["ready"],
+        errors=[],
+    )
     assert catalog.read_bytes() == original
-    assert health["storage"][0]["free_bytes"] > 0
 
 
-def test_health_reports_old_or_unreadable_catalog_without_creating_missing_paths(
-    tmp_path,
-):
+def test_health_reports_unreadable_database_without_creating_paths(tmp_path):
     config._set("consumer", "output_dir", str(tmp_path))
     config._set("consumer", "projects", ["cmip6", "cmip7"])
-    catalog = tmp_path / "catalog/cmip6.sqlite"
-    catalog.parent.mkdir()
+    catalog = tmp_path / "piddi.db"
     catalog.write_text("not a database")
-
     rows = read_health()["projects"]
-
     assert rows[0]["pending_items"] is None
     assert rows[0]["total_items"] is None
     assert "Catalog status unavailable" in rows[0]["errors"][0]
     assert rows[1]["project"] == "cmip7"
     assert not (tmp_path / "batches").exists()
-    assert not (tmp_path / "catalog/cmip7.sqlite").exists()
+    assert catalog.read_text() == "not a database"
 
 
-def test_health_counts_publication_failure_as_ready_and_failed(tmp_path):
+def test_health_preserves_last_publication_after_work_retention(tmp_path):
     config._set("consumer", "output_dir", str(tmp_path))
-    manifest = tmp_path / "batches/cmip7/ready/failed-publication/manifest.json"
-    manifest.parent.mkdir(parents=True)
-    manifest.write_text('{"status":"ready","publication_error":"Server unavailable"}')
+    database = tmp_path / "piddi.db"
+    seed(database)
+    with sqlite3.connect(database) as connection:
+        connection.execute("DELETE FROM work_items WHERE state='published'")
     row = read_health("cmip7")["projects"][0]
     assert row["ready_batches"] == row["failed_batches"] == 1
-    assert row["last_publication"] is None
+    assert row["last_publication"]["handle_count"] == 17

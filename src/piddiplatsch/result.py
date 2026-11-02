@@ -15,6 +15,8 @@ class ProcessingResult:
     project: str | None = None
     plugin: str | None = None
     patched: bool = False
+    # Source event type for stored harvest events and mapped/rejected work.
+    event_type: str | None = None
     elapsed: float = 0.0
 
     # Detailed timings

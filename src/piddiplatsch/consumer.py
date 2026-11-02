@@ -205,13 +205,23 @@ class KafkaConsumer:
 class HarvestProcessor:
     """Harvest raw dumps, optionally maintaining complete project catalogs."""
 
-    def __init__(self, *, catalog_dir=None, backend="sqlite", clean_projects=()):
+    def __init__(
+        self,
+        *,
+        catalog_dir=None,
+        backend="sqlite",
+        clean_projects=(),
+        ignore_unknown_projects=None,
+    ):
         self._harvester = None
         if catalog_dir is not None:
             from piddiplatsch.catalog.harvest import CatalogHarvester
 
             self._harvester = CatalogHarvester(
-                catalog_dir, backend=backend, clean_projects=clean_projects
+                catalog_dir,
+                backend=backend,
+                clean_projects=clean_projects,
+                ignore_unknown_projects=ignore_unknown_projects,
             )
         self.requires_kafka_source = self._harvester is not None
         self.stop_on_error = self.requires_kafka_source
@@ -301,7 +311,7 @@ def start_consumer(
     selected_projects = getattr(proc_instance, "project_names", ())
     stats.configure_for_run(
         enable_db=monitor_db and stats_config.get("enable_db", False),
-        db_path=stats_config.get("db_path"),
+        db_path=None,
         log_interval_seconds=stats_config.get("interval_seconds"),
         log_interval_messages=stats_config.get("summary_interval"),
         command="harvest" if isinstance(proc_instance, HarvestProcessor) else "consume",
