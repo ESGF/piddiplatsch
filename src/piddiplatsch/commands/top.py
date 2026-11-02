@@ -15,6 +15,7 @@ from rich.text import Text
 
 from piddiplatsch.config import config
 from piddiplatsch.monitoring.eta import backlog_estimate
+from piddiplatsch.monitoring.rates import WINDOWS
 from piddiplatsch.monitoring.sampling import BackgroundMetrics
 from piddiplatsch.monitoring.status import read_status, summarize_event_totals
 
@@ -286,8 +287,40 @@ class TopCommand(Command):
         return Group(
             *lines,
             table,
+            *_processing_rate_lines(status.get("processing_rates", [])),
             *alerts,
         )
+
+
+def _processing_rate_lines(rows):
+    if not rows:
+        return []
+    lines = [
+        Text(
+            "Combined average speeds ~ (10m / 30m / 1h; active time, available samples):",
+            style="dim",
+        )
+    ]
+    speeds = {}
+    for phase in ("map", "publish"):
+        values = []
+        for label in WINDOWS:
+            samples = [row[phase][label] for row in rows]
+            elapsed = sum(sample["active_seconds"] for sample in samples)
+            count = sum(
+                sample["per_second"] * sample["active_seconds"]
+                for sample in samples
+                if sample["per_second"] is not None
+            )
+            values.append(f"{count / elapsed:,.1f}" if elapsed else "—")
+        speeds[phase] = " / ".join(values)
+    lines.append(
+        Text(
+            f"Map: {speeds['map']} events/s"
+            f" · Publish: {speeds['publish']} handles/s"
+        )
+    )
+    return lines
 
 
 def _backlog_eta_lines(backlog):

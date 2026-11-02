@@ -11,6 +11,7 @@ from pathlib import Path
 
 from piddiplatsch.monitoring.estimates import estimate_table_sizes
 from piddiplatsch.monitoring.eta import publication_progress
+from piddiplatsch.monitoring.rates import processing_rates
 
 
 def read_status(
@@ -89,6 +90,7 @@ def read_status(
         if latest:
             health["storage"] = latest.get("storage", [])
         result_runs = []
+        rate_payloads = []
         cutoff = (now - datetime.timedelta(seconds=history_seconds)).isoformat()
         for payload in payloads.values():
             try:
@@ -130,6 +132,7 @@ def read_status(
                 if run["command"] == "publish":
                     run["publication"] = publication_progress(run, samples, now)
                 result_runs.append(run)
+                rate_payloads.append(payload)
             except (OSError, ValueError, KeyError, TypeError):
                 continue
         result_runs.sort(key=lambda run: run["heartbeat_at"], reverse=True)
@@ -140,6 +143,7 @@ def read_status(
         "generated_at": now.isoformat(),
         "stale_after_seconds": stale_after_seconds,
         "history_seconds": history_seconds,
+        "processing_rates": processing_rates(rate_payloads, now, project),
         "runs": result_runs,
         "health": health,
         "handle_totals": [dict(row) for row in handle_totals],
