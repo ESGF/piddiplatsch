@@ -9,6 +9,7 @@ from contextlib import closing
 from itertools import pairwise
 from pathlib import Path
 
+from piddiplatsch.monitoring.estimates import estimate_table_sizes
 from piddiplatsch.monitoring.eta import publication_progress
 
 
@@ -18,6 +19,8 @@ def read_status(
     project: str | None = None,
     stale_after_seconds: float = 15.0,
     history_seconds: float = 3600.0,
+    include_table_sizes: bool = True,
+    include_health: bool = True,
 ) -> dict:
     """Return the shared status model used by operator-facing commands."""
     path = Path(db_path)
@@ -46,9 +49,6 @@ def read_status(
             "AND (? IS NULL OR lower(project)=lower(?))",
             (project, project),
         ).fetchone()[0]
-        from piddiplatsch.monitoring.health import database_health
-
-        health = database_health(connection, project)
         payloads = {}
         latest = None
         for row in connection.execute("SELECT id,runtime FROM stats WHERE kind='run'"):
@@ -66,6 +66,26 @@ def read_status(
                 payload["run"] = fragment["run"]
             payload["projects"].extend(fragment["projects"])
             payload["samples"].extend(fragment["samples"])
+        names = {row["project"] for row in handle_totals}
+        for payload in payloads.values():
+            names.update(row["project"] for row in payload["projects"])
+            names.update(payload["run"].get("selected_projects", []))
+        from piddiplatsch.monitoring.health import database_health
+
+        health = (
+            database_health(connection, None, fast=True)
+            if include_health or include_table_sizes
+            else pending_health(project, names)
+        )
+        table_sizes = None
+        if include_table_sizes:
+            table_sizes = estimate_table_sizes(connection, health)
+        if project:
+            health["projects"] = [
+                row
+                for row in health["projects"]
+                if row["project"].casefold() == project.casefold()
+            ]
         if latest:
             health["storage"] = latest.get("storage", [])
         result_runs = []
@@ -125,7 +145,26 @@ def read_status(
         "handle_totals": [dict(row) for row in handle_totals],
         "event_totals": summarize_event_totals(health["projects"], handle_totals),
         "totals_since": totals_since,
+        "table_sizes": table_sizes,
     }
+
+
+def pending_health(project, names):
+    """Unknown counts until the background snapshot finishes."""
+    return dict(
+        storage=[],
+        projects=[
+            dict(
+                project=name,
+                total_items=None,
+                pending_items=None,
+                invalid_items=None,
+                ready_handles=None,
+                errors=[],
+            )
+            for name in sorted({project.casefold()} if project else names)
+        ],
+    )
 
 
 def summarize_event_totals(projects, batch_totals):

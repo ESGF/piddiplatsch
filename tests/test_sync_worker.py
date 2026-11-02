@@ -911,8 +911,17 @@ def test_full_and_patch_event_types_survive_harvest_mapping_and_publication(setu
         harvested["patch_events"],
     ) == (3, 1, 1, 1)
     health = before["health"]["projects"][0]
-    assert (health["pending_full_events"], health["pending_patch_events"]) == (2, 1)
+    # Top deliberately skips these payload-table counts; stored classifications
+    # remain available through the explicit health reader and work snapshots.
+    assert (health["pending_full_events"], health["pending_patch_events"]) == (
+        None,
+        None,
+    )
     with SQLiteCatalog("cmip7", database, read_only=True) as reader:
+        from piddiplatsch.monitoring.health import database_health
+
+        exact = database_health(reader._require_connection())["projects"][0]
+        assert (exact["pending_full_events"], exact["pending_patch_events"]) == (2, 1)
         work = list(reader.iter_pending(10))
         assert [row.event_type for row in work] == ["full", "full", "patch"]
         assert work[-1].entry.item["properties"]["piddi:test"] == "patched"

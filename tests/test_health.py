@@ -4,7 +4,7 @@ from piddiplatsch.catalog import CatalogEntry
 from piddiplatsch.catalog.sqlite import SQLiteCatalog
 from piddiplatsch.config import config
 from piddiplatsch.core.messages import KafkaSource
-from piddiplatsch.monitoring.health import read_health
+from piddiplatsch.monitoring.health import database_health, read_health
 
 
 def seed(path):
@@ -75,3 +75,40 @@ def test_health_preserves_last_publication_after_work_retention(tmp_path):
     row = read_health("cmip7")["projects"][0]
     assert row["ready_batches"] == row["failed_batches"] == 1
     assert row["last_publication"]["handle_count"] == 17
+
+
+def test_fast_health_counts_via_covering_indexes_without_payload_or_event_reads(
+    tmp_path,
+):
+    database = tmp_path / "piddi.db"
+    seed(database)
+    with sqlite3.connect(database) as connection:
+        expected = database_health(connection)
+
+        def authorize(action, table, column, *args):
+            if (
+                action == sqlite3.SQLITE_READ
+                and table in {"catalog_items", "work_items"}
+                and column in {"stac_blob", "event_type"}
+            ):
+                return sqlite3.SQLITE_DENY
+            return sqlite3.SQLITE_OK
+
+        connection.set_authorizer(authorize)
+        fast = database_health(connection, fast=True)
+        assert fast["projects"][0]["work_items"] == 5
+        assert fast["projects"][0]["pending_full_events"] is None
+        for key in (
+            "total_items",
+            "pending_items",
+            "invalid_items",
+            "ready_handles",
+            "last_publication",
+        ):
+            assert fast["projects"][0][key] == expected["projects"][0][key]
+        for query in (
+            "SELECT COUNT(*) FROM catalog_items INDEXED BY catalog_versions WHERE project='cmip7'",
+            "SELECT state,COUNT(*) FROM work_items INDEXED BY work_selection WHERE project='cmip7' GROUP BY state",
+        ):
+            plan = connection.execute("EXPLAIN QUERY PLAN " + query).fetchall()
+            assert any("COVERING INDEX" in row[3] for row in plan)

@@ -1,7 +1,7 @@
 """Complete Click interface for piddiplatsch."""
 
 import warnings
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
 
 import click
@@ -32,6 +32,18 @@ def _parse_range_date(
     if isinstance(selected, str):
         raise click.BadParameter(f"{selected} cannot be used as a range boundary")
     return selected
+
+
+def _parse_reset_from(_ctx, _param, value):
+    if value is None:
+        return None
+    try:
+        selected = parse_date_selector(value, today=datetime.now(UTC).date())
+        if isinstance(selected, str):
+            raise ValueError("--from requires a creation day, not 'all' or 'last'")
+        return selected
+    except ValueError as exc:
+        raise click.BadParameter(str(exc)) from exc
 
 
 @click.group(context_settings=CONTEXT_SETTINGS)
@@ -104,12 +116,17 @@ def cli(
     config.load_config_layers(config_file)
     # Inspection/reset must work without opening a possibly unwritable log.
     # Validation reports logging errors through its schema.
-    if ctx.invoked_subcommand in {"config", "reset"}:
+    if ctx.invoked_subcommand in {"config", "admin"}:
         return
     try:
         config.configure_logging(verbosity=verbosity, debug=debug, log=log)
     except ValueError as exc:
         raise click.ClickException(str(exc)) from exc
+
+
+@cli.group("admin")
+def admin() -> None:
+    """Manual reset, consolidation and destructive catalog recovery jobs."""
 
 
 @cli.command("sync")
@@ -154,21 +171,46 @@ def sync(
     ).execute()
 
 
-@cli.command("reset")
+@admin.command("reset")
 @click.option(
     "--project", required=True, help="Project whose processing should be reset."
 )
 @click.option(
+    "--from",
+    "from_date",
+    callback=_parse_reset_from,
+    help="Reset from this UTC work creation day onward (YYYY-MM-DD, today, yesterday, today-N); expands to complete batches.",
+)
+@click.option(
     "--apply",
     is_flag=True,
-    help="Archive project output, clear project summaries, and requeue retained work; default is a preview.",
+    help="Archive affected output, clear affected summaries, and requeue selected work; default is a preview.",
 )
-def reset(project: str, apply: bool) -> None:
+def reset(project: str, apply: bool, from_date: datetime | None) -> None:
     """Reset project processing, preserving STAC records and Kafka checkpoints.
 
     Stop harvest and sync before using --apply. This command does not publish.
     """
-    commands.ResetCommand(project=project, apply=apply).execute()
+    commands.ResetCommand(project=project, apply=apply, from_date=from_date).execute()
+
+
+@admin.command("rebuild")
+@click.option(
+    "--apply",
+    is_flag=True,
+    help="Consolidate fully published work into published catalog snapshots; default is a preview.",
+)
+@click.option(
+    "--vacuum",
+    is_flag=True,
+    help="Reclaim unused database file space after rebuilding (needs extra disk space).",
+)
+def rebuild_work(apply: bool, vacuum: bool) -> None:
+    """Consolidate completed work into published catalog snapshots across all projects.
+
+    Stop harvest and all processing/maintenance services before using --apply.
+    """
+    commands.RebuildWorkCommand(apply=apply, vacuum=vacuum).execute()
 
 
 # command harvest
@@ -195,7 +237,7 @@ def reset(project: str, apply: bool) -> None:
 @click.option(
     "--clean-catalog",
     is_flag=True,
-    help="Clear all registered project catalogs and rebuild from retained Kafka history.",
+    help="Clear all registered project catalogs and rebuild from archives or retained Kafka history.",
 )
 @click.option(
     "--clean-project",
@@ -207,8 +249,8 @@ def reset(project: str, apply: bool) -> None:
     "--archive",
     "archives",
     multiple=True,
-    type=click.Path(exists=True, dir_okay=False, path_type=Path),
-    help="Replay a coordinate-bearing JSONL or JSONL.gz archive instead of Kafka; repeat for parts.",
+    type=click.Path(exists=True, path_type=Path),
+    help="Replay a JSONL/JSONL.gz archive or dump directory instead of Kafka; repeat for parts.",
 )
 @click.option(
     "--ignore-unknown-projects/--stop-on-unknown-projects",
@@ -221,10 +263,11 @@ def harvest(
     idle_timeout: float,
     limit: int | None,
     catalog: bool | None,
-    clean_catalog: bool,
-    clean_projects: tuple[str, ...],
     archives: tuple[Path, ...],
     ignore_unknown_projects: bool | None,
+    clean_catalog: bool = False,
+    clean_projects: tuple[str, ...] = (),
+    preview: bool = False,
 ) -> None:
     """Harvest Kafka messages into raw JSONL and local catalogs without mapping."""
     commands.HarvestCommand(
@@ -236,7 +279,45 @@ def harvest(
         clean_projects=clean_projects,
         archives=archives,
         ignore_unknown_projects=ignore_unknown_projects,
+        preview=preview,
     ).execute()
+
+
+@click.pass_context
+def _recover(ctx: click.Context, apply: bool, **options) -> None:
+    if apply:
+        root = ctx.find_root().params
+        try:
+            config.configure_logging(
+                verbosity=root["verbosity"], debug=root["debug"], log=root["log"]
+            )
+        except ValueError as exc:
+            raise click.ClickException(str(exc)) from exc
+    ctx.invoke(harvest.callback, preview=not apply, **options)
+
+
+# Share the input options and workflow, but expose destructive cleanup only
+# through the admin group. Normal harvest uses the safe callback defaults.
+admin.add_command(
+    click.Command(
+        "recover",
+        callback=_recover,
+        params=[
+            *harvest.params,
+            click.Option(
+                ["--apply"],
+                is_flag=True,
+                help="Execute recovery; default is a read-only preview.",
+            ),
+        ],
+        help="Recover catalogs from saved dumps or retained Kafka history. Preview by default; add --apply to execute.",
+    )
+)
+harvest.params = [
+    option
+    for option in harvest.params
+    if option.name not in {"clean_catalog", "clean_projects"}
+]
 
 
 # command map

@@ -139,8 +139,11 @@ For a full ordered replay of a project's retained work, stop harvest and all
 batch commands, preview and then apply:
 
 ```bash
-piddi reset --project cmip6
-piddi reset --project cmip6 --apply
+piddi admin reset --project cmip6
+piddi admin reset --project cmip6 --apply
+# Or reset only a recent suffix (last seven UTC calendar days, including today):
+piddi admin reset --project cmip6 --from today-6
+piddi admin reset --project cmip6 --from today-6 --apply
 ```
 
 Reset updates work rows in place without copying the shared database. It moves
@@ -149,18 +152,57 @@ project's batch summaries, and requeues all retained event snapshots. Catalog
 records and Kafka checkpoints stay unchanged. Work already removed by
 retention cannot be recovered by this reset.
 
+`--from YYYY-MM-DD` (also `today`, `yesterday`, `today-N`) selects the UTC day of
+local work creation, inclusively, and all later work IDs. It uses `created_at`,
+so publication, retries and their `updated_at` timestamps do not change selection.
+There is no end date: replay always continues through the retained suffix.
+The start expands to include whole affected batches; preview shows the effective
+timestamp, first work ID and count. Earlier completed work, batches and batch
+summaries remain unchanged. Run summaries overlapping the effective boundary are
+cleared as a whole because their counters cannot be split reliably. Shared receipt
+logs are copied to the reset archive and kept for unaffected batches/projects.
+If no rows match, apply does nothing. If part of an affected batch was removed
+by retention, dated reset refuses: restore missing history from dump backups
+before using that selection. Omitting `--from` retains the full reset behavior.
+
+Manual state-rewriting jobs are grouped under `piddi admin`:
+
+```bash
+piddi admin --help
+piddi admin reset --project cmip6
+piddi admin rebuild
+```
+
+Every admin job previews by default. Add `--apply` to execute `reset`, `rebuild`
+or `recover`. This confirms execution; it does not bypass their safety checks.
+
+For occasional manual consolidation of the live work table, use
+`piddi admin rebuild` to preview, then `piddi admin rebuild --apply` after stopping
+services and finishing all pending work/publication. It archives the old history
+and batches, and retains one published snapshot per catalog item without
+reprocessing. Invalid work must also be resolved first. Add `--vacuum` only when file space should also be
+returned to the filesystem. See [manual work-history rebuild](recovery.md#manual-work-history-rebuild)
+for storage requirements and interruption recovery.
+
 Original archives are an alternative harvest input:
 
 ```bash
 piddi harvest --archive outputs/dump/dump_messages_2026-11-01_000001.jsonl
+piddi admin recover --archive /backup/piddi/dump --apply
 ```
 
 Repeat `--archive` for multiple parts, including `.jsonl.gz` files. Parts sort by
 name; checkpoint deduplication prevents patches from being applied twice. Replay
 requires the new coordinate-bearing envelope; legacy payload-only dumps are not
 supported. Rebuilding shared harvest state must include all stored projects;
-`--clean-catalog` starts a new Kafka group generation and resets the shared state.
+`piddi admin recover --clean-catalog --apply` starts a new Kafka group generation and
+resets the shared state. `--clean-project` also belongs to `piddi admin recover`;
+normal `piddi harvest` does not expose destructive cleanup options.
 A partial harvest clean is refused when other stored projects share checkpoints.
+Normal Kafka harvest resumes each partition at its database checkpoint,
+independently of broker group offsets, and stops if required history has expired.
+See [dump backup recovery](recovery.md#rebuild-from-dump-backups-then-catch-up-with-kafka)
+for the manual rebuild and Kafka handoff procedure.
 
 ## Remote current-item recovery
 
@@ -180,6 +222,20 @@ piddi maintain
 ```
 
 Top reads only `piddi.db`, including when `--db PATH` selects another database.
+The SQLite table sizes are rough estimates, include indexes, and cover all
+projects, even with `--project`. Top estimates the four application tables from
+up to 16 rows per project/table and assumes 75% page occupancy. Estimates can
+be biased by changing row sizes and fragmentation; they are not measured disk
+allocations. JSON labels them with `estimated: true` and includes the method
+and sample counts. Catalog and queue row counts remain exact, using covering
+indexes without loading STAC blobs or counting pending event types.
+Interactive top samples counts and estimated sizes in a background
+thread, then waits a minute after completion before sampling again. Live
+activity keeps refreshing while scans run. Until the first result, counts show
+as unknown; subsequent scans retain the last values and show their sample time.
+`--once` and `--json` use the same fast estimates. JSON includes `table_sizes` with
+per-table `table_bytes`, `index_bytes`, and `total_bytes`. Sizes exclude the WAL,
+database schema, and unallocated free pages. No `dbstat` scan is performed.
 Catalog items count distinct stored STAC items. The summary shows
 `Mapped: N / total events`, where total is successfully mapped + currently pending
 + currently invalid events. This is all accepted queued event history, rather

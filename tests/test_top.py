@@ -62,6 +62,58 @@ def test_top_json_is_project_aware(tmp_path):
     assert history["cmip6"]["deltas"]["consumed"] == 1
 
 
+def test_live_top_skips_expensive_metrics_in_foreground(tmp_path, monkeypatch):
+    from piddiplatsch.commands import top
+
+    calls = []
+
+    def status(*args, include_table_sizes, include_health, **kwargs):
+        calls.append((include_table_sizes, include_health))
+        return dict(
+            runs=[],
+            health=dict(projects=[], storage=[]),
+            table_sizes=None,
+        )
+
+    def sleep(seconds):
+        raise KeyboardInterrupt
+
+    class Metrics:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def update(self, status):
+            status["metrics"] = dict(sampling=True, counts_sampled_at=None)
+
+    monkeypatch.setattr(top, "BackgroundMetrics", Metrics)
+    monkeypatch.setattr(top, "read_status", status)
+    monkeypatch.setattr(top, "backlog_estimate", lambda status: {})
+    monkeypatch.setattr(top.time, "sleep", sleep)
+    TopCommand(db_path=tmp_path / "unused.db").execute()
+    assert calls == [(False, False)]
+
+
+def test_foreground_status_skips_backlog_and_size_scans(tmp_path, monkeypatch):
+    from piddiplatsch.monitoring import health, status
+
+    db = tmp_path / "piddi.db"
+    _monitoring_db(db)
+    monkeypatch.setattr(
+        health,
+        "database_health",
+        lambda *args: pytest.fail("Backlog scan in foreground"),
+    )
+    monkeypatch.setattr(
+        status,
+        "estimate_table_sizes",
+        lambda *args: pytest.fail("Size sample in foreground"),
+    )
+    snapshot = read_status(db, include_table_sizes=False, include_health=False)
+    assert snapshot["runs"][0]["command"] == "consume"
+    assert snapshot["event_totals"]["total"] is None
+    assert all(row["pending_items"] is None for row in snapshot["health"]["projects"])
+
+
 def test_top_once_filters_project(tmp_path):
     db_path = tmp_path / "piddi.db"
     config._set("catalog", "directory", str(tmp_path))
