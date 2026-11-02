@@ -13,11 +13,34 @@ from rich.console import Console, Group
 from rich.table import Table
 from rich.text import Text
 
+from piddiplatsch.config import config
 from piddiplatsch.monitoring.eta import backlog_estimate
 from piddiplatsch.monitoring.sampling import BackgroundMetrics
 from piddiplatsch.monitoring.status import read_status, summarize_event_totals
 
 from .base import Command
+
+
+def _queue_activity(row: dict, generated_at: str | None = None) -> str:
+    if (
+        row.get("pending_items") or row.get("ready_batches")
+    ) and config.get_sync_priority(row["project"]) == 0:
+        return "disabled"
+    if row.get("ready_batches"):
+        return "queued"
+    pending = row.get("pending_items")
+    if pending is None:
+        return "sampling"
+    if not pending:
+        return "idle"
+    if pending >= config.get("batch", "trigger_items", 100):
+        return "ready"
+    oldest = row.get("pending_oldest_at")
+    if oldest is None:
+        return "pending"  # An older/partial metrics snapshot cannot prove eligibility.
+    now = datetime.fromisoformat(generated_at) if generated_at else datetime.now(UTC)
+    age = (now - datetime.fromisoformat(oldest)).total_seconds()
+    return "ready" if age >= config.get("batch", "max_wait_seconds", 600) else "waiting"
 
 
 @dataclass(kw_only=True)
@@ -187,11 +210,7 @@ class TopCommand(Command):
             estimate = (
                 publishers[0].get("publication", {}) if len(publishers) == 1 else {}
             )
-            activity = "idle"
-            if row.get("ready_batches"):
-                activity = "queued"
-            elif row.get("pending_items"):
-                activity = "pending"
+            activity = _queue_activity(row, status.get("generated_at"))
             if any(
                 run["command"] in {"sync", "map"} and run["state"] == "healthy"
                 for run in runs

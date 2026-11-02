@@ -15,6 +15,58 @@ from piddiplatsch.monitoring.status import read_status
 from piddiplatsch.result import ProcessingResult
 
 
+@pytest.mark.parametrize(
+    "pending,age,queued,expected",
+    [
+        (0, None, 0, "idle"),
+        (None, None, 0, "sampling"),
+        (1, 0, 0, "waiting"),
+        (99, 599, 0, "waiting"),
+        (1, 600, 0, "ready"),
+        (1, 700, 0, "ready"),
+        (100, None, 0, "ready"),
+        (101, None, 0, "ready"),
+        (1, None, 0, "pending"),
+        (0, None, 1, "queued"),
+        (100, None, 1, "queued"),
+    ],
+)
+def test_queue_activity_distinguishes_batch_eligibility(pending, age, queued, expected):
+    from datetime import UTC, datetime, timedelta
+
+    from piddiplatsch.commands.top import _queue_activity
+
+    config._set("batch", "trigger_items", 100)
+    config._set("batch", "max_wait_seconds", 600)
+    now = datetime.now(UTC)
+    row = dict(
+        project="cmip7",
+        pending_items=pending,
+        ready_batches=queued,
+        pending_oldest_at=(
+            (now - timedelta(seconds=age)).isoformat() if age is not None else None
+        ),
+    )
+    assert _queue_activity(row, now.isoformat()) == expected
+
+
+def test_queue_activity_uses_custom_thresholds_and_refresh_time():
+    from piddiplatsch.commands.top import _queue_activity
+
+    config._set("batch", "trigger_items", 10)
+    config._set("batch", "max_wait_seconds", 60)
+    row = dict(
+        project="cmip7", pending_items=1, pending_oldest_at="2026-11-02T10:00:00+00:00"
+    )
+    assert _queue_activity(row, "2026-11-02T10:00:59+00:00") == "waiting"
+    # Age crosses the threshold even when the background counts haven't refreshed.
+    assert _queue_activity(row, "2026-11-02T10:01:00+00:00") == "ready"
+    row["pending_items"] = 10
+    assert _queue_activity(row, "2026-11-02T10:00:01+00:00") == "ready"
+    config._set("plugins", "cmip7", {"priority": 0})
+    assert _queue_activity(row, "2026-11-02T10:01:00+00:00") == "disabled"
+
+
 def _monitoring_db(path):
     config._set("catalog", "directory", str(path.parent))
     stats = Stats(enable_db=False)

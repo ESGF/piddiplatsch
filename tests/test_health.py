@@ -34,6 +34,7 @@ def test_health_reads_only_database_without_modifying_it(tmp_path):
 
     row = read_health("cmip7")["projects"][0]
     marker = row.pop("last_publication")
+    assert row.pop("pending_oldest_at") is not None
     assert marker["handle_count"] == 17
     assert marker["batch_id"] == "done"
     assert row == dict(
@@ -64,6 +65,27 @@ def test_health_reports_unreadable_database_without_creating_paths(tmp_path):
     assert rows[1]["project"] == "cmip7"
     assert not (tmp_path / "batches").exists()
     assert catalog.read_text() == "not a database"
+
+
+def test_health_skips_timestamp_reads_when_count_trigger_is_met(tmp_path):
+    database = tmp_path / "piddi.db"
+    seed(database)
+    config._set("batch", "trigger_items", 2)
+    with sqlite3.connect(database) as connection:
+
+        def authorize(action, table, column, *args):
+            if (
+                action == sqlite3.SQLITE_READ
+                and table == "work_items"
+                and column == "created_at"
+            ):
+                return sqlite3.SQLITE_DENY
+            return sqlite3.SQLITE_OK
+
+        connection.set_authorizer(authorize)
+        row = database_health(connection, fast=True)["projects"][0]
+        assert row["pending_items"] == 2
+        assert row["pending_oldest_at"] is None
 
 
 def test_health_preserves_last_publication_after_work_retention(tmp_path):

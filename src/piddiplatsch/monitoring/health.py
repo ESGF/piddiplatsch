@@ -38,6 +38,14 @@ def database_health(connection, project=None, *, fast=False):
                 "(SELECT COUNT(*) FROM work_items WHERE project=? AND state='pending' AND event_type='patch')",
                 (name, name, name, name, name),
             ).fetchone()
+        # Timestamp reads are bounded to small queues; large ones are already due.
+        oldest = None
+        if 0 < pending < config.get("batch", "trigger_items", 100):
+            oldest = connection.execute(
+                "SELECT MIN(created_at) FROM work_items "
+                "WHERE project=? AND state='pending'",
+                (name,),
+            ).fetchone()[0]
         batches = connection.execute(
             "SELECT id,prepared_handles,status='publication_failed' FROM stats "
             "WHERE kind='batch' AND project=? AND status IN ('ready','publication_failed') "
@@ -54,6 +62,7 @@ def database_health(connection, project=None, *, fast=False):
                 project=name,
                 total_items=total,
                 pending_items=pending,
+                pending_oldest_at=oldest,
                 pending_full_events=full,
                 pending_patch_events=patches,
                 invalid_items=invalid,

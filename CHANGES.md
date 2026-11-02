@@ -39,6 +39,9 @@
 
 ### Changed
 
+- `top` distinguishes `waiting` (below both batch triggers), `ready` (eligible
+  for mapping), and `queued` (mapped and awaiting publication), using configured
+  thresholds. Priority-zero projects with work show `disabled`.
 - `admin rebuild` archives and clears completed SQLite outbox records alongside
   work consolidation, refusing unfinished outbox work. Existing `--vacuum`
   optionally returns the freed database pages to the filesystem.

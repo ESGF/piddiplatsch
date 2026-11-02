@@ -262,6 +262,18 @@ the total. Mapped counts survive published-work cleanup in retained batch stats;
 project reset clears that project's mapped history and requeues retained work.
 `top --json` exposes `event_totals` with `mapped`, `pending`, `invalid`, and `total`,
 respecting `--project` when selected.
+Between batches, Activity shows `idle` when there is no work, `waiting` when
+pending events are below both mapping triggers, and `ready` once the event count
+or oldest event age reaches the configured `[batch].trigger_items` or
+`max_wait_seconds` (defaults: 100 events or 10 minutes). `ready` means eligible
+for the next scheduler selection, with project priority determining its weight;
+it is not a promise that the project will run next. `queued` means mapping has
+already produced a batch awaiting publication. Priority-zero projects with work
+show `disabled`. Counts initially show `sampling`; `pending` is a fallback when
+an incomplete snapshot lacks the oldest event timestamp. Counts are sampled in
+the background; age eligibility is reevaluated on each refresh. The same config
+used by sync must be loaded by top for these thresholds and priorities to match.
+
 The Activity column shows `preparing`, `mapping`, `sealing`, `verifying`,
 `publishing`, or `finalizing` throughout a batch. A separate heartbeat stays
 active during file checks, durable writes, and database acknowledgements;
