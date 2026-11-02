@@ -157,6 +157,9 @@ piddi admin reset --project cmip6
 piddi admin rebuild
 ```
 
+Every admin job previews by default. Add `--apply` to execute `reset`, `rebuild`
+or `recover`. This confirms execution; it does not bypass their safety checks.
+
 For occasional manual consolidation of the live work table, use
 `piddi admin rebuild` to preview, then `piddi admin rebuild --apply` after stopping
 services and finishing all pending work/publication. It archives the old history
@@ -169,14 +172,14 @@ Original archives are an alternative harvest input:
 
 ```bash
 piddi harvest --archive outputs/dump/dump_messages_2026-11-01_000001.jsonl
-piddi admin recover --archive /backup/piddi/dump
+piddi admin recover --archive /backup/piddi/dump --apply
 ```
 
 Repeat `--archive` for multiple parts, including `.jsonl.gz` files. Parts sort by
 name; checkpoint deduplication prevents patches from being applied twice. Replay
 requires the new coordinate-bearing envelope; legacy payload-only dumps are not
 supported. Rebuilding shared harvest state must include all stored projects;
-`piddi admin recover --clean-catalog` starts a new Kafka group generation and
+`piddi admin recover --clean-catalog --apply` starts a new Kafka group generation and
 resets the shared state. `--clean-project` also belongs to `piddi admin recover`;
 normal `piddi harvest` does not expose destructive cleanup options.
 A partial harvest clean is refused when other stored projects share checkpoints.

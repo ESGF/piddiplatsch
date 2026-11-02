@@ -113,21 +113,8 @@ def cli(
 
 
 @cli.group("admin")
-@click.pass_context
-def admin(ctx: click.Context) -> None:
+def admin() -> None:
     """Manual reset, consolidation and destructive catalog recovery jobs."""
-    # Reset/rebuild previews must work without opening a log file. Harvest
-    # recovery uses the same logging settings as ordinary harvest.
-    if ctx.invoked_subcommand == "recover":
-        options = ctx.find_root().params
-        try:
-            config.configure_logging(
-                verbosity=options["verbosity"],
-                debug=options["debug"],
-                log=options["log"],
-            )
-        except ValueError as exc:
-            raise click.ClickException(str(exc)) from exc
 
 
 @cli.command("sync")
@@ -262,6 +249,7 @@ def harvest(
     ignore_unknown_projects: bool | None,
     clean_catalog: bool = False,
     clean_projects: tuple[str, ...] = (),
+    preview: bool = False,
 ) -> None:
     """Harvest Kafka messages into raw JSONL and local catalogs without mapping."""
     commands.HarvestCommand(
@@ -273,7 +261,21 @@ def harvest(
         clean_projects=clean_projects,
         archives=archives,
         ignore_unknown_projects=ignore_unknown_projects,
+        preview=preview,
     ).execute()
+
+
+@click.pass_context
+def _recover(ctx: click.Context, apply: bool, **options) -> None:
+    if apply:
+        root = ctx.find_root().params
+        try:
+            config.configure_logging(
+                verbosity=root["verbosity"], debug=root["debug"], log=root["log"]
+            )
+        except ValueError as exc:
+            raise click.ClickException(str(exc)) from exc
+    ctx.invoke(harvest.callback, preview=not apply, **options)
 
 
 # Share the input options and workflow, but expose destructive cleanup only
@@ -281,9 +283,16 @@ def harvest(
 admin.add_command(
     click.Command(
         "recover",
-        callback=harvest.callback,
-        params=list(harvest.params),
-        help="Recover catalogs from saved dumps or retained Kafka history, with optional cleanup. Stop processing before cleaning.",
+        callback=_recover,
+        params=[
+            *harvest.params,
+            click.Option(
+                ["--apply"],
+                is_flag=True,
+                help="Execute recovery; default is a read-only preview.",
+            ),
+        ],
+        help="Recover catalogs from saved dumps or retained Kafka history. Preview by default; add --apply to execute.",
     )
 )
 harvest.params = [

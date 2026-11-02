@@ -25,6 +25,7 @@ class HarvestCommand(KafkaCommand):
     clean_projects: tuple[str, ...] = ()
     archives: tuple[Path, ...] = ()
     ignore_unknown_projects: bool | None = None
+    preview: bool = False
 
     def execute(self) -> None:
         catalog_cfg = config.get("catalog", {})
@@ -62,6 +63,9 @@ class HarvestCommand(KafkaCommand):
             archives = archive_paths(self.archives)
             if archives and not enabled:
                 raise ValueError("Archive replay requires the database catalog")
+            if self.preview:
+                self._preview(directory, clean_projects, archives)
+                return
             with closing(
                 HarvestProcessor(
                     catalog_dir=directory,
@@ -100,3 +104,46 @@ class HarvestCommand(KafkaCommand):
                 )
         except (CatalogError, ValueError, OSError) as exc:
             raise click.ClickException(str(exc)) from exc
+
+    def _preview(self, directory, clean_projects, archives):
+        if directory is not None:
+            click.echo(f"Catalog/work database: {directory / 'piddi.db'}")
+        else:
+            click.echo("Catalog disabled: raw Kafka dumps only.")
+        if archives:
+            click.echo(
+                f"Input: {len(archives):,} saved dump part(s), in filename order."
+            )
+            click.echo(f"First: {archives[0]}")
+            click.echo(f"Last: {archives[-1]}")
+            click.echo(
+                "Replay through harvest; preserve backup files and deduplicate overlapping source offsets."
+            )
+        else:
+            click.echo(f"Input: Kafka topic {config.get('consumer', 'topic')}.")
+            if clean_projects:
+                click.echo(
+                    "Start at earliest retained offsets after clearing shared checkpoints."
+                )
+            elif directory is not None:
+                click.echo(
+                    "Resume database checkpoints, or earliest retained offsets for partitions without checkpoints."
+                )
+            else:
+                click.echo("Read using the configured Kafka consumer-group position.")
+        if clean_projects:
+            click.echo(
+                f"Clear catalog/work, summaries and shared checkpoints before replay: {', '.join(clean_projects)}"
+            )
+            click.echo(
+                "Shared checkpoint cleanup requires every stored project; this is checked when applying."
+            )
+        elif directory is not None:
+            click.echo(
+                "Keep current catalog/work and checkpoints; add recovered events to the pending queue."
+            )
+        if self.limit is not None:
+            click.echo(f"Input limit: {self.limit:,} events.")
+        click.echo(
+            "Preview only. Stop harvest and processing, then add --apply to execute recovery."
+        )

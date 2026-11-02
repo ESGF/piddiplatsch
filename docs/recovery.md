@@ -37,11 +37,17 @@ output_dir = "/mnt/piddi-recovery"
 directory = "/mnt/piddi-recovery"
 ```
 
-Replay the saved dump directory first:
+All `piddi admin` jobs preview by default. Preview the dump recovery first, then
+add `--apply` to execute it:
 
 ```bash
 piddi --config recovery.toml admin recover --archive /backup/piddi/dump
+piddi --config recovery.toml admin recover --archive /backup/piddi/dump --apply
 ```
+
+The recovery preview lists the database, dump parts or Kafka source, cleanup
+scope and input limit. It does not open/create the database or connect to Kafka.
+`--apply` executes the plan and retains all validation and ownership checks.
 
 This reads top-level `dump_messages_*.jsonl` and `.jsonl.gz` parts in filename
 order, without connecting to Kafka, rewriting the backup, mapping or publishing.
