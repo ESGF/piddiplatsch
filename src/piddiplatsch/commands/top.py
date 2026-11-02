@@ -34,6 +34,8 @@ class TopCommand(Command):
         console = Console()
         table_sizes = None
         sizes_updated_at = None
+        if not self.json_output:
+            console.print("Reading database status…", style="dim")
         while True:
             try:
                 sample_sizes = (
@@ -364,7 +366,8 @@ def _table_size_lines(sizes):
     if sizes is None:
         return []
     if not sizes["available"]:
-        return [Text("SQLite table sizes: unavailable (dbstat missing)", style="dim")]
+        reason = sizes.get("reason", "dbstat missing")
+        return [Text(f"SQLite table sizes: unavailable ({reason})", style="dim")]
     entries = " · ".join(
         f"{row['name']}: {_bytes(row['total_bytes'])}" for row in sizes["tables"]
     )

@@ -98,6 +98,9 @@ def test_table_sizes_unavailable_without_dbstat():
     from piddiplatsch.monitoring.status import read_table_sizes
 
     class WithoutDbstat:
+        def set_progress_handler(self, callback, steps):
+            pass
+
         def execute(self, sql):
             raise sqlite3.OperationalError("no such table: dbstat")
 
@@ -110,6 +113,26 @@ def test_table_sizes_unavailable_without_dbstat():
         )
     )
     assert "SQLite table sizes: unavailable" in stream.getvalue()
+
+
+def test_slow_table_size_scan_is_interrupted_and_connection_remains_usable(monkeypatch):
+    from piddiplatsch.monitoring import status
+
+    with sqlite3.connect(":memory:") as connection:
+        connection.execute("CREATE TABLE large (value BLOB)")
+        connection.executemany(
+            "INSERT INTO large VALUES (zeroblob(4096))", [() for _ in range(500)]
+        )
+        try:
+            connection.execute("SELECT * FROM dbstat LIMIT 1").fetchall()
+        except sqlite3.OperationalError:
+            pytest.skip("SQLite build lacks dbstat")
+        clock = iter([0, 1])
+        monkeypatch.setattr(status.time, "monotonic", lambda: next(clock, 1))
+        sizes = status.read_table_sizes(connection)
+        assert sizes == dict(available=False, tables=[], reason="size scan timed out")
+        # The deadline handler must not interrupt subsequent status queries.
+        assert connection.execute("SELECT COUNT(*) FROM large").fetchone()[0] == 500
 
 
 def test_top_samples_table_sizes_once_per_minute(tmp_path, monkeypatch):

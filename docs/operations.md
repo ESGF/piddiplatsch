@@ -186,6 +186,8 @@ The SQLite table sizes include indexes and cover all projects, even with
 per-table `table_bytes`, `index_bytes`, and `total_bytes`. Sizes exclude the WAL,
 database schema, and unallocated free pages. SQLite builds without `dbstat`
 show sizes as unavailable.
+Size scans have a 0.25-second execution budget so large databases do not block
+the display; a scan exceeding this budget shows `size scan timed out` instead.
 Catalog items count distinct stored STAC items. The summary shows
 `Mapped: N / total events`, where total is successfully mapped + currently pending
 + currently invalid events. This is all accepted queued event history, rather

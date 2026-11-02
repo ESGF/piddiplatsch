@@ -5,6 +5,7 @@ from __future__ import annotations
 import datetime
 import json
 import sqlite3
+import time
 from contextlib import closing
 from itertools import pairwise
 from pathlib import Path
@@ -134,9 +135,18 @@ def read_status(
 def read_table_sizes(connection):
     """Allocated table and index bytes, across all projects in this snapshot.
 
-    dbstat walks database pages, so interactive callers should sample sparingly.
+    dbstat walks database pages, so bound its runtime and sample sparingly.
     Some SQLite builds do not provide the optional dbstat virtual table.
     """
+    deadline = time.monotonic() + 0.25
+    timed_out = False
+
+    def stop_slow_scan():
+        nonlocal timed_out
+        timed_out = time.monotonic() >= deadline
+        return timed_out
+
+    connection.set_progress_handler(stop_slow_scan, 1000)
     try:
         rows = connection.execute(
             "SELECT s.tbl_name, "
@@ -149,9 +159,13 @@ def read_table_sizes(connection):
             "ORDER BY SUM(d.bytes) DESC, s.tbl_name"
         ).fetchall()
     except sqlite3.OperationalError as exc:
+        if timed_out:
+            return {"available": False, "tables": [], "reason": "size scan timed out"}
         if "no such table: dbstat" not in str(exc):
             raise
         return {"available": False, "tables": []}
+    finally:
+        connection.set_progress_handler(None, 0)
     return {
         "available": True,
         "tables": [
