@@ -314,8 +314,10 @@ unchanged full STAC item, collection/version identity, publication timestamp,
 and optional local recovery provenance. This retains source fields without
 adding database columns or mixing local provenance into the source item.
 
-`map` prepares pending snapshots and seals batches without publishing. With no
-date selector it processes all pending work; date selectors filter local
+`map` prepares pending snapshots and seals batches without publishing. Its total
+event limit defaults to `[batch].max_items` (2,000), across selected projects;
+`--limit N` overrides it. With no date selector all pending work is eligible;
+date selectors filter local
 `created_at` UTC days. `publish` without paths publishes complete queued batches.
 Explicit file publication remains available for operator-managed files but does
 not acknowledge database work. Use queued publication for the work stream.

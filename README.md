@@ -41,6 +41,10 @@ piddi map --project cmip6
 piddi publish --project cmip6 --workers 4 --retries 3
 ```
 
+Standalone `map` stops after `[batch].max_items` events in total (default 2,000).
+Use `map --limit N` to choose another total. Sync continues mapping and publishing
+successive batches automatically.
+
 ## Map and publish with sync
 
 Use `sync` to map and publish pending changes for the configured projects:

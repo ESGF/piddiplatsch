@@ -36,6 +36,9 @@
 
 ### Changed
 
+- Standalone `map` defaults its total event limit to `[batch].max_items` (2,000)
+  across selected projects. Explicit `--limit N` overrides that total; sync retains
+  continuous batch-by-batch mapping/publication.
 - Scheduled sync checks default to 20 seconds after each run, with one-second
   timer accuracy; mapping starts at 100 pending events per project or a maximum
   wait of 10 minutes.

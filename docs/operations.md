@@ -82,8 +82,10 @@ piddi map --all-projects --limit 2000
 Map selects pending database work, in ascending ID order within each project.
 It processes one bounded project batch per round, round robin. It never contacts
 Kafka, STAC, or the Handle server. Date selectors refer to local work creation
-days in UTC; omitted dates select all pending work. Offset/limit count work entries
-across selected projects, after date filtering. Successfully sealed work is not
+days in UTC; omitted dates make all pending work eligible. The total per-command
+limit defaults to `[batch].max_items` (2,000), across all selected projects.
+Use `--limit N` to override it, including a larger number that spans several
+batches. Offset/limit count work entries after date filtering. Successfully sealed work is not
 mapped again by a repeated command.
 
 Inspect `batches/<project>/ready/<batch-id>/handles.jsonl`, `failures.jsonl`, and

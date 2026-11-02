@@ -230,7 +230,7 @@ def test_map_offset_stays_skipped_across_batch_rounds(tmp_path, testdata_path):
     from piddiplatsch.runners.mapping import map_catalog
 
     seed(tmp_path, testdata_path, projects=("cmip6",), count=7)
-    assert map_catalog(projects=["cmip6"], offset=2).succeeded == 5
+    assert map_catalog(projects=["cmip6"], offset=2, limit=5).succeeded == 5
     with SQLiteCatalog("cmip6", tmp_path / "piddi.db", read_only=True) as reader:
         assert reader._execute(
             "SELECT id FROM work_items WHERE state='pending' ORDER BY id"
@@ -262,7 +262,7 @@ def test_weighted_saved_publication_backlog_preserves_each_projects_order(
     from piddiplatsch.runners.mapping import map_catalog
 
     seed(tmp_path, testdata_path)
-    assert map_catalog(projects=["cmip6", "cmip7"]).succeeded == 6
+    assert map_catalog(projects=["cmip6", "cmip7"], limit=6).succeeded == 6
     publisher = Publisher()
     worker = SyncWorker(publisher=publisher)
     assert worker.run() == []

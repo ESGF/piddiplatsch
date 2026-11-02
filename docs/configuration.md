@@ -222,6 +222,10 @@ selects each next batch using the eligible projects' priority weights. Projects
 run sequentially; `publish_workers` only controls concurrent Handle requests within
 the current batch. `publish_retries` controls temporary HTTP retries. Sync's
 `--workers` and `--retries` override these values for one run.
+Standalone `map` also defaults its total event limit to `max_items`, across all
+selected projects, to bound each invocation's outbox growth. `map --limit N`
+overrides that total; a larger value still produces batches capped at `max_items`.
+This is a per-command event cap, not a limit on queued Handles or database bytes.
 
 Set `priority` under each `[plugins.<project>]` table to an integer from 0 to
 255. Every project defaults to 100. Zero disables both mapping and queued

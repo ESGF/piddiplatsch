@@ -369,7 +369,7 @@ harvest.params = [
 @click.option(
     "--limit",
     type=click.IntRange(min=1),
-    help="Stop after mapping this many pending work entries in total.",
+    help="Stop after mapping this many pending work entries in total (default: [batch].max_items, normally 2000).",
 )
 @click.option(
     "--offset",
