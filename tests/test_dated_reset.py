@@ -38,14 +38,12 @@ def snapshot(database, table):
 
 
 @pytest.fixture
-def dated(tmp_path, testdata_path):
+def dated(tmp_path, publication_sample):
     config._set("consumer", "output_dir", str(tmp_path))
     config._set("catalog", "directory", str(tmp_path))
     with closing(CatalogHarvester(tmp_path)) as harvester:
         for offset, project in enumerate((PROJECT, "cmip7", PROJECT, PROJECT, PROJECT)):
-            value = json.loads(
-                (testdata_path / "publication_samples" / f"{project}.json").read_text()
-            )
+            value = publication_sample(project)
             value["data"]["payload"]["item"]["properties"]["revision"] = offset
             harvester.process_with_source("key", value, KafkaSource("topic", 0, offset))
     database = tmp_path / "piddi.db"

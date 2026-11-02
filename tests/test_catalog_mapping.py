@@ -17,12 +17,6 @@ from piddiplatsch.exceptions import CatalogError
 from piddiplatsch.runners.mapping import map_catalog
 
 
-def sample(testdata_path, project):
-    return json.loads(
-        (testdata_path / "publication_samples" / f"{project}.json").read_text()
-    )
-
-
 def harvest(directory, messages):
     config._set("catalog", "directory", str(directory))
     with closing(CatalogHarvester(directory)) as harvester:
@@ -43,12 +37,12 @@ def handles(output_dir, project):
 @pytest.mark.parametrize("project", ["cmip6", "cmip6plus", "cmip7", "cordex-cmip6"])
 @pytest.mark.parametrize("history", [True, False])
 def test_map_predecessor_is_nearest_strictly_older_version_without_remote_lookup(
-    tmp_path, testdata_path, monkeypatch, project, history
+    tmp_path, publication_sample, monkeypatch, project, history
 ):
     output_dir = tmp_path / "outputs"
     config._set("consumer", "output_dir", str(output_dir))
     config._set("lookup", "enabled", True)
-    current = sample(testdata_path, project)
+    current = publication_sample(project)
     item = current["data"]["payload"]["item"]
     older, later = deepcopy(current), deepcopy(current)
     dataset_id = item["id"].rsplit(".", 1)[0]
@@ -75,10 +69,10 @@ def test_map_predecessor_is_nearest_strictly_older_version_without_remote_lookup
 
 
 def test_harvested_patch_is_mapped_once_with_its_original_publication_time(
-    tmp_path, testdata_path
+    tmp_path, publication_sample
 ):
     config._set("consumer", "output_dir", str(tmp_path))
-    post = sample(testdata_path, "cmip7")
+    post = publication_sample("cmip7")
     item = post["data"]["payload"]["item"]
     time = "2026-10-12T10:15:00Z"
     patch = {
@@ -108,10 +102,10 @@ def test_harvested_patch_is_mapped_once_with_its_original_publication_time(
 
 
 def test_map_all_skips_unharvested_projects_and_keeps_catalog_records(
-    tmp_path, testdata_path
+    tmp_path, publication_sample
 ):
     config._set("consumer", "output_dir", str(tmp_path))
-    harvest(tmp_path / "catalog", [sample(testdata_path, "cmip6")])
+    harvest(tmp_path / "catalog", [publication_sample("cmip6")])
     path = tmp_path / "catalog/piddi.db"
     original = path.read_bytes()
     result = map_catalog(projects="all")
@@ -127,20 +121,20 @@ def test_missing_database_produces_no_mapping_output(tmp_path):
     assert not list(tmp_path.rglob("handles.jsonl"))
 
 
-def test_pending_clean_blocks_mapping(tmp_path, testdata_path):
+def test_pending_clean_blocks_mapping(tmp_path, publication_sample):
     config._set("consumer", "output_dir", str(tmp_path))
-    harvest(tmp_path / "catalog", [sample(testdata_path, "cmip6")])
+    harvest(tmp_path / "catalog", [publication_sample("cmip6")])
     HarvestState(tmp_path / "catalog").request_clean(("cmip6",))
     with pytest.raises(CatalogError, match="clean is incomplete"):
         map_catalog(projects=["cmip6"])
 
 
 def test_catalog_mode_rejects_patch_envelopes_instead_of_fetching_or_reapplying(
-    tmp_path, testdata_path
+    tmp_path, publication_sample
 ):
     from piddiplatsch.plugins.cmip6.processor import CMIP6Processor
 
-    harvest(tmp_path, [sample(testdata_path, "cmip6")])
+    harvest(tmp_path, [publication_sample("cmip6")])
     with SQLiteCatalog("cmip6", tmp_path / "piddi.db", read_only=True) as catalog:
         processor = CMIP6Processor(catalog_reader=catalog)
         assert not hasattr(processor, "stac_client")
@@ -148,10 +142,12 @@ def test_catalog_mode_rejects_patch_envelopes_instead_of_fetching_or_reapplying(
             processor.process("patch", {"data": {"payload": {"method": "PATCH"}}})
 
 
-def test_cli_history_option_overrides_catalog_configuration(tmp_path, testdata_path):
+def test_cli_history_option_overrides_catalog_configuration(
+    tmp_path, publication_sample
+):
     config._set("consumer", "output_dir", str(tmp_path))
     config._set("catalog", "version_history", True)
-    original = sample(testdata_path, "cmip6")
+    original = publication_sample("cmip6")
     older = deepcopy(original)
     older["data"]["payload"]["item"]["id"] = (
         original["data"]["payload"]["item"]["id"].rsplit(".", 1)[0] + ".v20000101"
@@ -175,12 +171,12 @@ def test_cli_history_option_overrides_catalog_configuration(tmp_path, testdata_p
     assert "PREVIOUS_VERSION" not in handles(tmp_path, "cmip6")[0]["data"]
 
 
-def test_manual_map_uses_project_error_limit(tmp_path, testdata_path):
+def test_manual_map_uses_project_error_limit(tmp_path, publication_sample):
     config._set("consumer", "output_dir", str(tmp_path))
     config._set(
         "plugins", "cmip6plus", {**config.get_plugin("cmip6plus"), "max_errors": 10000}
     )
-    good = sample(testdata_path, "cmip6plus")
+    good = publication_sample("cmip6plus")
     bad = deepcopy(good)
     item = bad["data"]["payload"]["item"]
     item["id"] = item["id"].rsplit(".", 1)[0] + ".v20000101"
@@ -192,10 +188,10 @@ def test_manual_map_uses_project_error_limit(tmp_path, testdata_path):
 
 
 def test_mapping_failure_is_inspectable_and_not_automatically_remapped(
-    tmp_path, testdata_path, monkeypatch
+    tmp_path, publication_sample, monkeypatch
 ):
     config._set("consumer", "output_dir", str(tmp_path))
-    original = sample(testdata_path, "cmip6")
+    original = publication_sample("cmip6")
     harvest(tmp_path / "catalog", [original])
 
     def fail_handle(*args, **kwargs):
@@ -219,10 +215,10 @@ def test_mapping_failure_is_inspectable_and_not_automatically_remapped(
 
 
 def test_recovered_remote_item_maps_dataset_and_files_without_network(
-    tmp_path, testdata_path, monkeypatch
+    tmp_path, publication_sample, monkeypatch
 ):
     config._set("consumer", "output_dir", str(tmp_path))
-    current = sample(testdata_path, "cmip7")
+    current = publication_sample("cmip7")
     item = current["data"]["payload"]["item"]
     fetched = deepcopy(item)
     # This operation must not be applied to the fetched current state.

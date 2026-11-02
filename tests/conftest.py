@@ -1,5 +1,6 @@
 """Shared fixtures for all tests."""
 
+import json
 from copy import deepcopy
 from pathlib import Path
 
@@ -42,3 +43,18 @@ def _isolate_runtime_state(tmp_path, monkeypatch):
 def testdata_path() -> Path:
     """Fixture that provides the path to the testdata directory."""
     return Path(__file__).parent / "testdata"
+
+
+@pytest.fixture
+def publication_sample(testdata_path):
+    """Load a fresh publication so tests can safely change its fields."""
+
+    def load(project, *, version=None):
+        path = testdata_path / "publication_samples" / f"{project}.json"
+        message = json.loads(path.read_text(encoding="utf-8"))
+        if version is not None:
+            item = message["data"]["payload"]["item"]
+            item["id"] = item["id"].rsplit(".", 1)[0] + f".v{version}"
+        return message
+
+    return load

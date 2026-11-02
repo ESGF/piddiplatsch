@@ -113,8 +113,8 @@ class TestCLIBasics:
         """Test that CLI shows usage when no command is provided."""
         result = runner.invoke(cli, [])
         # Click returns exit code 2 when required command is missing
-        assert result.exit_code == 2 or result.exit_code == 0
-        assert "Usage:" in result.output or "Commands:" in result.output
+        assert result.exit_code == 2
+        assert "Usage:" in result.output
 
 
 class TestHarvestCommand:

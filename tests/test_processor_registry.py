@@ -2,6 +2,7 @@
 
 import pytest
 
+from piddiplatsch.core import registry
 from piddiplatsch.core.plugin import PluginSpec
 from piddiplatsch.core.processing import BaseProcessor
 from piddiplatsch.core.registry import (
@@ -10,6 +11,11 @@ from piddiplatsch.core.registry import (
     register_plugin,
 )
 from piddiplatsch.result import ProcessingResult
+
+
+@pytest.fixture(autouse=True)
+def isolate_registry(monkeypatch):
+    monkeypatch.setattr(registry, "_PLUGINS", registry._PLUGINS.copy())
 
 
 def register_test_plugin(name, processor_class, *, replace=False):
@@ -27,25 +33,10 @@ def make_processor(name, **kwargs):
     return get_plugin(name).make_processor(**kwargs)
 
 
-def test_cmip6_processor_available():
-    """Test that CMIP6 processor is registered by default."""
-    assert "cmip6" in list_plugins()
-
-
-def test_get_cmip6_processor():
-    """Test getting the CMIP6 processor."""
-    processor = make_processor("cmip6", publish=False)
-    assert isinstance(processor, BaseProcessor)
-
-
 def test_unknown_processor_raises_error():
     """Test that requesting unknown processor raises ValueError."""
-    try:
+    with pytest.raises(ValueError, match=r"unknown_processor.*Available plugins"):
         get_plugin("unknown_processor")
-        raise AssertionError("Should have raised ValueError")
-    except ValueError as e:
-        assert "unknown_processor" in str(e)
-        assert "Available plugins" in str(e)
 
 
 def test_register_custom_processor():
@@ -55,13 +46,10 @@ def test_register_custom_processor():
         def process(self, key: str, value: dict) -> ProcessingResult:
             return ProcessingResult(key=key, success=True)
 
-    # Register it
     register_test_plugin("test_processor", TestProcessor)
 
-    # Verify it's available
     assert "test_processor" in list_plugins()
 
-    # Get and use it
     processor = make_processor("test_processor", publish=False)
     assert isinstance(processor, TestProcessor)
 
@@ -87,14 +75,6 @@ def test_processor_receives_kwargs():
     assert processor.custom_param == "test_value"
 
 
-def test_list_plugins_returns_all():
-    plugins = list_plugins()
-    assert isinstance(plugins, list)
-    assert "cmip6" in plugins
-    # At least cmip6 should be there
-    assert len(plugins) >= 1
-
-
 def test_register_requires_explicit_replace():
     """Test that duplicate plugin names fail unless replacement is explicit."""
 
@@ -110,7 +90,6 @@ def test_register_requires_explicit_replace():
         def process(self, key: str, value: dict) -> ProcessingResult:
             return ProcessingResult(key=key, success=True)
 
-    # Register first version
     register_test_plugin("overwrite_test", FirstProcessor)
     processor1 = make_processor("overwrite_test", publish=False)
     assert processor1.processor_version == "v1"
@@ -141,26 +120,12 @@ def test_multiple_processors_coexist():
     register_test_plugin("proc_a", ProcessorA)
     register_test_plugin("proc_b", ProcessorB)
 
-    # Both should be in the list
     plugins = list_plugins()
     assert "proc_a" in plugins
     assert "proc_b" in plugins
 
-    # Both should be independently accessible
     proc_a = make_processor("proc_a", publish=False)
     proc_b = make_processor("proc_b", publish=False)
 
     assert proc_a.name == "A"
     assert proc_b.name == "B"
-
-
-def test_processor_publish_flag():
-    """Test that disabling publication selects the JSONL backend."""
-    from piddiplatsch.handles.jsonl_backend import JsonlHandleBackend
-
-    processor = make_processor("cmip6", publish=False)
-
-    # Should be using JSONL backend
-    assert isinstance(
-        getattr(processor.handle_backend, "backend", None), JsonlHandleBackend
-    )

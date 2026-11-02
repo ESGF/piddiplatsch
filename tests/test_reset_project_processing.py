@@ -1,6 +1,5 @@
 """Project replay updates work in place without copying the shared database."""
 
-import json
 from contextlib import closing
 
 import pytest
@@ -15,13 +14,11 @@ from piddiplatsch.runners.reset import reset_processing
 from piddiplatsch.runners.sync import _worker_lock
 
 
-def seed(tmp_path, testdata_path):
+def seed(tmp_path, publication_sample):
     config._set("consumer", "output_dir", str(tmp_path))
     with closing(CatalogHarvester(tmp_path)) as harvester:
         for offset, project in enumerate(("cmip6plus", "cmip7")):
-            message = json.loads(
-                (testdata_path / "publication_samples" / f"{project}.json").read_text()
-            )
+            message = publication_sample(project)
             harvester.process_with_source(
                 "seed", message, KafkaSource("topic", 0, offset)
             )
@@ -34,9 +31,9 @@ def seed(tmp_path, testdata_path):
 
 
 def test_reset_requeues_retained_snapshots_without_touching_shared_checkpoints(
-    tmp_path, testdata_path
+    tmp_path, publication_sample
 ):
-    seed(tmp_path, testdata_path)
+    seed(tmp_path, publication_sample)
     count, archive = reset_processing(config, "cmip6plus")
     assert count == 1
     with SQLiteCatalog("cmip6plus", tmp_path / "piddi.db", read_only=True) as reader:
@@ -63,8 +60,8 @@ def test_reset_requeues_retained_snapshots_without_touching_shared_checkpoints(
     assert not (tmp_path / "batches/cmip6plus").exists()
 
 
-def test_reset_respects_worker_ownership(tmp_path, testdata_path):
-    seed(tmp_path, testdata_path)
+def test_reset_respects_worker_ownership(tmp_path, publication_sample):
+    seed(tmp_path, publication_sample)
     with _worker_lock(tmp_path) as acquired:
         assert acquired
         with pytest.raises(RuntimeError, match="worker"):

@@ -51,14 +51,12 @@ def rows(database, table):
 
 
 @pytest.fixture
-def seeded(tmp_path, testdata_path):
+def seeded(tmp_path, publication_sample):
     config._set("consumer", "output_dir", str(tmp_path))
     config._set("catalog", "directory", str(tmp_path))
     with closing(CatalogHarvester(tmp_path)) as harvester:
         for offset, project in enumerate(("cmip6", "cmip7", "cmip6", "cmip7")):
-            message = json.loads(
-                (testdata_path / "publication_samples" / f"{project}.json").read_text()
-            )
+            message = publication_sample(project)
             message["data"]["payload"]["item"]["properties"]["latest"] = offset
             harvester.process_with_source(
                 "key", message, KafkaSource("topic", 0, offset)

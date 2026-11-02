@@ -2,7 +2,6 @@
 
 import json
 from contextlib import closing
-from copy import deepcopy
 from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 
@@ -22,20 +21,15 @@ from piddiplatsch.result import PublishResult
 from piddiplatsch.runners.sync import SyncWorker
 
 
-def seed(tmp_path, testdata_path, projects=("cmip6", "cmip7"), count=3):
+def seed(tmp_path, publication_sample, projects=("cmip6", "cmip7"), count=3):
     config._set("consumer", "output_dir", str(tmp_path))
     config._set("consumer", "projects", list(projects))
     config._set("batch", None, {"max_items": 2, "trigger_items": 1})
     offset = 0
     with closing(CatalogHarvester(tmp_path)) as harvester:
         for project in projects:
-            original = json.loads(
-                (testdata_path / "publication_samples" / f"{project}.json").read_text()
-            )
             for version in range(count):
-                message = deepcopy(original)
-                item = message["data"]["payload"]["item"]
-                item["id"] = item["id"].rsplit(".", 1)[0] + f".v{version + 1}"
+                message = publication_sample(project, version=version + 1)
                 harvester.process_with_source(
                     "seed", message, KafkaSource("topic", 0, offset)
                 )
@@ -66,8 +60,10 @@ class Publisher:
         return PublishResult(total=count, succeeded=count - failed, failed=failed)
 
 
-def test_weighted_project_batches_preserve_each_projects_order(tmp_path, testdata_path):
-    seed(tmp_path, testdata_path)
+def test_weighted_project_batches_preserve_each_projects_order(
+    tmp_path, publication_sample
+):
+    seed(tmp_path, publication_sample)
     publisher = Publisher()
     worker = SyncWorker(publisher=publisher)
     assert len(worker.run(force_map=True)) == 4
@@ -91,11 +87,11 @@ def test_weighted_project_batches_preserve_each_projects_order(tmp_path, testdat
 
 
 def test_filtered_mapping_cannot_interleave_batches_and_replay_older_updates(
-    tmp_path, testdata_path
+    tmp_path, publication_sample
 ):
     from piddiplatsch.runners.mapping import map_catalog
 
-    seed(tmp_path, testdata_path, projects=("cmip7",))
+    seed(tmp_path, publication_sample, projects=("cmip7",))
     assert map_catalog(projects=["cmip7"], offset=1, limit=1).succeeded == 1
     assert map_catalog(projects=["cmip7"]).succeeded == 2
     publisher = Publisher()
@@ -105,8 +101,8 @@ def test_filtered_mapping_cannot_interleave_batches_and_replay_older_updates(
     assert [ids for _, ids in publisher.batches] == [[1], [2], [3]]
 
 
-def test_failed_project_does_not_block_other_projects(tmp_path, testdata_path):
-    seed(tmp_path, testdata_path)
+def test_failed_project_does_not_block_other_projects(tmp_path, publication_sample):
+    seed(tmp_path, publication_sample)
     publisher = Publisher(failed_project="cmip6")
     worker = SyncWorker(publisher=publisher)
     worker.run(force_map=True)
@@ -126,9 +122,9 @@ def test_failed_project_does_not_block_other_projects(tmp_path, testdata_path):
 
 
 def test_cleanup_uses_published_timestamp_and_preserves_summaries(
-    tmp_path, testdata_path
+    tmp_path, publication_sample
 ):
-    seed(tmp_path, testdata_path, projects=("cmip6",), count=4)
+    seed(tmp_path, publication_sample, projects=("cmip6",), count=4)
     path = tmp_path / "piddi.db"
     with SQLiteCatalog("cmip6", path) as writer:
         writer.seal_batch("old", [{"id": 1, "error": None, "handle_count": 2}])
@@ -161,12 +157,10 @@ def test_cleanup_uses_published_timestamp_and_preserves_summaries(
 
 
 def test_archive_replay_preserves_coordinates_and_is_idempotent(
-    tmp_path, testdata_path
+    tmp_path, publication_sample
 ):
     config._set("consumer", "output_dir", str(tmp_path))
-    original = json.loads(
-        (testdata_path / "publication_samples/cmip6.json").read_text()
-    )
+    original = publication_sample("cmip6")
     with closing(HarvestProcessor(catalog_dir=tmp_path)) as processor:
         pipeline = ProcessingPipeline(
             [SourceMessage("key", original, KafkaSource("topic", 2, 12))],
@@ -194,9 +188,9 @@ def test_archive_replay_preserves_coordinates_and_is_idempotent(
 
 
 def test_retry_preserves_snapshot_and_refuses_stale_publication(
-    tmp_path, testdata_path
+    tmp_path, publication_sample
 ):
-    seed(tmp_path, testdata_path, projects=("cmip6",), count=2)
+    seed(tmp_path, publication_sample, projects=("cmip6",), count=2)
     with SQLiteCatalog("cmip6", tmp_path / "piddi.db") as writer:
         original = writer._execute(
             "SELECT stac_blob FROM work_items WHERE id=1"
@@ -215,8 +209,8 @@ def test_retry_preserves_snapshot_and_refuses_stale_publication(
             writer.retry_invalid([1])
 
 
-def test_missing_saved_output_blocks_newer_mapping(tmp_path, testdata_path):
-    seed(tmp_path, testdata_path, projects=("cmip6",), count=2)
+def test_missing_saved_output_blocks_newer_mapping(tmp_path, publication_sample):
+    seed(tmp_path, publication_sample, projects=("cmip6",), count=2)
     with SQLiteCatalog("cmip6", tmp_path / "piddi.db") as writer:
         writer.seal_batch("missing", [{"id": 1, "error": None, "handle_count": 2}])
     publisher = Publisher()
@@ -226,10 +220,10 @@ def test_missing_saved_output_blocks_newer_mapping(tmp_path, testdata_path):
     assert not publisher.calls
 
 
-def test_map_offset_stays_skipped_across_batch_rounds(tmp_path, testdata_path):
+def test_map_offset_stays_skipped_across_batch_rounds(tmp_path, publication_sample):
     from piddiplatsch.runners.mapping import map_catalog
 
-    seed(tmp_path, testdata_path, projects=("cmip6",), count=7)
+    seed(tmp_path, publication_sample, projects=("cmip6",), count=7)
     assert map_catalog(projects=["cmip6"], offset=2, limit=5).succeeded == 5
     with SQLiteCatalog("cmip6", tmp_path / "piddi.db", read_only=True) as reader:
         assert reader._execute(
@@ -238,9 +232,9 @@ def test_map_offset_stays_skipped_across_batch_rounds(tmp_path, testdata_path):
 
 
 def test_publication_exception_keeps_saved_output_and_records_failure(
-    tmp_path, testdata_path
+    tmp_path, publication_sample
 ):
-    seed(tmp_path, testdata_path, projects=("cmip6",), count=2)
+    seed(tmp_path, publication_sample, projects=("cmip6",), count=2)
 
     class BrokenPublisher:
         def run(self, *args, **kwargs):
@@ -257,11 +251,11 @@ def test_publication_exception_keeps_saved_output_and_records_failure(
 
 
 def test_weighted_saved_publication_backlog_preserves_each_projects_order(
-    tmp_path, testdata_path
+    tmp_path, publication_sample
 ):
     from piddiplatsch.runners.mapping import map_catalog
 
-    seed(tmp_path, testdata_path)
+    seed(tmp_path, publication_sample)
     assert map_catalog(projects=["cmip6", "cmip7"], limit=6).succeeded == 6
     publisher = Publisher()
     worker = SyncWorker(publisher=publisher)

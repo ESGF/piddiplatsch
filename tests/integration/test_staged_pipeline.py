@@ -15,19 +15,14 @@ from piddiplatsch.runners.mapping import map_catalog
 pytestmark = pytest.mark.integration
 
 
-def _sample(testdata_path: Path, project: str) -> dict:
-    path = testdata_path / "publication_samples" / f"{project}.json"
-    return json.loads(path.read_text(encoding="utf-8"))
-
-
 def test_consume_dumps_every_raw_message_before_project_filtering(
-    tmp_path: Path, testdata_path: Path
+    tmp_path: Path, publication_sample
 ):
     config._set("consumer", "output_dir", str(tmp_path))
     config._set("lookup", "enabled", False)
     messages = [
-        ("cmip6", _sample(testdata_path, "cmip6")),
-        ("cmip7", _sample(testdata_path, "cmip7")),
+        ("cmip6", publication_sample("cmip6")),
+        ("cmip7", publication_sample("cmip7")),
     ]
     pipeline = ProcessingPipeline(
         messages=messages,
@@ -62,18 +57,15 @@ def test_harvest_limit_stops_after_dumping_requested_messages(tmp_path: Path):
 
 
 def test_map_reads_catalog_without_kafka_or_handle_service(
-    tmp_path: Path, testdata_path: Path
+    tmp_path: Path, publication_sample
 ):
     output_dir = tmp_path / "outputs"
     config._set("consumer", "output_dir", str(output_dir))
     config._set("lookup", "enabled", False)
-    source = tmp_path / "raw.jsonl"
     records = [
-        _sample(testdata_path, "cmip7"),
-        _sample(testdata_path, "cmip6"),
+        publication_sample("cmip7"),
+        publication_sample("cmip6"),
     ]
-    original = "".join(json.dumps(record) + "\n" for record in records)
-    source.write_text(original, encoding="utf-8")
     with closing(CatalogHarvester(output_dir)) as harvester:
         for offset, record in enumerate(records):
             harvester.process_with_source(
@@ -84,12 +76,11 @@ def test_map_reads_catalog_without_kafka_or_handle_service(
     assert result.total == 1
     assert result.succeeded == 1
     assert result.failed == 0
-    assert source.read_text(encoding="utf-8") == original
     assert list((output_dir / "batches/cmip6/ready").glob("*/handles.jsonl"))
 
 
 def test_map_force_dataset_pid_corrects_dataset_and_file_parent(
-    tmp_path, testdata_path, caplog
+    tmp_path, publication_sample, caplog
 ):
     from piddiplatsch.utils.models import item_pid, parse_pid
 
@@ -97,11 +88,8 @@ def test_map_force_dataset_pid_corrects_dataset_and_file_parent(
     config._set(
         "plugins", "cmip7", {**config.get_plugin("cmip7"), "force_dataset_pid": True}
     )
-    message = _sample(testdata_path, "cmip7")
+    message = publication_sample("cmip7")
     item = message["data"]["payload"]["item"]
-    source = tmp_path / "raw.jsonl"
-    original = json.dumps(message) + "\n"
-    source.write_text(original)
     with closing(CatalogHarvester(tmp_path / "outputs")) as harvester:
         harvester.process_with_source("harvest", message, KafkaSource("topic", 0, 0))
     with caplog.at_level("INFO"):
@@ -129,14 +117,13 @@ def test_map_force_dataset_pid_corrects_dataset_and_file_parent(
     assert alias["data"] == {}
     assert file["handle"] == file_handle
     assert file["data"]["IS_PART_OF"] == f"hdl:{generated}"
-    assert source.read_text() == original
 
 
 def test_map_rejects_invalid_asset_instead_of_skipping_it(
-    tmp_path, testdata_path, caplog
+    tmp_path, publication_sample, caplog
 ):
     config._set("consumer", "output_dir", str(tmp_path / "outputs"))
-    message = _sample(testdata_path, "cmip7")
+    message = publication_sample("cmip7")
     item = message["data"]["payload"]["item"]
     asset = next(iter(item["assets"].values()))
     asset["file:checksum"] = "not-hex"

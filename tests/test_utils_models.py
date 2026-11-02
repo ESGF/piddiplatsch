@@ -113,9 +113,7 @@ def test_parse_datetime_valid_and_invalid():
 
 @given(st.datetimes())
 def test_parse_datetime_roundtrip(dt):
-    iso = dt.isoformat()
-    parsed = utils.parse_datetime(iso)
-    assert isinstance(parsed, datetime)
+    assert utils.parse_datetime(dt.isoformat()) == dt
 
 
 # ----------------------

@@ -2,7 +2,6 @@
 
 import json
 from contextlib import closing
-from copy import deepcopy
 from datetime import date, datetime
 from types import SimpleNamespace
 from unittest.mock import patch
@@ -22,18 +21,13 @@ from piddiplatsch.runners.mapping import map_catalog
 from piddiplatsch.runners.sync import SyncWorker
 
 
-def seed(tmp_path, testdata_path):
+def seed(tmp_path, publication_sample):
     config._set("consumer", "output_dir", str(tmp_path))
     config._set("consumer", "projects", ["cmip6"])
     config._set("batch", None, {"max_items": 2, "trigger_items": 1})
-    original = json.loads(
-        (testdata_path / "publication_samples/cmip6.json").read_text()
-    )
     with closing(CatalogHarvester(tmp_path)) as harvester:
         for index in range(3):
-            message = deepcopy(original)
-            item = message["data"]["payload"]["item"]
-            item["id"] = item["id"].rsplit(".", 1)[0] + f".v{20000101 + index}"
+            message = publication_sample("cmip6", version=20000101 + index)
             with patch(
                 "piddiplatsch.catalog.sqlite._now",
                 return_value=f"2026-08-0{index + 1}T12:00:00+00:00",
@@ -43,8 +37,8 @@ def seed(tmp_path, testdata_path):
                 )
 
 
-def test_date_window_applies_before_offset_limit(tmp_path, testdata_path):
-    seed(tmp_path, testdata_path)
+def test_date_window_applies_before_offset_limit(tmp_path, publication_sample):
+    seed(tmp_path, publication_sample)
     result = map_catalog(
         projects=["cmip6"],
         from_date=datetime(2026, 8, 2),
@@ -63,15 +57,15 @@ def test_date_window_applies_before_offset_limit(tmp_path, testdata_path):
     assert dataset["data"]["PREVIOUS_VERSION"].endswith(".v20000102")
 
 
-def test_last_then_all_only_maps_remaining_pending_work(tmp_path, testdata_path):
-    seed(tmp_path, testdata_path)
+def test_last_then_all_only_maps_remaining_pending_work(tmp_path, publication_sample):
+    seed(tmp_path, publication_sample)
     assert map_catalog(projects=["cmip6"], input_date="last").total == 1
     assert map_catalog(projects=["cmip6"], input_date="all").total == 2
     assert map_catalog(projects=["cmip6"]).total == 0
 
 
-def test_date_filter_does_not_decode_excluded_work(tmp_path, testdata_path):
-    seed(tmp_path, testdata_path)
+def test_date_filter_does_not_decode_excluded_work(tmp_path, publication_sample):
+    seed(tmp_path, publication_sample)
     with SQLiteCatalog("cmip6", tmp_path / "piddi.db") as writer, writer.transaction():
         writer._execute("UPDATE work_items SET stac_blob=? WHERE id=1", (b"corrupt",))
     assert (
@@ -79,8 +73,10 @@ def test_date_filter_does_not_decode_excluded_work(tmp_path, testdata_path):
     )
 
 
-def test_publication_orders_work_before_batch_creation_time(tmp_path, testdata_path):
-    seed(tmp_path, testdata_path)
+def test_publication_orders_work_before_batch_creation_time(
+    tmp_path, publication_sample
+):
+    seed(tmp_path, publication_sample)
     assert map_catalog(projects=["cmip6"], input_date="last").total == 1
     calls = []
 
