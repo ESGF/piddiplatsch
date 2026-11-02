@@ -30,7 +30,7 @@ def test_esgf_example_inherits_esgf_authentication():
     assert configured.get("kafka", "sasl.mechanisms") == "PLAIN"
     assert configured.get("catalog", "enabled") is True
     assert configured.get("catalog", "backend") == "sqlite"
-    assert configured.get("catalog", "version_history") is False
+    assert configured.get("catalog", "version_history") is True
     assert configured.get("lookup", "backend") == "catalog"
     assert configured.get("lookup", "enabled") is False
     errors, _ = configured.validate()
@@ -64,7 +64,7 @@ def test_ansible_render_matches_esgf_example_and_production_paths(tmp_path, rend
     assert configured.get("stats", "db_path") is None
     assert configured.get("catalog", "enabled") is True
     assert configured.get("catalog", "backend") == "sqlite"
-    assert configured.get("catalog", "version_history") is False
+    assert configured.get("catalog", "version_history") is True
     assert configured.get("lookup", "backend") == "catalog"
     assert (
         configured.get_stac("cmip6")["base_url"]
@@ -84,7 +84,7 @@ def test_deployment_preserves_explicit_application_overrides(tmp_path, render):
         "consumer": {"output_dir": "/data/piddi", "projects": ["cmip7"]},
         "logging": {"file": "", "level": "INFO"},
         "stats": {"enable_db": False},
-        "catalog": {"directory": "/data/catalog", "version_history": True},
+        "catalog": {"directory": "/data/catalog", "version_history": False},
         "lookup": {"backend": "stac", "enabled": False},
         "stac": {"base_url": "https://site-stac.example.test", "timeout": 20},
         "kafka": {"sasl.mechanisms": "SCRAM-SHA-512", "ssl.ca.location": "/etc/ca.pem"},

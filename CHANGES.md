@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+- Version history is enabled by default for all projects, using the local catalog
+  index to link the nearest older dataset version. Set `catalog.version_history`
+  to `false` or use `map --no-version-history` to disable linking.
+
 ### Added
 
 - `top` shows combined harvest/mapping (events/s) and publication (Handles/s)
