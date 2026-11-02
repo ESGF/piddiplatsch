@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import fcntl
 import hashlib
 import json
 import logging
@@ -68,7 +69,25 @@ class _PublicationResultWriter(AbstractContextManager):
     def __init__(self, path: Path) -> None:
         self.path = path
         self.path.parent.mkdir(parents=True, exist_ok=True)
+        archived = self.path.with_suffix(".jsonl.gz")
+        if archived.exists():
+            raise OSError(
+                f"Receipt is already archived; choose a new result file: {path}"
+            )
         self._stream = self.path.open("a", encoding="utf-8")
+        try:
+            fcntl.flock(self._stream, fcntl.LOCK_EX)
+            opened, current = os.fstat(self._stream.fileno()), self.path.stat()
+            if archived.exists() or (opened.st_dev, opened.st_ino) != (
+                current.st_dev,
+                current.st_ino,
+            ):
+                raise OSError(
+                    f"Receipt changed before publication; choose a new result file: {path}"
+                )
+        except BaseException:
+            self._stream.close()
+            raise
         self._lock = threading.Lock()
 
     def write(self, record: dict[str, Any]) -> None:
@@ -558,6 +577,9 @@ class HandlePublisher:
         while True:
             suffix = "" if counter == 1 else f"_{counter}"
             candidate = result_dir / f"{stem}{suffix}.jsonl"
+            if candidate.with_suffix(".jsonl.gz").exists():
+                counter += 1
+                continue
             try:
                 # Reserve the name atomically so concurrent runs cannot select
                 # the same human-readable filename.

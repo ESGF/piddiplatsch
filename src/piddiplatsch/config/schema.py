@@ -249,6 +249,13 @@ class BatchConfig(BaseModel):
     retention_days: int = Field(default=0, ge=0, strict=True)
 
 
+class MaintenanceConfig(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    compress_outputs: bool = Field(default=True, strict=True)
+    output_retention_days: int = Field(default=0, ge=0, strict=True)
+
+
 class DiskConfig(BaseModel):
     model_config = ConfigDict(extra="forbid", allow_inf_nan=False)
 
@@ -312,6 +319,7 @@ class AppConfig(BaseModel):
     lookup: LookupConfig | None = None
     catalog: CatalogConfig | None = None
     batch: BatchConfig | None = None
+    maintenance: MaintenanceConfig | None = None
     disk: DiskConfig | None = None
     schema_config: SchemaConfig | None = Field(None, alias="schema")
     logging_config: LoggingConfig | None = Field(None, alias="logging")

@@ -100,10 +100,13 @@ project. Other projects can continue. See [Scheduled batch recovery](recovery.md
 Stop Piddi before taking a file-based backup. Save the configuration, catalog
 directory (including `.harvest-state.json`), and batch directory together.
 Keep immutable batch files and receipts according to your site's audit policy.
-Output files and batches have no automatic retention policy.
+Completed batch output and closed receipts are compressed by default. Optional
+`maintenance.output_retention_days` removes them after a configured age; its
+default `0` keeps them indefinitely. Ready and failed batches are protected.
 
-The maintenance timer compresses closed raw dumps daily; it does not delete old
-archives, receipts, or batches. Control it with `piddi_enable_maintenance_timer`
+The maintenance timer runs daily and compresses closed raw dumps and completed
+output. It never deletes Kafka dumps. Completed batches/receipts are removed only
+when output retention is explicitly enabled. Control it with `piddi_enable_maintenance_timer`
 in Ansible's `custom.yml` (defaults to `piddi_enable_service`). Its command,
 `piddi maintain`, can also be run manually with `--dry-run` for inspection.
 

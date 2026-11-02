@@ -200,8 +200,25 @@ speed samples are unavailable, or errors prevent an estimate, the overall ETA
 line displays the reason instead of disappearing. JSON exposes `partial`,
 `estimated_projects`, and `unestimated_projects` alongside the estimate.
 
-Maintain compresses closed dump files. Database work cleanup is prepared but
-disabled by default (`batch.retention_days = 0`), so all work rows remain.
+Maintain compresses closed dump files and completed output. By default,
+`maintenance.compress_outputs = true` gzips archived batch JSONL and closed
+publication receipts, while `maintenance.output_retention_days = 0` keeps them
+indefinitely. Set the latter to `30` to remove older completed output. Completion
+time controls batch age, so a batch created weeks ago but published today is kept.
+Standalone receipts use their last-write time. Ready/failed batches, their
+referenced receipts, and actively written receipts are protected.
+
+Archived manifests stay readable and link to compressed receipts. Their payload
+checksums still describe the original JSONL bytes; use `gzip -cd FILE.jsonl.gz`
+for inspection or decompress a copy for manual tooling that needs plain JSONL.
+This does not change normal publication/recovery, which uses uncompressed ready
+batches. Maintenance coordinates with project reset, and can compress completed
+archives while harvest and sync continue. An interrupted archive deletion is
+resumed on the next run with output retention enabled.
+
+Run `piddi maintain --dry-run` to see planned paths before enabling removal.
+These settings do not remove Kafka dumps or DB summaries. Database work cleanup
+is implemented but disabled by default (`batch.retention_days = 0`), so all work rows remain.
 To enable it later, set a positive period, such as 30 days. Cleanup then removes
 only expired published work, using the time it entered published state
 (`updated_at`). It keeps pending, mapped, invalid, catalog, summary, and output data.

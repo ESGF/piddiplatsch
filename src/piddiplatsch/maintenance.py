@@ -1,4 +1,4 @@
-"""Compress closed raw dumps; never modify batch payloads or receipts."""
+"""Compress closed raw dumps and maintain retained database work/history."""
 
 import fcntl
 import gzip
@@ -34,6 +34,9 @@ def _compress(path: Path, guard) -> Path:
             dir=path.parent, prefix=f".{path.name}.", suffix=".tmp"
         ) as temporary,
     ):
+        owner = os.fstat(temporary.fileno())
+        if (owner.st_uid, owner.st_gid) != (before.st_uid, before.st_gid):
+            os.fchown(temporary.fileno(), before.st_uid, before.st_gid)
         os.fchmod(temporary.fileno(), before.st_mode & 0o777)
         with gzip.GzipFile(
             fileobj=temporary,
@@ -46,6 +49,7 @@ def _compress(path: Path, guard) -> Path:
                 guard.check()
                 compressed.write(chunk)
         temporary.flush()
+        os.utime(temporary.name, ns=(before.st_atime_ns, before.st_mtime_ns))
         os.fsync(temporary.fileno())
         after = path.stat()
         if (before.st_dev, before.st_ino, before.st_size, before.st_mtime_ns) != (
@@ -54,7 +58,7 @@ def _compress(path: Path, guard) -> Path:
             after.st_size,
             after.st_mtime_ns,
         ):
-            raise OSError(f"Dump changed during compression; keeping original: {path}")
+            raise OSError(f"File changed during compression; keeping original: {path}")
         # Publish atomically without replacing any existing archive. The
         # original is removed only once the complete archive is durable.
         os.link(temporary.name, destination)

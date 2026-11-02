@@ -234,6 +234,21 @@ incoming data exceeds the space freed.
 Never run `VACUUM` unsupervised. File shrinking is an explicit operation with
 Piddi stopped, a database backup, and sufficient free disk space checked.
 
+Completed output has an independent maintenance policy: `compress_outputs = true`
+and `output_retention_days = 0` under `[maintenance]` enable gzip compression but
+keep archives indefinitely by default. Only published archive directories with a
+matching published DB summary are eligible. Keep manifests readable and preserve
+original-byte checksums; update their receipt paths after compression. Ready
+batches and their receipts stay unchanged. Receipt writers hold advisory locks;
+maintenance and project reset share an output lock, allowing compression beside
+normal harvest/sync. Standalone receipts wait until their last-write UTC day ends.
+
+Optional positive output retention (e.g. 30 days) removes completed batch trees
+and closed receipts by completion/last-write time. Deletion first renames a batch
+to a private `.deleting-<batch-id>` path and persists the rename; subsequent runs
+can finish interrupted removal even if its manifest is gone. DB summaries and
+Kafka dumps survive this policy. Published-work retention remains independent.
+
 ### Future task: daily statistics rollup
 
 Deferred, not implemented. Keep the current four-table design until measured

@@ -19,7 +19,7 @@ archive replay requirements, and retention decisions. This format requires a fre
   double counting results. Cleanup stays disabled by default; keep all work for
   now and invalid work available for explicit retry.
 - [x] Keep `VACUUM` an explicit supervised operation with Piddi stopped; scheduled
-  maintenance only deletes expired work.
+  maintenance performs configured logical cleanup without physical compaction.
 
 ## Handle service
 
@@ -32,8 +32,9 @@ archive replay requirements, and retention decisions. This format requires a fre
 
 ## Publication spool
 
-- [ ] Define durability rules for flushing, partial writes, disk limits, and
-  retention.
+- [x] Compress completed batch output and closed receipts; offer optional
+  age-based removal, disabled by default, independently of DB work retention.
+- [ ] Extend durability rules and storage policies based on production measurements.
 - [ ] Add backlog metrics, publication rate limiting, and optional watch mode.
 - [ ] Add an outbox validation command that never publishes.
 - [ ] Define multi-target routing and track delivery independently per target.

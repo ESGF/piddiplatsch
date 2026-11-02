@@ -8,6 +8,7 @@ from pathlib import Path
 from uuid import uuid4
 
 from piddiplatsch.core.registry import get_plugin
+from piddiplatsch.output_maintenance import output_maintenance_lock
 from piddiplatsch.runners.sync import _worker_lock
 
 
@@ -33,9 +34,14 @@ def reset_processing(settings, project):
             or source == output / "reset-archives"
         ):
             raise ValueError(f"Cannot archive protected path {source}")
-    with _worker_lock(database.parent) as acquired:
+    with (
+        _worker_lock(database.parent) as acquired,
+        output_maintenance_lock(output) as output_acquired,
+    ):
         if not acquired:
             raise RuntimeError("A batch worker is running; stop it before reset")
+        if not output_acquired:
+            raise RuntimeError("Output maintenance is running; stop it before reset")
         archive = (
             output
             / "reset-archives"

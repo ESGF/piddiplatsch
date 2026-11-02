@@ -65,5 +65,8 @@ requires original archive replay into a fresh database.
 
 Do not delete database journals or edit batch payloads to bypass recovery checks.
 Back up SQLite using its backup API or with all processes stopped. Keep its output
-batches and harvest control file with it. Maintenance never runs `VACUUM` and only
-deletes work whose published-state timestamp is older than the retention limit.
+batches and harvest control file with it. Maintenance never runs `VACUUM`.
+Database work cleanup removes only published work older than its retention limit.
+Completed batch JSONL and closed receipts are compressed by default; their
+removal is a separate opt-in policy (`maintenance.output_retention_days = 0`
+keeps them indefinitely). DB summaries and Kafka dumps survive output removal.

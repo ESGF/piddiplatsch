@@ -244,6 +244,32 @@ with its database. All batch commands use a shared lock beside `piddi.db`, even
 when a custom batch directory is configured. The Ansible setting
 `piddi_sync_check_interval` controls how often the timer runs.
 
+## Completed output maintenance
+
+```toml
+[maintenance]
+compress_outputs = true
+output_retention_days = 0 # Keep forever; set e.g. 30 to delete older completed output.
+```
+
+`piddi maintain` and the scheduled maintenance service gzip completed batch
+JSONL (Handles, failures, publication journal) and closed publication receipts.
+Compression is enabled by default; deletion is disabled. This policy is separate
+from `[batch].retention_days`, which controls published work rows in the database.
+
+Only batch archives confirmed published in `piddi.db` are eligible. Ready and
+failed batches remain unchanged. Their referenced receipts are protected, and
+receipt writers hold file locks so maintenance skips active files. Completed
+batch receipts can be compressed immediately; other nonempty receipts wait until
+their last-write UTC day has ended. Compression preserves contents and last-write
+times, and creates a durable `.jsonl.gz` before removing the original.
+
+With `output_retention_days = 30`, archives expire 30 days after publication
+completion, regardless of their creation-date directory. Standalone receipts
+use their last-write time. Both plain and gzip files are eligible for removal.
+Database summaries, Kafka dumps, and pending/invalid work are retained. Use
+`piddi maintain --dry-run` to review compression and deletion paths first.
+
 ## Logging and monitoring
 
 ```toml

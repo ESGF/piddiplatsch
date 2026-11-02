@@ -72,6 +72,14 @@ retention_days = 0
 # Default: <consumer.output_dir>/batches. Must be shared by all worker invocations.
 # directory = "/var/lib/piddi/batches"
 
+[maintenance]
+# Gzip completed batch JSONL and closed publication receipts. Ready/failed
+# batches and receipts still needed by ready batches are retained unchanged.
+compress_outputs = true
+# Keep completed output forever by default. Set e.g. 30 to remove it after
+# 30 days. This does not delete Kafka dumps, DB summaries, or pending work.
+output_retention_days = 0
+
 [logging]
 # INFO shows progress summaries. Use -vv/--debug for per-record details.
 level = "INFO"
