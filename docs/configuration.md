@@ -202,7 +202,7 @@ acknowledgement for each message and can reduce throughput.
 ```toml
 [batch]
 trigger_items = 100
-max_wait_seconds = 1800
+max_wait_seconds = 600
 max_items = 2000
 publish_workers = 4
 publish_retries = 3
@@ -211,7 +211,7 @@ retention_days = 0 # Disabled; set e.g. 30 to enable published-work cleanup.
 ```
 
 Sync maps a project when either 100 work entries are pending or the oldest
-has waited 30 minutes. Every event has an independent snapshot, including repeated
+has waited 10 minutes. Every event has an independent snapshot, including repeated
 updates to the same item. `sync --force-map` skips these waiting thresholds.
 Manual `map` processes pending work immediately.
 

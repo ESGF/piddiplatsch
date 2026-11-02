@@ -28,9 +28,9 @@ version_history = false
 
 [batch]
 # Enable the Ansible sync timer when automatic Handle publication is intended.
-# Map per project at 100 pending events or a 30-minute maximum wait.
+# Map per project at 100 pending events or a 10-minute maximum wait.
 trigger_items = 100
-max_wait_seconds = 1800
+max_wait_seconds = 600
 max_items = 2000
 publish_workers = 4
 publish_retries = 3

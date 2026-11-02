@@ -242,7 +242,7 @@ class BatchConfig(BaseModel):
 
     directory: str | None = Field(default=None, min_length=1)
     trigger_items: int = Field(default=100, ge=1, strict=True)
-    max_wait_seconds: float = Field(default=1800, gt=0)
+    max_wait_seconds: float = Field(default=600, gt=0)
     max_items: int = Field(default=2000, ge=1, strict=True)
     publish_workers: int = Field(default=4, ge=1, strict=True)
     publish_retries: int = Field(default=3, ge=0, strict=True)

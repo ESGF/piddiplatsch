@@ -62,7 +62,7 @@ version_history = false
 # Per project: map when this many event snapshots are pending OR the oldest has
 # waited max_wait_seconds. Harvest changes arriving during mapping stay pending.
 trigger_items = 100
-max_wait_seconds = 1800
+max_wait_seconds = 600
 # Maximum work entries per immutable output batch; never split an entry's Handles.
 max_items = 2000
 # Ready batches publish immediately during the sync tick, in project order.

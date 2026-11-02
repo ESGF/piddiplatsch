@@ -396,7 +396,7 @@ def test_sync_map_info_reports_force_setting_and_alias_summary(setup, caplog, fo
         ).fetchone() == (1, 2 if force else 0)
 
 
-@pytest.mark.parametrize("max_wait_seconds", [1800, 3600])
+@pytest.mark.parametrize("max_wait_seconds", [600, 1800, 3600])
 def test_time_trigger_preserves_successive_event_snapshots(setup, max_wait_seconds):
     put, directory, root = setup
     put(1)
@@ -856,7 +856,7 @@ def test_defaults_and_cli_worker_tick(setup, monkeypatch):
     assert BatchConfig().publish_workers == 4
     assert BatchConfig().trigger_items == 100
     assert BatchConfig().max_items == 2000
-    assert BatchConfig().max_wait_seconds == 1800
+    assert BatchConfig().max_wait_seconds == 600
     put, _directory, _root = setup
     put(1)
     publisher = Publisher()
@@ -878,10 +878,10 @@ def test_worker_uses_default_batch_limits_when_settings_are_omitted(setup):
     worker = SyncWorker(publisher=Publisher())
     assert worker.trigger_items == 100
     assert worker.max_items == 2000
-    assert worker.max_wait_seconds == 1800
+    assert worker.max_wait_seconds == 600
     assert Config().get("batch", "trigger_items") == 100
     assert Config().get("batch", "max_items") == 2000
-    assert Config().get("batch", "max_wait_seconds") == 1800
+    assert Config().get("batch", "max_wait_seconds") == 600
 
 
 def test_archive_partition_is_stable_across_publication_midnight(setup):
