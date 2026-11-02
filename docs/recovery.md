@@ -40,7 +40,7 @@ directory = "/mnt/piddi-recovery"
 Replay the saved dump directory first:
 
 ```bash
-piddi --config recovery.toml harvest --archive /backup/piddi/dump
+piddi --config recovery.toml admin recover --archive /backup/piddi/dump
 ```
 
 This reads top-level `dump_messages_*.jsonl` and `.jsonl.gz` parts in filename
@@ -115,12 +115,16 @@ next run archives the batch without republishing it.
 
 ## Explicit retries and reset
 
+Manual reset/rebuild and catalog recovery commands live under `piddi admin`.
+Normal harvesting, mapping, publication and scheduled maintenance keep their
+regular commands. Dump replay also remains available through `harvest --archive`.
+
 `retry --project NAME ID...` requeues invalid snapshots only before the project has
 recorded successful publication and when no newer work was mapped/published.
 Finish its original saved batch first. Otherwise harvest a correction as a new
 event or explicitly reset the whole project's retained processing history.
 
-`reset --project NAME` previews an ordered project replay. With `--apply`, after
+`admin reset --project NAME` previews an ordered project replay. With `--apply`, after
 harvest and all batch commands are stopped, it updates work in place without
 copying the database, archives project output under `reset-archives/`, clears
 project summaries, and requeues retained work.
@@ -128,6 +132,55 @@ Catalog records and shared checkpoints remain intact. Retention-deleted work
 requires original archive replay into a fresh database.
 
 ## Storage
+
+### Manual work-history rebuild
+
+Use this occasional manual operation to replace retained event history in SQLite
+with one full, published snapshot per current catalog item (including each
+retained dataset version). It requires all retained work to be published:
+pending, mapped, or invalid events must be processed/resolved first. Ready or
+failed-publication batches also block consolidation. It does not enable
+automatic retention or change its settings.
+
+```bash
+piddi admin rebuild                 # preview
+make stop
+piddi admin rebuild --apply         # leave free pages available for reuse
+# Or, instead of the preceding command:
+piddi admin rebuild --apply --vacuum # also compact the database file
+make start
+```
+
+The rebuild covers all projects. It keeps catalog blobs and real Kafka
+checkpoints unchanged. New work is ordered by the catalog's local `last_update`,
+then project, collection and item ID. It uses a unique synthetic source identity
+and new work IDs; these are not Kafka offsets. All new entries are published full
+snapshots, so normal processing does not map or publish them again. Existing
+processing summaries and published Handle totals remain in the database.
+
+Before replacing work, the command streams the complete old work and summaries
+to `work-rebuild-archives/<id>/work_items.jsonl.gz` and `stats.jsonl.gz` under
+`consumer.output_dir`. Every work-row field is retained; `stac_blob` holds the
+original compressed bytes encoded as base64, as recorded in `rebuild.json`.
+These are historical row exports, not Kafka dump envelopes accepted by
+`harvest --archive`. Old batches and project receipt directories are moved into
+the same archive. Keep/back up this directory if you want the old event history;
+archiving reduces live database content, not necessarily total disk usage.
+
+Stop harvest, batch/publication and maintenance processes before applying. The
+command refuses an active harvest or batch worker and an empty catalog. Database
+changes are transactional; failures restore moved output. An interrupted rebuild
+blocks harvest and batch processing until `piddi admin rebuild --apply` is rerun
+with the same configuration. A durable database receipt lets this finish a
+committed rebuild without replaying the rebuild itself. If optional VACUUM fails,
+the rebuilt work stays committed and the same recovery command retries finishing
+it.
+
+Exporting the archive and rewriting SQLite need temporary disk space. Without
+`--vacuum`, SQLite retains free pages for reuse. Optional VACUUM also needs free
+disk space (potentially twice the database size) and requires database readers to
+be closed; see [SQLite's VACUUM documentation](https://sqlite.org/lang_vacuum.html).
+The command does not delete old rebuild archives automatically.
 
 Do not delete database journals or edit batch payloads to bypass recovery checks.
 Back up SQLite using its backup API or with all processes stopped. Keep its output

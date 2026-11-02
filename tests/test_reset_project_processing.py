@@ -75,7 +75,9 @@ def test_reset_respects_worker_ownership(tmp_path, testdata_path):
 
 def test_reset_cli_defaults_to_preview(tmp_path):
     config._set("consumer", "output_dir", str(tmp_path))
-    result = CliRunner().invoke(cli, ["--silent", "reset", "--project", "cmip6plus"])
+    result = CliRunner().invoke(
+        cli, ["--silent", "admin", "reset", "--project", "cmip6plus"]
+    )
     assert result.exit_code == 0, result.output
     assert "Preview only" in result.output
     assert not (tmp_path / "piddi.db").exists()

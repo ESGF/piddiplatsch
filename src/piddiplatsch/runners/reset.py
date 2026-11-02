@@ -7,6 +7,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from uuid import uuid4
 
+from piddiplatsch.catalog.ownership import ensure_no_work_rebuild
 from piddiplatsch.core.registry import get_plugin
 from piddiplatsch.output_maintenance import output_maintenance_lock
 from piddiplatsch.runners.sync import _worker_lock
@@ -42,6 +43,7 @@ def reset_processing(settings, project):
             raise RuntimeError("A batch worker is running; stop it before reset")
         if not output_acquired:
             raise RuntimeError("Output maintenance is running; stop it before reset")
+        ensure_no_work_rebuild(database.parent)
         archive = (
             output
             / "reset-archives"

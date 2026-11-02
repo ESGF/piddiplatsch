@@ -9,6 +9,7 @@ import jsonpatch
 from piddiplatsch.catalog.api import get_catalog_path, open_catalog
 from piddiplatsch.catalog.base import BaseCatalog, BaseCatalogTransaction
 from piddiplatsch.catalog.models import CatalogEntry, KafkaCheckpoint
+from piddiplatsch.catalog.ownership import ensure_no_work_rebuild, harvest_lock
 from piddiplatsch.catalog.remote import fetch_current_item
 from piddiplatsch.catalog.state import HarvestState
 from piddiplatsch.config import config
@@ -65,8 +66,14 @@ class CatalogHarvester:
             for project_id in plugin.project_ids
         }
         self._catalogs: dict[str, BaseCatalog] = {}
+        self._ownership = ExitStack()
         self._state = HarvestState(self.directory)
         try:
+            if not self._ownership.enter_context(harvest_lock(self.directory)):
+                raise CatalogError(
+                    "Another harvest or work rebuild is running; stop it first"
+                )
+            ensure_no_work_rebuild(self.directory)
             known_projects = set(self.project_names)
             if set(clean_projects) - known_projects:
                 raise ValueError("Clean projects must be registered plugin names")
@@ -81,7 +88,8 @@ class CatalogHarvester:
                 }
                 if stored - set(clean_projects):
                     raise CatalogError(
-                        "Project-only harvest cleaning is unsafe with shared Kafka checkpoints; use --clean-catalog for a complete rebuild"
+                        "Project-only harvest cleaning is unsafe with shared Kafka checkpoints; "
+                        "use piddi admin recover --clean-catalog for a complete rebuild"
                     )
             if clean_projects:
                 self._state.request_clean(clean_projects)
@@ -384,3 +392,4 @@ class CatalogHarvester:
                     stack.callback(catalog.close)
         finally:
             self._catalogs.clear()
+            self._ownership.close()

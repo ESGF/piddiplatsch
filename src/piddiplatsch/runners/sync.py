@@ -14,6 +14,7 @@ from piddiplatsch.catalog.api import (
     get_catalog_path,
     open_catalog,
 )
+from piddiplatsch.catalog.ownership import ensure_no_work_rebuild
 from piddiplatsch.catalog.state import HarvestState
 from piddiplatsch.config import config
 from piddiplatsch.config.schema import BatchConfig
@@ -274,6 +275,7 @@ class SyncWorker:
             if not acquired:
                 LOGGER.info("[sync] Skipped | another worker holds the lock")
                 return completed
+            ensure_no_work_rebuild(self.catalog_directory)
             LOGGER.info(
                 "[sync] Starting | projects: %s",
                 ", ".join(p.name for p in self.plugins),

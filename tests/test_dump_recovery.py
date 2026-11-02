@@ -253,7 +253,8 @@ def test_empty_dump_directory_is_rejected_before_cleaning(restored, tmp_path):
     empty = tmp_path / "empty"
     empty.mkdir()
     result = CliRunner().invoke(
-        cli, ["--silent", "harvest", "--clean-catalog", "--archive", str(empty)]
+        cli,
+        ["--silent", "admin", "recover", "--clean-catalog", "--archive", str(empty)],
     )
     assert result.exit_code == 1
     assert "No dump_messages_" in result.output

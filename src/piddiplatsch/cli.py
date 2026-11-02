@@ -104,12 +104,30 @@ def cli(
     config.load_config_layers(config_file)
     # Inspection/reset must work without opening a possibly unwritable log.
     # Validation reports logging errors through its schema.
-    if ctx.invoked_subcommand in {"config", "reset"}:
+    if ctx.invoked_subcommand in {"config", "admin"}:
         return
     try:
         config.configure_logging(verbosity=verbosity, debug=debug, log=log)
     except ValueError as exc:
         raise click.ClickException(str(exc)) from exc
+
+
+@cli.group("admin")
+@click.pass_context
+def admin(ctx: click.Context) -> None:
+    """Manual reset, consolidation and destructive catalog recovery jobs."""
+    # Reset/rebuild previews must work without opening a log file. Harvest
+    # recovery uses the same logging settings as ordinary harvest.
+    if ctx.invoked_subcommand == "recover":
+        options = ctx.find_root().params
+        try:
+            config.configure_logging(
+                verbosity=options["verbosity"],
+                debug=options["debug"],
+                log=options["log"],
+            )
+        except ValueError as exc:
+            raise click.ClickException(str(exc)) from exc
 
 
 @cli.command("sync")
@@ -154,7 +172,7 @@ def sync(
     ).execute()
 
 
-@cli.command("reset")
+@admin.command("reset")
 @click.option(
     "--project", required=True, help="Project whose processing should be reset."
 )
@@ -169,6 +187,25 @@ def reset(project: str, apply: bool) -> None:
     Stop harvest and sync before using --apply. This command does not publish.
     """
     commands.ResetCommand(project=project, apply=apply).execute()
+
+
+@admin.command("rebuild")
+@click.option(
+    "--apply",
+    is_flag=True,
+    help="Consolidate fully published work into published catalog snapshots; default is a preview.",
+)
+@click.option(
+    "--vacuum",
+    is_flag=True,
+    help="Reclaim unused database file space after rebuilding (needs extra disk space).",
+)
+def rebuild_work(apply: bool, vacuum: bool) -> None:
+    """Consolidate completed work into published catalog snapshots across all projects.
+
+    Stop harvest and all processing/maintenance services before using --apply.
+    """
+    commands.RebuildWorkCommand(apply=apply, vacuum=vacuum).execute()
 
 
 # command harvest
@@ -221,10 +258,10 @@ def harvest(
     idle_timeout: float,
     limit: int | None,
     catalog: bool | None,
-    clean_catalog: bool,
-    clean_projects: tuple[str, ...],
     archives: tuple[Path, ...],
     ignore_unknown_projects: bool | None,
+    clean_catalog: bool = False,
+    clean_projects: tuple[str, ...] = (),
 ) -> None:
     """Harvest Kafka messages into raw JSONL and local catalogs without mapping."""
     commands.HarvestCommand(
@@ -237,6 +274,23 @@ def harvest(
         archives=archives,
         ignore_unknown_projects=ignore_unknown_projects,
     ).execute()
+
+
+# Share the input options and workflow, but expose destructive cleanup only
+# through the admin group. Normal harvest uses the safe callback defaults.
+admin.add_command(
+    click.Command(
+        "recover",
+        callback=harvest.callback,
+        params=list(harvest.params),
+        help="Recover catalogs from saved dumps or retained Kafka history, with optional cleanup. Stop processing before cleaning.",
+    )
+)
+harvest.params = [
+    option
+    for option in harvest.params
+    if option.name not in {"clean_catalog", "clean_projects"}
+]
 
 
 # command map

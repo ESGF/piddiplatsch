@@ -139,8 +139,8 @@ For a full ordered replay of a project's retained work, stop harvest and all
 batch commands, preview and then apply:
 
 ```bash
-piddi reset --project cmip6
-piddi reset --project cmip6 --apply
+piddi admin reset --project cmip6
+piddi admin reset --project cmip6 --apply
 ```
 
 Reset updates work rows in place without copying the shared database. It moves
@@ -149,18 +149,36 @@ project's batch summaries, and requeues all retained event snapshots. Catalog
 records and Kafka checkpoints stay unchanged. Work already removed by
 retention cannot be recovered by this reset.
 
+Manual state-rewriting jobs are grouped under `piddi admin`:
+
+```bash
+piddi admin --help
+piddi admin reset --project cmip6
+piddi admin rebuild
+```
+
+For occasional manual consolidation of the live work table, use
+`piddi admin rebuild` to preview, then `piddi admin rebuild --apply` after stopping
+services and finishing all pending work/publication. It archives the old history
+and batches, and retains one published snapshot per catalog item without
+reprocessing. Invalid work must also be resolved first. Add `--vacuum` only when file space should also be
+returned to the filesystem. See [manual work-history rebuild](recovery.md#manual-work-history-rebuild)
+for storage requirements and interruption recovery.
+
 Original archives are an alternative harvest input:
 
 ```bash
 piddi harvest --archive outputs/dump/dump_messages_2026-11-01_000001.jsonl
-piddi harvest --archive /backup/piddi/dump
+piddi admin recover --archive /backup/piddi/dump
 ```
 
 Repeat `--archive` for multiple parts, including `.jsonl.gz` files. Parts sort by
 name; checkpoint deduplication prevents patches from being applied twice. Replay
 requires the new coordinate-bearing envelope; legacy payload-only dumps are not
 supported. Rebuilding shared harvest state must include all stored projects;
-`--clean-catalog` starts a new Kafka group generation and resets the shared state.
+`piddi admin recover --clean-catalog` starts a new Kafka group generation and
+resets the shared state. `--clean-project` also belongs to `piddi admin recover`;
+normal `piddi harvest` does not expose destructive cleanup options.
 A partial harvest clean is refused when other stored projects share checkpoints.
 Normal Kafka harvest resumes each partition at its database checkpoint,
 independently of broker group offsets, and stops if required history has expired.
