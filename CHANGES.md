@@ -40,6 +40,10 @@
 
 ### Changed
 
+- Publication acknowledgements waiting behind a SQLite commit share the next
+  transaction, reducing disk syncs under contention. Workers still wait for
+  their own durable acknowledgement before the next update to the same Handle;
+  `synchronous=FULL` and crash-recovery ordering are unchanged.
 - `top` distinguishes `waiting` (below both batch triggers), `ready` (eligible
   for mapping), and `queued` (mapped and awaiting publication), using configured
   thresholds. Priority-zero projects with work show `disabled`.
