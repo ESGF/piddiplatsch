@@ -75,7 +75,7 @@ again 20 seconds after each sync run finishes.
 | --- | --- |
 | `consumer.output_dir` | `outputs`; root for local runtime files. |
 | `catalog.directory` | Defaults to the output directory; contains shared `piddi.db`. |
-| `catalog.version_history` | `false`; enable predecessor links after the initial fill. |
+| `catalog.version_history` | `true`; link to the nearest older version in the local catalog for all projects. Disable per run with `map --no-version-history`. |
 | `plugins.<project>.max_errors` | `1`; mapping stops at the first error. `-1` allows unlimited errors. Harvest remains fail-fast. |
 | `plugins.<project>.max_parts` | Maximum dataset file links; `0` omits them, `-1` is unlimited. |
 | `plugins.<project>.force_dataset_pid` | `false`; generate dataset PIDs from versioned item IDs, with aliases for differing source PIDs. |

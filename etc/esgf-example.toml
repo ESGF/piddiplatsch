@@ -20,9 +20,9 @@ enabled = true
 backend = "sqlite"
 kafka_commit_batch_size = 100
 kafka_commit_interval_seconds = 1.0
-# Keep predecessor links disabled during initial filling. Enable once ready,
-# or use map --version-history for the next mapping run.
-version_history = false
+# Link to the nearest older version in the local catalog for all projects.
+# Disable per run with map --no-version-history.
+version_history = true
 # Optional database directory; deployment otherwise uses /var/lib/piddi:
 # directory = "/data/piddi"
 

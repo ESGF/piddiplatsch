@@ -557,7 +557,7 @@ class SyncWorker:
                 "version_history": (
                     self.version_history
                     if self.version_history is not None
-                    else config.get("catalog", "version_history", False)
+                    else config.get("catalog", "version_history", True)
                 ),
                 "handle_profile": self.handle_profile
                 or config.get_handle_profile(project),
