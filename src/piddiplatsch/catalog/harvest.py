@@ -1,8 +1,11 @@
 """Reconstruct project catalogs from publication events without Handle mapping."""
 
 import logging
+from collections import defaultdict
 from contextlib import ExitStack, closing
+from dataclasses import dataclass
 from pathlib import Path
+from time import perf_counter
 
 import jsonpatch
 
@@ -23,6 +26,14 @@ from piddiplatsch.persist.dump import DumpRecorder
 from piddiplatsch.result import ProcessingResult
 
 LOGGER = logging.getLogger(__name__)
+
+
+@dataclass
+class _PatchMetrics:
+    attempts: int = 0
+    local: int = 0
+    remote: int = 0
+    seconds: float = 0.0
 
 
 class CatalogHarvester:
@@ -66,6 +77,11 @@ class CatalogHarvester:
             for project_id in plugin.project_ids
         }
         self._catalogs: dict[str, BaseCatalog] = {}
+        self._patch_metrics: dict[str, _PatchMetrics] = defaultdict(_PatchMetrics)
+        self._patches_since_log = 0
+        self._patch_log_at = perf_counter()
+        self._patch_log_seconds = config.get("stats", "interval_seconds", 30)
+        self._patch_log_count = config.get("stats", "summary_interval", 10000)
         self._ownership = ExitStack()
         self._state = HarvestState(self.directory)
         try:
@@ -174,6 +190,52 @@ class CatalogHarvester:
         return value["data"]["payload"]
 
     def _apply_patch(
+        self,
+        project: str,
+        payload: dict,
+        transaction: BaseCatalogTransaction,
+        source: KafkaSource,
+    ) -> tuple[dict, dict | None]:
+        """Measure patch resolution; item validation and durable storage follow."""
+        metrics = self._patch_metrics[project]
+        started = perf_counter()
+        metrics.attempts += 1
+        try:
+            item, recovery = self._resolve_patch(project, payload, transaction, source)
+            if recovery is None:
+                metrics.local += 1
+            else:
+                metrics.remote += 1
+            return item, recovery
+        finally:
+            metrics.seconds += perf_counter() - started
+            self._patches_since_log += 1
+            self._log_patch_metrics()
+
+    def _log_patch_metrics(self, *, force=False):
+        now = perf_counter()
+        if not force and (
+            self._patches_since_log < self._patch_log_count
+            and now - self._patch_log_at < self._patch_log_seconds
+        ):
+            return
+        for project, metrics in self._patch_metrics.items():
+            LOGGER.info(
+                "[harvest] %s | patch resolutions: %s | local: %s | "
+                "remote STAC: %s | errors: %s | %.3fs total | %.3fms avg",
+                project,
+                f"{metrics.attempts:,}",
+                f"{metrics.local:,}",
+                f"{metrics.remote:,}",
+                f"{metrics.attempts - metrics.local - metrics.remote:,}",
+                metrics.seconds,
+                1000 * metrics.seconds / metrics.attempts,
+            )
+        self._patch_metrics.clear()
+        self._patches_since_log = 0
+        self._patch_log_at = now
+
+    def _resolve_patch(
         self,
         project: str,
         payload: dict,
@@ -392,6 +454,7 @@ class CatalogHarvester:
             with ExitStack() as stack:
                 for catalog in self._catalogs.values():
                     stack.callback(catalog.close)
+                self._log_patch_metrics(force=True)
         finally:
             self._catalogs.clear()
             self._ownership.close()

@@ -8,6 +8,7 @@ import random
 from contextlib import ExitStack, closing, contextmanager
 from datetime import UTC, datetime
 from pathlib import Path
+from time import perf_counter
 from uuid import uuid4
 
 from piddiplatsch.catalog.api import (
@@ -672,6 +673,7 @@ class SyncWorker:
                 manifest["item_count"] += 1
                 yield _envelope(pending.entry)
 
+        started = perf_counter()
         try:
             with closing(records()) as selected:
                 process_messages(
@@ -682,6 +684,24 @@ class SyncWorker:
                 )
         except MaxErrorsExceededError as exc:
             manifest["mapping_error"] = str(exc)
+        finally:
+            elapsed = perf_counter() - started
+            lookup = target.processors[project].version_lookup
+            if lookup is not None and lookup.previous_queries:
+                LOGGER.info(
+                    "[sync/map] %s | batch %s | version lookups: %s | "
+                    "older version found: %s | none: %s | errors: %s | "
+                    "%.3fs total | %.3fms avg | %.1f%% of mapping time",
+                    project,
+                    manifest["batch_id"],
+                    f"{lookup.previous_queries:,}",
+                    f"{lookup.previous_found:,}",
+                    f"{lookup.previous_missing:,}",
+                    f"{lookup.previous_queries - lookup.previous_found - lookup.previous_missing:,}",
+                    lookup.previous_seconds,
+                    1000 * lookup.previous_seconds / lookup.previous_queries,
+                    100 * lookup.previous_seconds / elapsed if elapsed else 0.0,
+                )
         if (
             manifest["succeeded_count"] + manifest["failed_count"]
             != manifest["item_count"]

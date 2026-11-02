@@ -13,7 +13,7 @@ from piddiplatsch.catalog.state import HarvestState
 from piddiplatsch.cli import cli
 from piddiplatsch.config import config
 from piddiplatsch.core.messages import KafkaSource
-from piddiplatsch.exceptions import CatalogError
+from piddiplatsch.exceptions import BatchError, CatalogError
 from piddiplatsch.runners.mapping import map_catalog
 
 
@@ -37,7 +37,7 @@ def handles(output_dir, project):
 @pytest.mark.parametrize("project", ["cmip6", "cmip6plus", "cmip7", "cordex-cmip6"])
 @pytest.mark.parametrize("history", [True, False])
 def test_map_predecessor_is_nearest_strictly_older_version_without_remote_lookup(
-    tmp_path, publication_sample, monkeypatch, project, history
+    tmp_path, publication_sample, monkeypatch, caplog, project, history
 ):
     output_dir = tmp_path / "outputs"
     config._set("consumer", "output_dir", str(output_dir))
@@ -56,7 +56,10 @@ def test_map_predecessor_is_nearest_strictly_older_version_without_remote_lookup
     monkeypatch.setattr("requests.get", unexpected_network)
     monkeypatch.setattr("requests.sessions.Session.request", unexpected_network)
     monkeypatch.setattr("piddiplatsch.lookup.api.get_lookup", unexpected_network)
-    result = map_catalog(projects=[project], offset=1, limit=1, version_history=history)
+    with caplog.at_level("INFO"):
+        result = map_catalog(
+            projects=[project], offset=1, limit=1, version_history=history
+        )
     assert result.total == result.succeeded == 1
     dataset = handles(output_dir, project)[0]
     if history:
@@ -66,6 +69,72 @@ def test_map_predecessor_is_nearest_strictly_older_version_without_remote_lookup
         )
     else:
         assert "PREVIOUS_VERSION" not in dataset["data"]
+    summaries = [line for line in caplog.messages if "version lookups:" in line]
+    if history:
+        assert len(summaries) == 1
+        assert f"[sync/map] {project} | batch " in summaries[0]
+        assert (
+            "version lookups: 1 | older version found: 1 | none: 0 | errors: 0"
+            in summaries[0]
+        )
+        assert "s total | " in summaries[0]
+        assert "ms avg | " in summaries[0]
+        assert "% of mapping time" in summaries[0]
+    else:
+        assert summaries == []
+
+
+def test_version_lookup_summary_counts_absent_versions_and_resets_each_batch(
+    tmp_path, publication_sample, caplog
+):
+    config._set("consumer", "output_dir", str(tmp_path))
+    harvest(
+        tmp_path / "catalog",
+        [
+            publication_sample("cmip6", version=version)
+            for version in (20000101, 20000102)
+        ],
+    )
+    with caplog.at_level("INFO"):
+        assert (
+            map_catalog(projects=["cmip6"], limit=1, version_history=True).succeeded
+            == 1
+        )
+        assert (
+            map_catalog(projects=["cmip6"], limit=1, version_history=True).succeeded
+            == 1
+        )
+    summaries = [line for line in caplog.messages if "version lookups:" in line]
+    assert len(summaries) == 2
+    assert (
+        "version lookups: 1 | older version found: 0 | none: 1 | errors: 0"
+        in summaries[0]
+    )
+    assert (
+        "version lookups: 1 | older version found: 1 | none: 0 | errors: 0"
+        in summaries[1]
+    )
+
+
+def test_version_lookup_failure_is_logged_separately_from_absent_version(
+    tmp_path, publication_sample, monkeypatch, caplog
+):
+    config._set("consumer", "output_dir", str(tmp_path))
+    harvest(tmp_path / "catalog", [publication_sample("cmip6")])
+
+    def fail_lookup(*args):
+        raise CatalogError("lookup failed")
+
+    monkeypatch.setattr(SQLiteCatalog, "find_previous_version", fail_lookup)
+    with caplog.at_level("INFO"):
+        with pytest.raises(BatchError, match="lookup failed"):
+            map_catalog(projects=["cmip6"], version_history=True)
+    summaries = [line for line in caplog.messages if "version lookups:" in line]
+    assert len(summaries) == 1
+    assert (
+        "version lookups: 1 | older version found: 0 | none: 0 | errors: 1"
+        in summaries[0]
+    )
 
 
 def test_harvested_patch_is_mapped_once_with_its_original_publication_time(

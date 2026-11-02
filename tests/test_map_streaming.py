@@ -19,6 +19,8 @@ class CountingProcessor:
     def __init__(self):
         self.count = 0
         self.last_key = None
+        self.version_lookup = None
+        self.processors = dict.fromkeys(("cmip6", "cmip7"), self)
 
     def process(self, key, value):
         self.count += 1
