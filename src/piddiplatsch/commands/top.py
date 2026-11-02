@@ -164,6 +164,7 @@ class TopCommand(Command):
         names = set(health) | set(totals)
         error_totals = {}
         for run in status["runs"]:
+            names.update(_run_projects(run))
             for project in run["projects"]:
                 name = project["project"]
                 names.add(name)
@@ -196,12 +197,16 @@ class TopCommand(Command):
                 for run in runs
             ):
                 activity = "mapping"
+            phase = _batch_phase(runs)
+            if phase is not None:
+                activity = phase
             if publishers:
                 activity = "publishing"
             if (
                 row.get("failed_batches")
                 or row.get("invalid_items")
                 or _latest_mapping_has_errors(name, status["runs"])
+                or _latest_batch_has_errors(name, status["runs"])
                 or any(
                     p.get("failed", 0)
                     for run in runs
@@ -429,6 +434,28 @@ def _latest_mapping_has_errors(project: str, runs: list[dict]) -> bool:
             if row["project"] == project
         )
     return False
+
+
+def _batch_phase(runs: list[dict]) -> str | None:
+    batch = next((run for run in runs if run["command"] == "batch"), None)
+    if batch is None:
+        return None
+    phase = batch.get("phase", "preparing")
+    return f"{phase} · stale" if batch["state"] == "stale" else phase
+
+
+def _latest_batch_has_errors(project: str, runs: list[dict]) -> bool:
+    latest = next(
+        (
+            run
+            for run in runs
+            if run["command"] == "batch"
+            and run.get("status") != "running"
+            and project in _run_projects(run)
+        ),
+        None,
+    )
+    return latest is not None and latest.get("state") == "failed"
 
 
 def _active_runs(status: dict) -> list[dict]:

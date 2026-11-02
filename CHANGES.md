@@ -49,6 +49,9 @@
 
 ### Fixed
 
+- `piddi top` retains a batch activity heartbeat through preparation, mapping,
+  sealing, verification, publication, and finalization, displaying each phase
+  instead of appearing pending between mapping and publishing.
 - Sync scheduling uses bounded index checks instead of repeatedly scanning the
   pending backlog before each batch, reducing gaps between mapping/publication.
 - A zero error limit stops at the first actual error instead of stopping after

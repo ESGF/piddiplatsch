@@ -6,15 +6,19 @@ import sqlite3
 from contextlib import closing
 from copy import deepcopy
 from datetime import UTC, datetime, timedelta
+from io import StringIO
 
 import pytest
 from click.testing import CliRunner
+from rich.console import Console
 
 from piddiplatsch.catalog.harvest import CatalogHarvester
 from piddiplatsch.catalog.sqlite import SQLiteCatalog
 from piddiplatsch.cli import cli
+from piddiplatsch.commands.top import TopCommand
 from piddiplatsch.config import config
 from piddiplatsch.core.messages import KafkaSource
+from piddiplatsch.monitoring.status import read_status
 from piddiplatsch.result import PublishResult
 from piddiplatsch.runners.sync import SyncWorker, _worker_lock
 
@@ -408,6 +412,124 @@ def test_changes_during_mapping_remain_pending(setup, monkeypatch):
             ]
             is True
         )
+
+
+def test_top_shows_entire_batch_lifecycle_without_counter_gaps(setup, monkeypatch):
+    from piddiplatsch.runners import sync
+
+    put, directory, _root = setup
+    put(1)
+    put(2)
+    config._set("stats", "enable_db", True)
+    phases = []
+
+    def snapshot(phase):
+        status = read_status(directory / "piddi.db")
+        activity = [
+            r
+            for r in status["runs"]
+            if r["command"] == "batch" and r["state"] == "healthy"
+        ]
+        assert len(activity) == 1
+        assert activity[0]["phase"] == phase
+        assert activity[0]["selected_projects"] == ["cmip7"]
+        # Phase tracking must not reset or claim the mapping/publication counters.
+        if phase in {"sealing", "verifying", "publishing", "finalizing"}:
+            assert not any(
+                r["command"] == "sync" and r["status"] == "running"
+                for r in status["runs"]
+            )
+        stream = StringIO()
+        Console(file=stream, width=260).print(TopCommand._overview(status))
+        row = next(
+            line
+            for line in stream.getvalue().splitlines()
+            if line.lstrip().startswith("cmip7 ")
+        )
+        assert phase in row
+        phases.append(phase)
+
+    class ObservedPublisher(Publisher):
+        def run(self, *args, **kwargs):
+            snapshot("publishing")
+            return super().run(*args, **kwargs)
+
+    worker = SyncWorker(publisher=ObservedPublisher())
+    select = SQLiteCatalog.select_work_ids
+    write = worker._write_items
+    fingerprint = sync._fingerprint
+    acknowledge = worker._acknowledge
+    record = worker._record_publication
+
+    def selecting(*args, **kwargs):
+        snapshot("preparing")
+        return select(*args, **kwargs)
+
+    def mapping(*args, **kwargs):
+        snapshot("mapping")
+        return write(*args, **kwargs)
+
+    def checking(*args, **kwargs):
+        snapshot("sealing" if kwargs.get("sync") else "verifying")
+        return fingerprint(*args, **kwargs)
+
+    def acknowledging(*args, **kwargs):
+        # The first acknowledgement seals; the second is recovery verification.
+        snapshot("verifying" if "verifying" in phases else "sealing")
+        return acknowledge(*args, **kwargs)
+
+    def finalizing(*args, **kwargs):
+        snapshot("finalizing")
+        return record(*args, **kwargs)
+
+    monkeypatch.setattr(SQLiteCatalog, "select_work_ids", selecting)
+    monkeypatch.setattr(worker, "_write_items", mapping)
+    monkeypatch.setattr(sync, "_fingerprint", checking)
+    monkeypatch.setattr(worker, "_acknowledge", acknowledging)
+    monkeypatch.setattr(worker, "_record_publication", finalizing)
+    assert len(worker.run()) == 1
+    assert not worker.errors
+    assert set(phases) == {
+        "preparing",
+        "mapping",
+        "sealing",
+        "verifying",
+        "publishing",
+        "finalizing",
+    }
+    status = read_status(directory / "piddi.db")
+    assert not any(r["status"] == "running" for r in status["runs"])
+    assert status["handle_totals"][0]["mapped_items"] == 2
+    assert status["handle_totals"][0]["prepared"] == 4
+    assert status["handle_totals"][0]["published"] == 4
+
+
+@pytest.mark.parametrize(
+    "stage", ["_write_items", "_acknowledge", "_verify_output", "_archive"]
+)
+def test_failed_batch_closes_activity_heartbeat(setup, monkeypatch, stage):
+    put, directory, _root = setup
+    put(1)
+    put(2)
+    config._set("stats", "enable_db", True)
+    worker = SyncWorker(publisher=Publisher())
+
+    def fail(*args, **kwargs):
+        raise RuntimeError("batch stage failed")
+
+    monkeypatch.setattr(worker, stage, fail)
+    worker.run()
+    assert worker.errors
+    status = read_status(directory / "piddi.db")
+    activities = [r for r in status["runs"] if r["command"] == "batch"]
+    assert len(activities) == 1
+    assert activities[0]["status"] == "failed"
+    assert activities[0]["finished_at"] is not None
+    assert activities[0]["error_summary"] == "batch stage failed"
+    assert not worker._activity.thread.is_alive()
+    output = StringIO()
+    Console(file=output, width=260).print(TopCommand._overview(status))
+    assert "cmip7: errors recorded" in output.getvalue()
 
 
 def test_failed_publication_retries_immutable_batch_before_new_mapping(setup):

@@ -251,6 +251,15 @@ the total. Mapped counts survive published-work cleanup in retained batch stats;
 project reset clears that project's mapped history and requeues retained work.
 `top --json` exposes `event_totals` with `mapped`, `pending`, `invalid`, and `total`,
 respecting `--project` when selected.
+The Activity column shows `preparing`, `mapping`, `sealing`, `verifying`,
+`publishing`, or `finalizing` throughout a batch. A separate heartbeat stays
+active during file checks, durable writes, and database acknowledgements;
+`pending` no longer stands in for these stages. Very short phases can still
+finish between screen refreshes. JSON includes the lifecycle as a `batch` run
+with `phase` and `selected_projects`, separate from throughput counters.
+If the activity heartbeat becomes stale, the last phase remains visible with a
+stale warning. Failed batch stages close their activity record and raise an error
+alert, including failures after mapping has finished.
 The harvest summary adds `stored: N full / M patch` for the displayed harvest
 runs. These counts include only successfully stored events. The received-event
 total also includes filtered/replayed deliveries and failures, so it can be larger.

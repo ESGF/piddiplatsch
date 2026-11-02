@@ -9,6 +9,7 @@ from rich.console import Console
 from piddiplatsch.cli import cli
 from piddiplatsch.commands.top import TopCommand
 from piddiplatsch.config import config
+from piddiplatsch.monitoring.activity import batch_activity
 from piddiplatsch.monitoring.stats import Stats, publication_monitor
 from piddiplatsch.monitoring.status import read_status
 from piddiplatsch.result import ProcessingResult
@@ -136,6 +137,60 @@ def test_top_once_filters_project(tmp_path):
     assert result.exit_code == 0
     assert "cmip7" in result.output
     assert "cmip6" not in result.output
+
+
+def test_batch_activity_preserves_publisher_progress_and_finalizing_phase(tmp_path):
+    config._set("catalog", "directory", str(tmp_path))
+    config._set("stats", "enable_db", True)
+    with batch_activity("cmip7") as activity:
+        activity.set_phase("publishing")
+        with publication_monitor("cmip7", expected_handles=10) as monitoring:
+            monitoring.record_publication("cmip7", success=True)
+            monitoring._heartbeat_once(force_sample=True)
+            status = read_status(tmp_path / "piddi.db")
+            publisher = next(r for r in status["runs"] if r["command"] == "publish")
+            assert publisher["publication"]["published_handles"] == 1
+            assert publisher["publication"]["remaining_handles"] == 9
+            stream = StringIO()
+            Console(file=stream, width=260).print(TopCommand._overview(status))
+            assert "publishing" in stream.getvalue()
+        activity.set_phase("finalizing")
+        status = read_status(tmp_path / "piddi.db")
+        stream = StringIO()
+        Console(file=stream, width=260).print(TopCommand._overview(status))
+        assert "finalizing" in stream.getvalue()
+        assert status["handle_totals"] == []  # Activity never adds durable totals.
+
+
+def test_stale_batch_keeps_last_phase_visible_with_warning(tmp_path):
+    config._set("catalog", "directory", str(tmp_path))
+    config._set("stats", "enable_db", True)
+    with batch_activity("cmip7") as activity:
+        activity.set_phase("sealing")
+        status = read_status(tmp_path / "piddi.db", stale_after_seconds=-1)
+        output = StringIO()
+        Console(file=output, width=260).print(TopCommand._overview(status))
+        assert "sealing · stale" in output.getvalue()
+        assert "cmip7: batch heartbeat is stale" in output.getvalue()
+
+
+def test_finished_batch_errors_clear_after_successful_batch(tmp_path):
+    config._set("catalog", "directory", str(tmp_path))
+    config._set("stats", "enable_db", True)
+    with pytest.raises(RuntimeError), batch_activity("cmip7"):
+        raise RuntimeError("sealing failed")
+    output = StringIO()
+    Console(file=output, width=260).print(
+        TopCommand._overview(read_status(tmp_path / "piddi.db"))
+    )
+    assert "cmip7: errors recorded" in output.getvalue()
+    with batch_activity("cmip7"):
+        pass
+    output = StringIO()
+    Console(file=output, width=260).print(
+        TopCommand._overview(read_status(tmp_path / "piddi.db"))
+    )
+    assert "errors recorded" not in output.getvalue()
 
 
 def test_top_error_column_counts_finished_and_active_attempts_per_project(tmp_path):

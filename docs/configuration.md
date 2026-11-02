@@ -333,6 +333,11 @@ in the same `stats` table. These rows do not contribute to batch totals.
 No extra tables or separate monitoring database are created.
 `piddi top` reads live harvest, mapping, and publication status. Publication
 results also appear in logs and JSONL receipts.
+Batch commands keep a separate activity heartbeat through preparation, mapping,
+sealing, verification, publication, and finalization. `top` shows these phases
+instead of falling back to pending between the mapping and publication counter
+runs. Activity records add no event or Handle counts. JSON identifies them with
+`command: "batch"`, a `phase`, and the project in `selected_projects`.
 
 Heartbeats update every five seconds, even when Kafka is idle. Unfinished runs
 become stale after 15 seconds without a heartbeat. Each live run retains up to one hour of rate samples; top shows the last five

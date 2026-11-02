@@ -31,6 +31,7 @@ from piddiplatsch.exceptions import (
     DiskSpaceError,
     MaxErrorsExceededError,
 )
+from piddiplatsch.monitoring.activity import batch_activity
 from piddiplatsch.monitoring.disk import check_disk_space
 from piddiplatsch.monitoring.progress import get_progress
 from piddiplatsch.monitoring.stats import stats
@@ -262,6 +263,7 @@ class SyncWorker:
         self.skipped_through = {}
         self.mapping_stops = {}
         self.random = random.SystemRandom()
+        self._activity = None
 
     def run(self, *, force_map=False, map_only=False, publish_only=False) -> list[Path]:
         check_disk_space(force=True)
@@ -297,35 +299,38 @@ class SyncWorker:
                 for plugin in plugins:
                     project_root = self.root / plugin.name
                     try:
-                        if not map_only or plugin.name not in recovered:
-                            published = self._publish_ready(plugin.name, project_root)
-                            recovered.add(plugin.name)
-                            if published and not map_only:
-                                made_progress = True
-                                continue
-                        if not get_catalog_path(
-                            plugin.name, directory=self.catalog_directory
-                        ).is_file():
-                            continue
-                        self._check_mapped_batches(plugin.name, project_root)
-                        if publish_only or self.remaining == 0:
-                            continue
-                        batch = self._map_due(plugin.name, project_root, force_map)
-                        if batch is not None:
-                            made_progress = True
-                            completed.append(batch)
-                            completed[-1] = self._finish_mapped_batch(
-                                plugin.name, project_root, batch
-                            )
-                            if plugin.name in self.mapping_stops:
-                                blocked.add(plugin.name)
-                                reason = self.mapping_stops[plugin.name]
-                                self.errors.append(f"{plugin.name}: {reason}")
-                                LOGGER.warning(
-                                    "[sync] %s | mapping paused: %s",
-                                    plugin.name,
-                                    reason,
+                        with batch_activity(plugin.name) as self._activity:
+                            if not map_only or plugin.name not in recovered:
+                                published = self._publish_ready(
+                                    plugin.name, project_root
                                 )
+                                recovered.add(plugin.name)
+                                if published and not map_only:
+                                    made_progress = True
+                                    continue
+                            if not get_catalog_path(
+                                plugin.name, directory=self.catalog_directory
+                            ).is_file():
+                                continue
+                            self._check_mapped_batches(plugin.name, project_root)
+                            if publish_only or self.remaining == 0:
+                                continue
+                            batch = self._map_due(plugin.name, project_root, force_map)
+                            if batch is not None:
+                                made_progress = True
+                                completed.append(batch)
+                                completed[-1] = self._finish_mapped_batch(
+                                    plugin.name, project_root, batch
+                                )
+                                if plugin.name in self.mapping_stops:
+                                    blocked.add(plugin.name)
+                                    reason = self.mapping_stops[plugin.name]
+                                    self.errors.append(f"{plugin.name}: {reason}")
+                                    LOGGER.warning(
+                                        "[sync] %s | mapping paused: %s",
+                                        plugin.name,
+                                        reason,
+                                    )
                     except DiskSpaceError:
                         raise
                     except Exception as exc:
@@ -344,6 +349,10 @@ class SyncWorker:
             len(self.errors),
         )
         return completed
+
+    def _set_phase(self, phase):
+        if self._activity is not None:
+            self._activity.set_phase(phase)
 
     def _project_priorities(self):
         if self.map_only or self.publish_only:
@@ -474,6 +483,7 @@ class SyncWorker:
                 )
 
     def _map_due(self, project, project_root, force):
+        self._set_phase("preparing")
         check_disk_space(force=True)
         with open_catalog(
             project, directory=self.catalog_directory, read_only=True
@@ -537,6 +547,7 @@ class SyncWorker:
                 self._map_items(project, reader, staging, manifest, entries)
                 if not manifest["item_count"]:
                     return None
+                self._set_phase("sealing")
                 manifest["sha256"], manifest["handle_count"] = _fingerprint(
                     staging / "handles.jsonl", sync=True
                 )
@@ -572,6 +583,7 @@ class SyncWorker:
         return final
 
     def _map_items(self, project, reader, staging, manifest, entries):
+        self._set_phase("mapping")
         settings = config.get("stats", {})
         LOGGER.info(
             "[sync/map] %s | starting batch %s | force_dataset_pid=%s",
@@ -689,6 +701,7 @@ class SyncWorker:
                 if not self.map_only:
                     return True
                 continue
+            self._set_phase("verifying")
             output = self._verify_output(batch, manifest)
             self._acknowledge(batch, manifest)
             if self.map_only:
@@ -736,6 +749,7 @@ class SyncWorker:
 
                 if self.publisher is None:
                     self.publisher = get_publisher()
+                self._set_phase("publishing")
                 result = self._send_batch(
                     output,
                     manifest,
@@ -750,6 +764,7 @@ class SyncWorker:
                     retries=self.publish_retries,
                     progress_callback=show_progress,
                 )
+            self._set_phase("finalizing")
             manifest["receipt"] = (
                 str(result.result_file) if result.result_file else None
             )
