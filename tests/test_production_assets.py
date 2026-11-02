@@ -245,7 +245,6 @@ def test_deployment_guides_document_root_checkout_environment_and_monitoring():
         "systemctl status piddi.service piddi-sync.timer piddi-sync.service"
         in reference
     )
-    assert "cd /var/lib/piddi" in guide
     assert "piddi top" in guide
     assert "tail -f /var/log/piddi/piddi.log" in guide
 

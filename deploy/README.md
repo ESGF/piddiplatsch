@@ -1,9 +1,5 @@
 # Deployment
 
-See the [deployment guide](https://esgf.github.io/piddiplatsch/deployment/)
-for setup, updates, and monitoring.
-
-The guide is maintained in [docs/deployment.md](../docs/deployment.md).
-Optional checks, custom paths, migration notes, and Vagrant instructions are in
-the [deployment reference](https://esgf.github.io/piddiplatsch/deployment-reference/)
-([source](../docs/deployment-reference.md)).
+Follow [Ansible deployment](../docs/deployment.md) for installation and updates.
+See [Admin](../docs/admin.md) for daily progress and log checks, and the
+[deployment reference](../docs/deployment-reference.md) for paths and backups.

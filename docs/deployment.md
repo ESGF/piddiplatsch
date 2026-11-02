@@ -1,18 +1,9 @@
-# Deployment
+# Ansible deployment
 
-Use this guide to run Piddi on a Linux host with systemd. A host administrator
-with sudo privileges sets it up and runs updates. Ansible creates the `piddi`
-user for the services.
+A host administrator runs these steps on Linux with systemd. Install Git, Make,
+Conda, and Python first. Keep Conda on `PATH` in the root shell.
 
-There are two jobs: **harvest** keeps the local catalogs up to date, and
-**sync** maps changes and publishes Handles.
-
-## Initial deployment
-
-### 1. Install and configure
-
-Install Git, Make, and Conda on the host first. The commands below open a root
-shell. Make sure Conda is on `PATH` in that shell:
+## Install
 
 ```console
 sudo -i
@@ -20,38 +11,21 @@ git clone https://github.com/ESGF/piddiplatsch.git /opt/piddiplatsch
 cd /opt/piddiplatsch
 python -m pip install ansible-core
 cp etc/esgf-example.toml custom.toml
+cp deploy/ansible/custom.yml.example deploy/ansible/custom.yml
 ```
 
-Edit `custom.toml`. Set your Kafka connection, credentials, projects, and Handle
-profiles. See [Configuration](configuration.md) for the settings.
-
-Install the application and services:
+Edit `custom.toml` with your Kafka connection, projects, and Handle profiles.
+Then install the environment, configuration, services, and log rotation:
 
 ```console
 make deploy
 ```
 
-This also creates the data directories and sets up log rotation. Harvest and
-sync stay off until you enable them.
+Harvest and publication stay disabled until explicitly enabled.
 
-Deployment also installs `piddi-maintenance.service` and its daily timer. The
-timer is enabled with harvest by default and runs at 02:00 UTC with up to fifteen
-minutes of randomized delay. It compresses prior-day raw dumps and completed
-batch output/closed receipts. Output removal is opt-in through
-`maintenance.output_retention_days` (default `0`, keep indefinitely). Override
-`piddi_enable_maintenance_timer: false` in `deploy/ansible/custom.yml` to keep it
-disabled. The job runs as `piddi` at low CPU and I/O priority and never publishes
-Handles. See [Monitoring and maintenance](operations.md#monitoring-and-maintenance).
+## Enable harvest
 
-### 2. Start harvest
-
-Create the deployment settings file:
-
-```console
-cp deploy/ansible/custom.yml.example deploy/ansible/custom.yml
-```
-
-Add this setting to `deploy/ansible/custom.yml`:
+Set this in `deploy/ansible/custom.yml`:
 
 ```yaml
 piddi_enable_service: true
@@ -63,36 +37,41 @@ Apply it:
 make play
 ```
 
-Harvest now runs continuously and starts at boot. It fills the local catalogs
-without publishing Handles. Use the monitoring commands below to check it.
+Harvest now runs continuously and starts at boot. Check it from the root shell;
+no directory change is needed:
 
-### 3. Enable publication
+```console
+piddi top
+```
 
-Check your Handle server, credentials, and prefixes before enabling sync.
-For an optional mapping check, follow [Check before publication](deployment-reference.md#check-before-publication).
+Follow the log in another terminal:
 
-Add this setting to `deploy/ansible/custom.yml`, keeping harvest enabled:
+```console
+tail -f /var/log/piddi/piddi.log
+```
+
+Daily maintenance is enabled with harvest by default. It compresses closed files;
+deletion stays disabled unless configured.
+
+## Enable publication
+
+Check the Handle server, credentials, prefixes, and mapping output first. See
+[Check before publication](deployment-reference.md#check-before-publication).
+Keep harvest enabled and add:
 
 ```yaml
 piddi_enable_service: true
 piddi_enable_sync_timer: true
 ```
 
-Then run:
+From `/opt/piddiplatsch`, run `make play`.
+**Sync now publishes real Handles.** It maps at 100 pending events or 10 minutes,
+in batches of up to 2,000 events by default. The timer checks again 20 seconds
+after each run finishes.
 
-```console
-make play
-```
+## Updates and settings
 
-**Sync now publishes real Handles.** The timer checks for work 20 seconds after
-the previous sync finishes. By default, it maps a project after 100 pending
-events or 10 minutes of waiting,
-with up to 2,000 items per batch.
-See [Scheduled batches](configuration.md#scheduled-batches) to change these limits.
-
-## Run updates
-
-Run these commands as root, with Conda on `PATH`:
+As root, with Conda on `PATH`:
 
 ```console
 cd /opt/piddiplatsch
@@ -103,84 +82,18 @@ make restart
 make status
 ```
 
-Keep your existing configuration files. If an update fails, fix the error before
-restarting. `make deploy` updates packages and applies settings. It may start
-enabled services. The final restart loads the new code and starts a sync run.
-Schema 4 upgrades add the transactional outbox automatically; do not start an
-older application against the upgraded schema 5 database. Keep legacy ready
-batch files and journals until the new worker imports them. No catalog/work
-rebuild or reset is needed.
+Keep your configuration files and take a [backup](deployment-reference.md#backups)
+before upgrading. If deployment fails, resolve it before restarting.
 
-For settings changes only, edit the relevant file and run `make play`:
+For settings changes only, edit `custom.toml` (application settings) or
+`deploy/ansible/custom.yml` (services and timers), then run `make play` from the
+checkout. Ansible replaces `/etc/piddi/piddi.toml`; edit the source file instead.
+Mapping changes affect future mapping, not already prepared Handles.
 
-| File | What to change |
-| --- | --- |
-| `custom.toml` | Kafka, Handles, projects, and mapping settings. |
-| `deploy/ansible/custom.yml` | Service and timer settings. |
-
-Do not edit `/etc/piddi/piddi.toml` directly; Ansible replaces it.
-Changing mapping settings does not remap old items automatically. See
-[Operations](operations.md#invalid-work-and-replay) if you need to rebuild Handles.
-
-## Monitor
-
-Use `piddi.log` and `piddi top` for daily monitoring.
-
-Follow the application log:
-
-```console
-tail -f /var/log/piddi/piddi.log
-```
-
-The log shows harvest, mapping, and publication progress. Check for repeated
-errors and failed publication.
-
-In another terminal, view live progress:
-
-```console
-cd /var/lib/piddi
-piddi top
-```
-
-Run this from the administrator shell used for deployment. Piddi loads the
-installed site configuration. Starting from `/var/lib/piddi` avoids loading the
-checkout's local settings.
-
-`top` shows harvest and mapping counts, errors, and heartbeats. An idle topic is
-healthy while the heartbeat keeps updating. Publication results are in
-`piddi.log`.
-
-It also shows free disk space, pending items, ready/failed mapping batches, and
-the last successful sync publication. The default disk guard warns below 40 GiB
-and stops new processing below 20 GiB; both thresholds are configurable.
-
-Check or trigger maintenance manually:
-
-```console
-systemctl status piddi-maintenance.timer piddi-maintenance.service
-journalctl -u piddi-maintenance.service --since today
-systemctl start piddi-maintenance.service
-```
-
-If progress stops, see [Service troubleshooting](deployment-reference.md#service-troubleshooting).
-
-## Stop and restart
-
-As root, from `/opt/piddiplatsch`:
-
-```console
-make stop
-make start
-make restart
-```
-
-Choose the command you need. `start` and `restart` also start sync and request
-immediate publication of ready work. These commands control the current runtime;
+From the install folder (default `/opt/piddiplatsch`), use `make start`,
+`make stop`, `make restart`, or `make status` to control and check deployed services.
+Start and restart also request an immediate sync run, which can publish Handles.
 Ansible settings control startup at boot.
 
-`make status` lists the state of harvest, sync, log rotation, and maintenance,
-including their timers and inactive services.
-
-For backups, custom paths, older deployments, and Vagrant, see
-[Deployment reference](deployment-reference.md). For failed work, see
-[Recovery](recovery.md).
+Use [Admin](admin.md) for daily checks and reporting errors. Custom paths,
+backups, and the test VM are in the [deployment reference](deployment-reference.md).

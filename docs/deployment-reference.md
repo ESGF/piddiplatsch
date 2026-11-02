@@ -1,148 +1,68 @@
 # Deployment reference
 
-Start with the [Deployment guide](deployment.md). This page covers optional
-checks and less common setup tasks. Commands assume a root shell opened with
-`sudo -i`.
+Start with [Ansible deployment](deployment.md). These notes are for the host
+administrator; daily monitoring is covered by [Admin](admin.md).
 
 ## Check before publication
 
-Start harvest using the deployment guide and let it fill the catalogs. Before
-enabling sync, prepare Handle files without sending them:
+With harvest running and the sync timer still disabled, map a small sample:
 
 ```console
 cd /var/lib/piddi
-runuser -u piddi -- /opt/piddiplatsch/.conda/bin/piddi \
-  --config /etc/piddi/piddi.toml map --all-projects --date all
+runuser -u piddi -- /opt/piddiplatsch/.conda/bin/piddi map --all-projects --limit 100
 ```
 
-Inspect `/var/lib/piddi/<project>/handles/`. Check the server profile, prefixes,
-dataset PIDs, and file links. Version linking is disabled by default for the
-first fill. See [Operations](operations.md) for date selection and version links.
+Inspect `/var/lib/piddi/batches/<project>/ready/<batch-id>/handles.jsonl` and
+`failures.jsonl`. Check prefixes, dataset PIDs, and file links. Mapping does not
+publish. Enabling sync publishes these saved batches as well as later work.
 
-Manual mapping does not clear the sync queue. When you enable sync, it maps
-pending catalog items into separate batches and publishes them.
-
-## Paths and permissions
+## Paths
 
 | Default path | Contents |
 | --- | --- |
 | `/opt/piddiplatsch/.conda` | Application environment. |
 | `/etc/piddi/piddi.toml` | Installed configuration. |
-| `/var/lib/piddi/.harvest-state.json` | Harvest replay generation and clean progress. |
-| `/var/lib/piddi/batches` | Ready and published sync batches. |
-| `/var/lib/piddi/piddi.db` | Catalog, work stream, shared checkpoints, retained batch summaries. |
-| `/var/lib/piddi/published` | Publication receipts. |
-| `/var/log/piddi/piddi.log` | Application log. |
+| `/var/lib/piddi` | Shared database, harvest control file, dumps, batches, and receipts. |
+| `/var/log/piddi/piddi.log` | Progress log. |
+| `/var/log/piddi/piddi.error.log` | Errors and tracebacks. |
 
-Ansible adds production data, log, and database paths only where `custom.toml`
-does not set them. Explicit values take priority. For other paths, create the
-directories, grant the `piddi` user access, and adjust log rotation.
-Relative service paths start at `/var/lib/piddi`.
+Ansible adds these paths where `custom.toml` has no explicit override. For custom
+paths, ensure the `piddi` user has access and adjust log rotation. Services wait
+for the `/var/lib/piddi` mount; mount a separate data disk there before starting.
 
-The systemd services wait for the `/var/lib/piddi` mount. If you use a separate
-data disk, mount it there before starting Piddi.
+Set `piddi_conda_env` or `piddi_config_source` in Ansible's `custom.yml` to use a
+different environment or TOML source. Application settings belong in TOML;
+`custom.yml` contains only deployment controls. Older `piddi_kafka`,
+`piddi_projects`, `piddi_output_dir`, and similar YAML settings must move to their
+matching TOML sections. Use `piddi_enable_sync_timer` and
+`piddi_sync_check_interval` for the sync timer.
 
-Set `piddi_conda_env` in `deploy/ansible/custom.yml` if the application environment
-is elsewhere. Set `piddi_config_source` to deploy a TOML file other than the
-checkout's `custom.toml`.
-
-## Service controls
-
-`make start`, `make stop`, `make restart`, and `make status` use `sudo systemctl`
-by default. `make status` lists all deployed Piddi services and timers, including
-inactive units. Scheduled oneshot services normally show as inactive between runs.
-The commands hide shell command echoes. Status shows just the unit and its state:
-`running`, `waiting` (timers), `stopped`, `starting`, `stopping`, or `failed`.
-Other systemd states are shown as reported. Systemd errors remain visible.
-
-`make start` starts harvest, sync and log rotation timers, and an immediate sync
-run. It starts sync even if the timer is disabled at boot. Ansible controls which
-units start after reboot. Log rotation runs hourly when harvest is enabled.
-
-Set `piddi_sync_check_interval` in Ansible YAML to change the timer interval.
-The default is `20s`, measured after the previous run finishes, with one-second
-timer accuracy. Batch thresholds
-are separate [TOML settings](configuration.md#scheduled-batches).
-
-Ansible validates application settings before installing them. It restarts
-harvest when its configuration or unit changes. A sync run already in progress
-keeps its loaded settings until it ends.
-
-Update the host OS and base Conda installation separately. `make deploy` updates
-the application environment. `make play` applies Ansible settings without
-installing packages. Use `make audit` in a development environment to check
-Python dependencies.
-
-## Service troubleshooting
-
-Use these checks if `piddi.log` or `piddi top` shows a problem:
+## Service checks
 
 ```console
 systemctl status piddi.service piddi-sync.timer piddi-sync.service
 systemctl list-timers 'piddi-*'
-journalctl -u piddi.service -u piddi-sync.service --since today
-journalctl -u piddi-sync.service -f
-df -h /var/lib/piddi
-du -sh /var/lib/piddi/*
 ```
 
-Harvest should stay active, and the sync timer should show its next run. The
-sync service exits between runs, so an inactive `piddi-sync.service` can be normal.
-
-Use `piddi top --once` for one snapshot or `piddi top --json` for JSON output.
-Publication receipts are saved under `/var/lib/piddi/published/YYYY/MM/DD/`,
-grouped by UTC date. Existing flat receipt files remain in place.
-
-Failed batches stay in the SQLite outbox and block newer work for that
-project. Other projects can continue. See [Scheduled batch recovery](recovery.md#publication-interruption).
+The sync and maintenance services normally become inactive between timer runs.
+See [Admin](admin.md) for logs and status interpretation.
 
 ## Backups
 
-Stop Piddi before taking a file-based backup. Save the configuration, catalog
-directory (including `piddi.db`, any SQLite WAL files, and `.harvest-state.json`).
-The database contains the queued payloads and publication progress. Include the
-batch directory until any legacy ready batches have been imported; after that,
-keep batch exports and receipts according to your site's audit policy.
-Completed batch output and closed receipts are compressed by default. Optional
-`maintenance.output_retention_days` removes them after a configured age; its
-default `0` keeps them indefinitely. Ready and failed batches are protected.
+Stop Piddi with `make stop` before taking a file-based backup. Save configuration
+and the complete data directory, including `piddi.db`, any SQLite WAL files,
+`.harvest-state.json`, and dumps. Keep batch exports and receipts according to
+your site's audit policy. The database contains queued payloads and publication
+progress; raw dumps alone do not preserve publication progress.
 
-The maintenance timer runs daily and compresses closed raw dumps and completed
-output. It never deletes Kafka dumps. Completed batches/receipts are removed only
-when output retention is explicitly enabled. Control it with `piddi_enable_maintenance_timer`
-in Ansible's `custom.yml` (defaults to `piddi_enable_service`). Its command,
-`piddi maintain`, can also be run manually with `--dry-run` for inspection.
-
-Do not delete catalogs to fix a stopped harvest. Clean options replay retained
-Kafka history and can invalidate ready batches. Read [Recovery](recovery.md)
-before rebuilding.
-
-## Older deployments
-
-Move old application settings from Ansible YAML to `custom.toml`:
-
-| Old YAML variable | TOML setting |
-| --- | --- |
-| `piddi_kafka`, `piddi_kafka_defaults` | `[kafka]` |
-| `piddi_config_extra` | Matching TOML tables. |
-| `piddi_projects`, `piddi_topic` | `[consumer]` `projects`, `topic`. |
-| `piddi_max_errors` | `[plugins.<project>]` `max_errors`; set separately for each affected project. |
-| `piddi_output_dir` | `[consumer]` `output_dir`. |
-| `piddi_log_level`, `piddi_log_file` | `[logging]` `level`, `file`. |
-| `piddi_stats_enable_db` | `[stats]` `enable_db` for live heartbeats and rate samples in `piddi.db`. |
-
-The playbook rejects these old YAML variables until they are moved.
-
-Ansible replaces old `piddi-batch` units with `piddi-sync` units. Use
-`piddi_enable_sync_timer` and `piddi_sync_check_interval`; the old `batch` control
-names are rejected. The TOML section remains `[batch]`. Schema-4 ready batches
-with manifest version 3 and their progress journals are imported into schema 5
-when processed. Do not remove those files before the import.
+Schema 4 databases upgrade automatically to schema 5. Preserve legacy ready
+batches and their progress journals until imported. Older incompatible formats
+need a separate recovery plan. Do not run older code against an upgraded database.
 
 ## Vagrant test VM
 
 Use Parallels on Apple Silicon, VirtualBox on Intel macOS, or libvirt on Linux.
-Install the matching provider, then start a VM. For example, on Apple Silicon:
+For example:
 
 ```console
 vagrant plugin install vagrant-parallels
@@ -150,16 +70,6 @@ vagrant up --provider=parallels
 vagrant ssh
 ```
 
-Use `--provider=virtualbox` or `--provider=libvirt` on other hosts. Libvirt needs
-the `vagrant-libvirt` plugin. The VM installs Miniforge under `/opt/conda`.
-Run `vagrant provision` to update an existing VM's provisioning.
-
-Inside the VM, follow the [Deployment guide](deployment.md) as root. If Conda
-is not available, load it first:
-
-```console
-source /opt/conda/etc/profile.d/conda.sh
-```
-
+Inside the VM, follow [Deployment](deployment.md). Miniforge is installed under
+`/opt/conda`; load `/opt/conda/etc/profile.d/conda.sh` if needed.
 You do not need `conda init`; deployment uses the environment's full path.
-Run `vagrant destroy` on the host when the test VM is no longer needed.

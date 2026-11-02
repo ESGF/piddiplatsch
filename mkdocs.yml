@@ -10,13 +10,13 @@ theme:
 nav:
   - Home: index.md
   - Quick guide: quick-guide.md
-  - Architecture: architecture.md
   - Configuration: configuration.md
-  - Operations: operations.md
+  - Admin: admin.md
   - Deployment: deployment.md
   - Advanced:
       - Deployment reference: deployment-reference.md
       - Recovery: recovery.md
-      - Work-stream design: work-stream-design.md
+      - Operations: operations.md
+      - Architecture: architecture.md
   - Talks: talks.md
   - Building the documentation: building.md
