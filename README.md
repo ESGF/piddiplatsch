@@ -4,8 +4,8 @@ Piddiplatsch reads ESGF STAC publications from Kafka and registers persistent
 identifiers with the Handle System for CMIP6, CMIP6Plus, CMIP7, and CORDEX-CMIP6.
 
 For a Linux service, follow the
-[deployment guide](https://esgf.github.io/piddiplatsch/deployment/).
-It covers first setup, updates, and monitoring. The steps below are for local use.
+[Ansible deployment guide](https://esgf.github.io/piddiplatsch/deployment/).
+The steps below are for manual testing.
 
 ## Install and configure
 
@@ -18,8 +18,8 @@ make install
 cp etc/esgf-example.toml custom.toml
 ```
 
-Edit `custom.toml` with your projects, Kafka connection, and Handle service
-credentials. Then validate:
+Edit `custom.toml` with your Kafka connection, projects, and test Handle service
+credentials. Check the settings:
 
 ```bash
 piddi config validate
@@ -27,54 +27,35 @@ piddi config validate
 
 ## Harvest, map, and publish
 
-Fill or update the shared `outputs/piddi.db`:
+Harvest events into `outputs/piddi.db`. Press Ctrl+C when you have enough test
+input, or let harvest finish after its idle timeout:
 
 ```bash
 piddi harvest
 ```
 
-Prepare the SQLite Handle outbox, inspect its exported files, then publish:
+Map pending events without publishing:
 
 ```bash
 piddi map --project cmip6
-# Inspect outputs/batches/cmip6/ready/<batch-id>/handles.jsonl.
+```
+
+Inspect `outputs/batches/cmip6/ready/<batch-id>/handles.jsonl` and
+`failures.jsonl`. Map processes up to 2,000 events by default; use `--limit N`
+to change that total.
+
+Publish the prepared Handles to the configured server:
+
+```bash
 piddi publish --project cmip6 --workers 4 --retries 3
 ```
 
-Standalone `map` stops after `[batch].max_items` events in total (default 2,000).
-Use `map --limit N` to choose another total. Sync continues mapping and publishing
-successive batches automatically.
-
-## Map and publish with sync
-
-Use `sync` to map and publish pending changes for the configured projects:
-
-```bash
-piddi sync --workers 4
-```
-
-To process pending changes now, without waiting for enough items or elapsed time:
-
-```bash
-piddi sync --force-map --workers 4
-```
-
-To run only one configured project:
-
-```bash
-piddi sync --project cmip6 --workers 4 --retries 3
-```
-
-The database owns queued Handle payloads and publication progress. A restart
-resumes unpublished rows; exported batch files are not required after their
-database commit. Schema 4 upgrades add the outbox automatically and import ready
-manifest-v3 batches and their progress when processed. Keep legacy batch files
-until imported. Older per-project catalogs and incompatible formats still
-require a fresh start; see the recovery guide.
+**Publish writes real Handles.** Use a test server and prefix for testing.
+Repeat map and publish to process more pending events.
 
 ## Check progress and options
 
-In another terminal:
+In another terminal, with the same environment and working directory:
 
 ```bash
 piddi top
@@ -82,12 +63,12 @@ piddi top
 
 ```bash
 piddi --help
-piddi sync --help
+piddi harvest --help
+piddi map --help
+piddi publish --help
 ```
 
-See the [configuration](https://esgf.github.io/piddiplatsch/configuration/),
-[operations](https://esgf.github.io/piddiplatsch/operations/),
-[recovery](https://esgf.github.io/piddiplatsch/recovery/), and
-[deployment](https://esgf.github.io/piddiplatsch/deployment/)
-guides for advanced use. See [Contributing](https://github.com/ESGF/piddiplatsch/blob/main/CONTRIBUTING.md)
-for development and testing.
+See [Configuration](https://esgf.github.io/piddiplatsch/configuration/) for settings,
+[Admin](https://esgf.github.io/piddiplatsch/admin/) for routine monitoring, and
+[Contributing](https://github.com/ESGF/piddiplatsch/blob/main/CONTRIBUTING.md)
+for development and tests.

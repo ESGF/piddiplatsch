@@ -1,242 +1,53 @@
 # Recovery
 
-The current format uses one `piddi.db` containing the transactional Handle
-outbox. Version 4 databases upgrade additively to version 5; ready manifest-v3
-batches and progress journals are imported when processed. Keep these legacy
-files until imported. Older per-project databases and incompatible manifests
-are not migrated. See
-[Operations](operations.md) for command examples and paths.
+This page is for the service maintainer. For routine checks and reporting, use
+[Admin](admin.md). Take a [backup](deployment-reference.md#backups) before changing
+stored state.
 
-## Harvest interruption
+## Interrupted processing
 
-The catalog update, independent work snapshot, and shared Kafka checkpoint commit
-together. On restart, already stored topic/partition offsets are skipped, including
-non-idempotent patches. An unresolved event stops harvesting before its checkpoint
-or broker acknowledgement advances.
+- **Harvest:** fix the reported cause and restart. Stored Kafka checkpoints skip
+  events already committed locally. If required history has expired from Kafka,
+  restore the missing interval from dumps before resuming.
+- **Map:** repeat map or sync. Uncommitted snapshots stay pending; committed Handle
+  payloads stay in the database.
+- **Publish:** fix the connection or server error and repeat publish or sync.
+  Committed writes are skipped. A write may repeat if the process stopped after
+  remote success but before its local acknowledgement.
 
-Raw archives carry source coordinates and the original payload. Use repeatable
-`harvest --archive FILE` inputs to replay them, including compressed numbered
-parts. Shared Kafka checkpoints require a complete harvest rebuild across stored
-projects; project-only harvest cleanup cannot safely rewind a shared partition.
+Older failed publication blocks newer batches for that project. Other projects
+can continue. Keep legacy ready exports until imported into the SQLite outbox.
 
-## Rebuild from dump backups, then catch up with Kafka
+## Invalid records
 
-Compressed raw dumps can rebuild the database independently of Kafka retention.
-Keep a continuous archive from the desired starting point to the backup cutoff;
-the cutoff may be several days old if Kafka still retains the following interval.
-Preserve the original numbered filenames and source coordinates. Legacy dumps
-containing only payloads cannot provide a reliable Kafka handoff.
+Check `failures.jsonl` and the error log. A corrected Kafka event creates new work;
+old invalid snapshots do not retry automatically. `piddi retry --help` explains
+limited retries before successful project publication.
 
-Stop harvest, mapping and publication services. Use a fresh output/catalog
-directory so this rebuild cannot reuse old batches or publication journals. For
-example, use a recovery configuration with these overrides alongside the usual
-Kafka, STAC and Handle settings:
+State-changing recovery commands live under `piddi admin`. They preview by
+default; `--apply` executes the plan. Consult each command's help before use.
+Resetting or rebuilding history is a maintainer task, not a routine monitoring step.
 
-```toml
-[consumer]
-output_dir = "/mnt/piddi-recovery"
+## Disk safety stop
 
-[catalog]
-directory = "/mnt/piddi-recovery"
-```
+Low space or a failed storage check creates `.disk-space-stop` under the output
+directory. Services remain blocked even after space recovers or the host reboots.
 
-All `piddi admin` jobs preview by default. Preview the dump recovery first, then
-add `--apply` to execute it:
+Stop the services, inspect the marker and logs, and restore sufficient free space
+(preferably above the warning threshold). Only after resolving the cause, remove
+the marker and start the services. No database reset is needed.
 
-```bash
-piddi --config recovery.toml admin recover --archive /backup/piddi/dump
-piddi --config recovery.toml admin recover --archive /backup/piddi/dump --apply
-```
+## Restore from backups
 
-The recovery preview lists the database, dump parts or Kafka source, cleanup
-scope and input limit. It does not open/create the database or connect to Kafka.
-`--apply` executes the plan and retains all validation and ownership checks.
+Prefer a matching database and data-directory backup when publication progress
+must be preserved. Stop all Piddi services before restoring it.
 
-This reads top-level `dump_messages_*.jsonl` and `.jsonl.gz` parts in filename
-order, without connecting to Kafka, rewriting the backup, mapping or publishing.
-Explicit files and repeated `--archive` inputs also work. Replay can be restarted:
-durable checkpoints skip overlapping events before applying them, including PATCH
-events. A malformed archive stops the command; repair/restore it before continuing.
-Internal archive gaps cannot be inferred reliably from Kafka offset numbers, so
-archive completeness is a backup requirement.
+Original `dump_messages_*.jsonl` and `.jsonl.gz` files can rebuild harvest state
+in a fresh output directory using `piddi admin recover --archive PATH`.
+Preview first, then use `--apply` with a dedicated recovery configuration.
+Include all stored projects and preserve original filenames and source coordinates.
 
-After replay succeeds, start normal harvest using the same recovery directory:
-
-```bash
-piddi --config recovery.toml harvest --idle-timeout 0
-```
-
-On each partition assignment, harvest reads the database's **next offset** and
-explicitly starts Kafka there, regardless of the consumer group's committed
-offset. For example, a dump ending at offset 12345 resumes at 12346. The same
-rule applies to ordinary restarts and rebalances, using fresh database progress.
-The selected positions and retained ranges are logged. A partition absent from
-the backup starts at its earliest retained offset; earlier lost history for such
-a partition cannot be detected automatically.
-
-Before assigning any partitions, harvest checks their current Kafka watermarks:
-
-- A required position below the earliest retained offset stops with the missing
-  interval. Restore newer/missing dump parts into this database, then retry.
-- A position beyond Kafka's end stops with a topic/cluster/backup mismatch error.
-- A position equal to Kafka's end is valid: harvest waits for new messages.
-
-Automatic offset reset is disabled for catalog harvesting, so retention passing
-the selected offset during fetching also stops consumption instead of silently
-skipping ahead. Kafka cannot fill an interval missing from both Kafka and dumps.
-
-Once the catalog and work queue are restored, resume normal mapping/publication
-against the recovery directory. Dump recovery reconstructs pending work; it does
-not restore old publication receipts or suppress remote Handle writes that were
-already completed before the failure. Restore a matching database/output backup
-instead when preserving that publication progress is required.
-
-## Mapping interruption
-
-A building batch does not advance work. Retry normal map/sync; the selected
-snapshots remain pending. Building artifacts may remain for inspection.
-
-A mapping commit saves exact Handle payloads, batch metadata, work-state changes,
-and summary counts together in SQLite. Before that commit, work stays pending.
-Afterward, publication needs only the database; missing JSONL exports are not a
-recovery failure. A completed temporary spool left before the commit may be
-verified and imported on restart; otherwise the still-pending work can be mapped
-again. Repeated acknowledgement cannot duplicate batch totals.
-
-Legacy ready batches are verified against their checksums before import. A
-checksum error, mismatched progress journal, or missing source work blocks that
-import without partially committing it. Restore those legacy files and their
-matching database rather than dropping their recorded publication progress.
-
-Mapping validation failures become invalid work with an explanation, while
-unprocessed snapshots stay pending. Partial Handle output for a rejected entry is
-rolled back before sealing.
-
-## Publication interruption
-
-Failed publication leaves work mapped. Retry `publish` or `sync` using the SQLite
-outbox. Older failed publication blocks newer batches in that project, while
-other projects can continue. The same Handle stays ordered within each batch.
-
-Each successful output position commits in `handle_outbox` before a later write
-to the same Handle starts. Retries skip completed positions and defer later
-updates after a failure. No database transaction spans an HTTP request. A crash
-after remote success but before its SQLite acknowledgement can repeat that same
-payload against the same Handle ID; earlier committed versions are not replayed.
-After full success, work-state transitions, batch totals, and removal of finished
-outbox payloads commit together. A failed completion transaction leaves all three
-unchanged and can be retried without resending committed writes. Optional file
-exports can be archived afterward; they do not control publication completion.
-
-Standalone publication of explicit JSONL files can still use a file journal;
-queued publication no longer relies on one.
-
-## Explicit retries and reset
-
-Manual reset/rebuild and catalog recovery commands live under `piddi admin`.
-Normal harvesting, mapping, publication and scheduled maintenance keep their
-regular commands. Dump replay also remains available through `harvest --archive`.
-
-`retry --project NAME ID...` requeues invalid snapshots only before the project has
-recorded successful publication and when no newer work was mapped/published.
-Finish its original saved batch first. Otherwise harvest a correction as a new
-event or explicitly reset the whole project's retained processing history.
-
-`admin reset --project NAME` previews an ordered project replay. With `--apply`, after
-harvest and all batch commands are stopped, it updates work in place without
-copying the database, archives project output under `reset-archives/`, clears
-project summaries, and requeues retained work.
-Catalog records and shared checkpoints remain intact. Retention-deleted work
-requires original archive replay into a fresh database.
-
-Add `--from YYYY-MM-DD` to reset a recent suffix instead of all retained work.
-For the last seven UTC calendar days including today, use `--from today-6`.
-Selection uses `work_items.created_at`, includes that day, and continues through
-all later work IDs. Complete batches are preserved: a batch crossing the cutoff
-expands the start, which the preview reports. Earlier work, output and batch
-summaries remain; overlapping run summaries are retired whole. A shared receipt
-is copied rather than removed from unaffected batches/projects. A dated reset
-requires every source row of each affected batch to be retained; recover missing
-history from original dumps into a fresh database if retention removed any.
-
-## Storage
-
-### Manual outbox cleanup
-
-Use `piddi admin clean` to preview removal of completed outbox records only,
-without rebuilding work history. Stop harvest, sync, publication and maintenance,
-then run `piddi admin clean --apply`. Add `--vacuum` to return freed SQLite pages
-to the filesystem (requires extra disk space); otherwise SQLite reuses the space.
-
-Cleanup deletes completed batch metadata and any acknowledged payload rows in
-one transaction. It keeps the tables, catalog, work history, statistics, Kafka
-checkpoints and output files. It creates no archive of these disposable records.
-Pending work does not block cleanup: unfinished outbox batches and their payloads
-are preserved. Completed batches with unacknowledged payloads or an export still
-in a `ready` directory are also preserved so restart recovery remains safe. Let
-sync archive those exports before cleaning again. The command can be rerun safely,
-including if optional VACUUM fails after cleanup has already committed.
-
-### Manual work-history rebuild
-
-Use this occasional manual operation to replace retained event history in SQLite
-with one full, published snapshot per current catalog item (including each
-retained dataset version). It requires all retained work to be published:
-pending, mapped, or invalid events must be processed/resolved first. Ready or
-failed-publication batches also block consolidation. It does not enable
-automatic retention or change its settings.
-
-```bash
-piddi admin rebuild                 # preview
-make stop
-piddi admin rebuild --apply         # leave free pages available for reuse
-# Or, instead of the preceding command:
-piddi admin rebuild --apply --vacuum # also compact the database file
-make start
-```
-
-The rebuild covers all projects. It keeps catalog blobs and real Kafka
-checkpoints unchanged. New work is ordered by the catalog's local `last_update`,
-then project, collection and item ID. It uses a unique synthetic source identity
-and new work IDs; these are not Kafka offsets. All new entries are published full
-snapshots, so normal processing does not map or publish them again. Existing
-processing summaries and published Handle totals remain in the database.
-Completed `outbox_batches` metadata and any acknowledged outbox payload rows
-are archived and cleared in the same transaction as the work replacement. The
-empty outbox tables remain ready for future sync. Unfinished outbox batches or
-unacknowledged Handle rows block cleanup, even if other counters say published.
-
-Before replacing work, the command streams the complete old work and summaries
-to `work-rebuild-archives/<id>/work_items.jsonl.gz` and `stats.jsonl.gz` under
-`consumer.output_dir`. Every work-row field is retained; `stac_blob` holds the
-original compressed bytes encoded as base64, as recorded in `rebuild.json`.
-Outbox tables are exported as `outbox_batches.jsonl.gz` and `handle_outbox.jsonl.gz`
-when present; their compressed `manifest` and `payload` fields use base64 as
-well. `rebuild.json` records the number of removed rows per outbox table.
-These are historical row exports, not Kafka dump envelopes accepted by
-`harvest --archive`. Old batches and project receipt directories are moved into
-the same archive. Keep/back up this directory if you want the old event history;
-archiving reduces live database content, not necessarily total disk usage.
-
-Stop harvest, batch/publication and maintenance processes before applying. The
-command refuses an active harvest or batch worker and an empty catalog. Database
-changes are transactional; failures restore moved output. An interrupted rebuild
-blocks harvest and batch processing until `piddi admin rebuild --apply` is rerun
-with the same configuration. A durable database receipt lets this finish a
-committed rebuild without replaying the rebuild itself. If optional VACUUM fails,
-the rebuilt work stays committed and the same recovery command retries finishing
-it.
-
-Exporting the archive and rewriting SQLite need temporary disk space. Without
-`--vacuum`, SQLite retains free pages for reuse. Optional VACUUM also needs free
-disk space (potentially twice the database size) and requires database readers to
-be closed; see [SQLite's VACUUM documentation](https://sqlite.org/lang_vacuum.html).
-The command does not delete old rebuild archives automatically.
-
-Do not delete database journals or edit batch payloads to bypass recovery checks.
-Back up SQLite using its backup API or with all processes stopped. Keep its output
-batches and harvest control file with it. Maintenance never runs `VACUUM`.
-Database work cleanup removes only published work older than its retention limit.
-Completed batch JSONL and closed receipts are compressed by default; their
-removal is a separate opt-in policy (`maintenance.output_retention_days = 0`
-keeps them indefinitely). DB summaries and Kafka dumps survive output removal.
+After replay, normal harvest resumes from database checkpoints if Kafka retains
+the following interval. A gap missing from both dumps and Kafka cannot be recovered.
+Dump replay reconstructs pending work and can republish previously completed
+Handles; it does not restore publication acknowledgements.

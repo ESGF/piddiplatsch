@@ -14,17 +14,17 @@ projects = ["cmip6", "cmip6plus", "cmip7", "cordex-cmip6"]
 topic = "ESGF-PUBLICATIONS"
 
 [catalog]
-# One compressed SQLite catalog per harvested project under <output_dir>/catalog.
+# One shared SQLite database at <output_dir>/piddi.db.
 # Harvest caches all registered projects; consumer.projects selects what map reads.
 enabled = true
 backend = "sqlite"
 kafka_commit_batch_size = 100
 kafka_commit_interval_seconds = 1.0
 # Keep predecessor links disabled during initial filling. Enable once ready,
-# or use map --version-history and remap the selected date/window.
+# or use map --version-history for the next mapping run.
 version_history = false
-# Optional storage location; deployment otherwise uses /var/lib/piddi/catalog:
-# directory = "/data/piddi/catalog"
+# Optional database directory; deployment otherwise uses /var/lib/piddi:
+# directory = "/data/piddi"
 
 [batch]
 # Enable the Ansible sync timer when automatic Handle publication is intended.
@@ -109,15 +109,9 @@ max_parts = 0
 # generated from dataset_id instead of versioned instance_id. Defaults to false.
 force_dataset_pid = false
 
-# Staged workflow (map/publish both default to --date last):
-# piddi harvest                         # fill/update catalogs, exit after idle
-# piddi harvest --idle-timeout 0        # continuously maintain catalogs (systemd)
-# piddi map --all-projects --date all   # full initial filling, using available catalogs
-# piddi map --project cmip6 --date today-1
-# piddi publish --project cmip6 --date today-1
-# piddi sync                          # one scheduled tick: map due, publish ready
-# piddi sync --force-map              # map nonempty pending sets immediately
-# Both map/publish support inclusive --from/--to and --offset/--limit.
-# Map counts catalog items; publish counts Handle records. Failure files are for
-# inspection only; fix the cause and repeat the normal command. No retry command.
-# The old consume command is removed; harvest owns queue ingestion.
+# Manual testing (publish writes to the configured Handle server):
+# piddi harvest
+# piddi map --project cmip6 --limit 100
+# Inspect outputs/batches/cmip6/ready/<batch-id>/handles.jsonl and failures.jsonl.
+# piddi publish --project cmip6
+# See docs/deployment.md for automatic harvest and sync with Ansible.

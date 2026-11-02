@@ -1,9 +1,7 @@
 # TODO
 
-Open work only. The implemented single-database design and its recovery rules are
-recorded in [work-stream design](docs/work-stream-design.md); current commands,
-monitoring, retention, and disk safety recovery are in [operations](docs/operations.md).
-The four-table schema requires a fresh start; no legacy migration is planned.
+Open work only. See [Architecture](docs/architecture.md) for the current design,
+[Operations](docs/operations.md) for commands, and [Admin](docs/admin.md) for monitoring.
 
 ## Production validation and sizing
 
@@ -96,7 +94,7 @@ Disk warnings and the persistent critical-space stop are implemented.
   per-project ordering, and SQLite writer-contention limits. Projects do not
   write to the same Handle.
 - [ ] Implement the deferred
-  [daily statistics rollup](docs/work-stream-design.md#future-task-daily-statistics-rollup)
+  daily statistics rollup
   only when batch-summary growth warrants it. Maintenance would aggregate older
   finalized batches into `daily_stats` in the same database, preserving totals,
   recovery, retry guards, and project reset. Leave it disabled by default.

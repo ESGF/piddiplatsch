@@ -60,7 +60,7 @@ the checkout's ignored `outputs/`, `pid.log`, or `piddi.db`. These may contain
 local operational data.
 
 Live Handle tests are opt-in and need a disposable prefix. See
-[Real Handle service contract test](docs/operations.md#real-handle-service-contract-test).
+`tests/live/` for the connection settings and opt-in requirements.
 
 ### Docker test services
 
