@@ -1,140 +1,107 @@
 # TODO
 
-## Agreed catalog and work-stream design
+Open work only. The implemented single-database design and its recovery rules are
+recorded in [work-stream design](docs/work-stream-design.md); current commands,
+monitoring, retention, and disk safety recovery are in [operations](docs/operations.md).
+The four-table schema requires a fresh start; no legacy migration is planned.
 
-See [the design agreed on 2026-11-01](docs/work-stream-design.md) for the implemented
-single `piddi.db` with `catalog_items`, `work_items`, `kafka_checkpoints`, and
-`stats`. It records the exact columns, snapshot/state rules, JSONL output,
-archive replay requirements, and retention decisions. This format requires a fresh start; no legacy migration is provided.
+## Production validation and sizing
 
-- [x] Implement the four-table schema and transactional harvest handoff for a
-  fresh start; backward compatibility and migration are intentionally omitted.
-- [x] Make mapping/publication use saved work snapshots and processing states;
-  keep generated Handles in JSONL batches linked by `batch_id`.
-- [x] Add sequential round robin scheduling of project batches, initially capped
-  at 2,000 work entries each. Separate selection, batch execution, and scheduling
-  to allow a bounded project-worker pool later; defer parallel execution and
-  worker claims until durable recovery and ordering are established.
-- [x] Add retained batch summaries and configurable cleanup of old published work without
-  double counting results. Cleanup stays disabled by default; keep all work for
-  now and invalid work available for explicit retry.
-- [x] Keep `VACUUM` an explicit supervised operation with Piddi stopped; scheduled
-  maintenance performs configured logical cleanup without physical compaction.
+- [ ] Diagnose the recorded CMIP6Plus mapping errors from the production test;
+  add sanitized regression fixtures for any unsupported valid input.
+- [ ] Measure the single SQLite database on representative STAC records, including
+  large asset lists: catalog/work/index space, growth per accepted event,
+  repeated updates, harvest and mapping throughput, lookup latency,
+  decompression cost, writer contention, and backup/restore time. Reassess
+  feasibility from measurements rather than a fixed database-size cutoff.
+- [ ] Measure publication throughput and establish safe REST worker counts and
+  rate limits for the deployed Handle service. Run the existing opt-in real-service
+  tests against a disposable prefix; verify authentication, HTTPS/CA handling,
+  failures, and retry behavior without exposing secrets.
+- [ ] Validate Kafka persistence and restart behavior with a real broker,
+  including commit failures, rebalances, interrupted writes, and VM restarts.
+  Local checkpoint, replay, and recovery tests already exist; automatic offset
+  commits and offset storage are disabled.
+- [ ] Validate the persistent disk safety stop on the deployed services: trigger
+  configured thresholds on a disposable filesystem, verify restart/timer/reboot
+  blocking, then inspect and manually resume. Do not fill the production disk.
+- [ ] Document measured production sizing, backup/restore procedures, worker
+  counts, and Kafka group/offset decisions. Evaluate published-work and completed
+  output retention using measured growth; both removal policies remain disabled
+  by default. Verify that deleted work space is reused without automatic VACUUM.
 
-## Handle service
+## Publication
 
-- [ ] Test REST publication against a disposable real Handle prefix.
-- [ ] Confirm authentication, HTTPS/CA requirements, error handling, and safe
-  retry behavior without exposing secrets.
-- [ ] Document safe REST publication concurrency and rate limits.
+- [ ] Add configurable publication rate limiting and a failure limit aligned
+  with mapping.
+- [ ] Add an outbox validation command that never publishes.
 - [ ] Investigate server-side batching only if the deployed service documents a
   multi-Handle endpoint with per-item results.
-
-## Publication spool
-
-- [x] Compress completed batch output and closed receipts; offer optional
-  age-based removal, disabled by default, independently of DB work retention.
-- [ ] Extend durability rules and storage policies based on production measurements.
-- [ ] Add backlog metrics, publication rate limiting, and optional watch mode.
-- [ ] Add an outbox validation command that never publishes.
 - [ ] Define multi-target routing and track delivery independently per target.
 
-## Recovery and Kafka
+## Harvest, catalog, and recovery
 
-- [x] Archive each Kafka event to JSONL before further processing, including
-  topic, partition, offset, key, and the original message payload. Keep archived
-  events unchanged regardless of processing outcome and preserve ordering
-  within each partition.
-- [x] Rotate dump files by a configurable event count as well as by day. The
-  initial harvest can contain the complete retained history and produce several
-  GB in one day. Split a day's archive into numbered parts with deterministic
-  replay ordering; preserve every event across rotation and restart.
-- [x] Support Kafka and archived JSONL files as alternative inputs to the same
-  processing flow, including rebuilding the STAC catalog after Kafka retention
-  has removed old events. Dumps are an archive, not the batch pending queue.
-  Replay requires the new coordinate-bearing archive envelope.
-- [ ] Keep event error policy separate from batching: either stop without
-  acknowledging an invalid event, or optionally record the failure, acknowledge
-  it, and continue. Never modify an original event; a later correction on Kafka
-  is a new event.
-- [ ] Define and test Kafka acknowledgement behavior across persistence errors,
-  automatic commits, transient failures, and restarts.
+Harvest maintains the current catalog; mapping consumes the immutable snapshots
+saved with each work event. Dumps preserve original events and source coordinates.
+Unknown projects already support stop/ignore behavior; other invalid harvest
+inputs remain fail-fast.
 
-## Harvest catalog cache and mapping
-
-`harvest` reconstructs a persistent local STAC catalog from Kafka
-before mapping. `map` reads the latest complete state of each versioned item from
-that catalog, with no remote STAC dependency. Keep older dataset versions for
-local predecessor lookup, but overwrite successive updates to the same item.
-
-- [ ] Document ordering assumptions for items published across multiple Kafka
-  partitions or topics, including shared-project checkpoint durability.
-- [ ] Define catalog compaction and journal growth controls and minimize redundant
-  indexes and checkpoint metadata.
-- [ ] Defer alternative database backends and the older per-project database
-  proposal until after the agreed single-SQLite work-stream design is evaluated.
-- [ ] Define and add force-refresh semantics that never blindly reapply already
+- [ ] Document ordering assumptions for updates to the same item across Kafka
+  partitions or topics, including the limits of per-partition checkpoints.
+- [ ] Define an explicit operator recovery policy for unresolved or invalid
+  harvest events, including diagnosed skip/checkpoint semantics. If an optional
+  acknowledge-and-continue mode is added, preserve the original archive and
+  record the reason; default harvest remains fail-fast.
+- [ ] Define force-refresh semantics that never blindly reapply already
   processed, potentially non-idempotent patches. Add completeness reporting
   beyond the existing per-item remote current-state recovery.
-- [ ] Add project-scoped cache inspection/removal with safe database closure and
-  cleanup of associated journal files. Report item counts, unresolved records,
-  checkpoints, and disk usage.
-- [x] Remove retained legacy retry library helpers.
-- [ ] Add an explicit harvest force option with diagnosed skip/checkpoint semantics
-  for unresolved events; default harvest remains fail-fast.
-- [ ] Add a configurable publication failure limit aligned with mapping.
-- [x] Remove direct remote PATCH mapping, transient configuration, and the
-  legacy force bypass.
-- [ ] Run shared backend correctness tests for publications, consecutive patches,
-  duplicate replay, interrupted transactions, missing bases, project isolation,
-  predecessor selection, clean/force behavior, and independent project rebuilds.
-- [ ] Benchmark the agreed SQLite design on production-like STAC records, including large
-  asset lists: total disk usage after initial filling and repeated updates,
-  harvest throughput, exact/predecessor lookup latency, decompression cost, and
-  complete mapping throughput.
-
-Deferred: PostgreSQL backend for several instances, including coordinated Kafka
-consumption and update ownership. Retain JSONL dumps and Handle spools initially;
-evaluate optional Parquet import/export separately if measurements justify it.
+- [ ] Add read-only project inspection for catalog counts, unresolved records,
+  checkpoints, and storage use. Define any catalog-removal operation separately
+  from the existing processing reset, with safe shared-checkpoint semantics.
 
 ## Monitoring
 
-- [ ] When measured statistics growth warrants it, implement the deferred
-  [daily statistics rollup](docs/work-stream-design.md#future-task-daily-statistics-rollup):
-  maintenance aggregates older finalized batches into `daily_stats` in `piddi.db`,
-  transactionally removes included summaries, and keeps `top`, recovery, retry
-  guards, and project reset correct. Leave it disabled by default.
-- [ ] Record deferred publication runs, including project, input batch, start and
-  completion times, receipt path, counts, outcome, and concise error details.
-- [ ] Derive publication backlog and output storage usage, with configurable
-  warning and critical thresholds for stale heartbeats, overdue batches, and
-  free disk space.
-- [ ] Add a read-only `piddi status` snapshot with human-readable and JSON output.
+`top` already reads the shared database for event totals, full/patch counts,
+prepared/published Handles (including aliases), backlog, rates, batch progress,
+and overall publish ETA. Batch summaries and run histories are already recorded.
+Disk warnings and the persistent critical-space stop are implemented.
+
+- [ ] Add output storage usage reporting and configurable health thresholds for
+  stale heartbeats and overdue batches. Make stale snapshots visible while
+  distinguishing healthy idle harvest from failures.
 - [ ] Add a separately supervised `piddi monitor` web service, bound to localhost
   by default, with `/health/live`, `/health/ready`, `/health`, and `/status` JSON
-  endpoints.
-- [ ] Serve a small, server-rendered HTML dashboard at `/` with accessible
-  traffic lights, labels, concise status messages, relative and UTC timestamps,
-  and automatic refresh without requiring JavaScript.
-- [ ] Document health-state semantics so an idle Kafka topic remains healthy,
-  degraded conditions remain distinguishable from failures, and stale status
-  data is visible.
-- [ ] Add monitor deployment and nginx exposure controls, with tests for HTTP
-  status codes, traffic-light rendering, and redaction of sensitive configuration.
+  endpoints using the existing database snapshot model.
+- [ ] Serve a small, server-rendered HTML dashboard with accessible status labels,
+  concise messages, relative and UTC timestamps, and automatic refresh without
+  requiring JavaScript.
+- [ ] Document monitor deployment and nginx exposure controls; verify HTTP status
+  codes, health-state rendering, and redaction of sensitive configuration.
 
 ## PID and fixtures
 
-- [ ] Reject malformed source PIDs instead of generating replacements.
-- [ ] Allow fallback PIDs only where a plugin explicitly permits them; log and
-  count each fallback.
-- [ ] Complete PID edge-case tests, including aliases, conflicts, Handle forms,
-  relationships, POST, and PATCH.
-- [ ] Add sanitized fixtures for all observed PATCH events and representative
+- [ ] Reject malformed source PIDs instead of generating replacements. Allow
+  fallback PIDs only where a plugin explicitly permits them; log and count each
+  fallback.
+- [ ] Extend existing PID tests for uncovered aliases, conflicts, Handle forms,
+  relationships, POST, and PATCH cases found in production.
+- [ ] Add sanitized fixtures for observed PATCH variants and representative
   multi-asset records; document extraction commands and source checksums.
 - [ ] Add CORDEX-CMIP7 after a representative publication record is available.
 
-## Rollout
+## Deferred until measurements justify them
 
-- [ ] Benchmark ingestion and publication with representative datasets.
-- [ ] Document production sizing, retention, worker counts, and Kafka
-  group/offset decisions.
+- [ ] Parallel project processing: retain sequential round robin batches for now.
+  Before adding a bounded project-worker pool, define durable claims, recovery,
+  per-project ordering, and SQLite writer-contention limits. Projects do not
+  write to the same Handle.
+- [ ] Implement the deferred
+  [daily statistics rollup](docs/work-stream-design.md#future-task-daily-statistics-rollup)
+  only when batch-summary growth warrants it. Maintenance would aggregate older
+  finalized batches into `daily_stats` in the same database, preserving totals,
+  recovery, retry guards, and project reset. Leave it disabled by default.
+- [ ] Consider PostgreSQL only if measured scale or multiple service instances
+  require it, including coordinated Kafka consumption and update ownership.
+  Separate per-project databases are not the current design.
+- [ ] Evaluate optional Parquet import/export only if measurements justify it;
+  retain JSONL dumps and Handle spools for now.
