@@ -143,11 +143,21 @@ class BaseCatalog(BaseCatalogReader):
         """
 
     @abstractmethod
-    def seal_batch(self, batch_id: str, outcomes: list[dict]) -> None:
-        """Commit exact mapping outcomes after batch files are durable, idempotently."""
+    def seal_batch(
+        self,
+        batch_id: str,
+        outcomes: list[dict],
+        *,
+        records=None,
+        manifest=None,
+        successes=None,
+    ) -> None:
+        """Commit mapping outcomes, counters, and supplied Handle payloads atomically."""
 
     @abstractmethod
-    def publish_batch(self, batch_id: str, handle_count: int, *, error=None) -> None:
+    def publish_batch(
+        self, batch_id: str, handle_count: int, *, error=None, manifest=None
+    ) -> None:
         """Update publication progress and the retained batch summary atomically."""
 
     @abstractmethod

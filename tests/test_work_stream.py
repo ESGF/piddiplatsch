@@ -4,6 +4,7 @@ import json
 from contextlib import closing
 from copy import deepcopy
 from datetime import UTC, datetime, timedelta
+from types import SimpleNamespace
 
 import pytest
 from click.testing import CliRunner
@@ -54,6 +55,14 @@ class Publisher:
         self.batches.append((project, [entry["id"] for entry in manifest["outcomes"]]))
         count = len(paths[0].read_text().splitlines())
         failed = count if project == self.failed_project else 0
+        for _, position, record in kwargs.get("record_source", ()):
+            kwargs["journal"].record(
+                SimpleNamespace(
+                    line_number=position,
+                    handle=record["handle"],
+                    error=RuntimeError("test publication failed") if failed else None,
+                )
+            )
         return PublishResult(total=count, succeeded=count - failed, failed=failed)
 
 
@@ -79,6 +88,21 @@ def test_weighted_project_batches_preserve_each_projects_order(tmp_path, testdat
             ).fetchone()[0]
             == 6
         )
+
+
+def test_filtered_mapping_cannot_interleave_batches_and_replay_older_updates(
+    tmp_path, testdata_path
+):
+    from piddiplatsch.runners.mapping import map_catalog
+
+    seed(tmp_path, testdata_path, projects=("cmip7",))
+    assert map_catalog(projects=["cmip7"], offset=1, limit=1).succeeded == 1
+    assert map_catalog(projects=["cmip7"]).succeeded == 2
+    publisher = Publisher()
+    worker = SyncWorker(publisher=publisher)
+    worker.run()
+    assert not worker.errors
+    assert [ids for _, ids in publisher.batches] == [[1], [2], [3]]
 
 
 def test_failed_project_does_not_block_other_projects(tmp_path, testdata_path):

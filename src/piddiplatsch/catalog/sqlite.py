@@ -1,4 +1,4 @@
-"""Project-scoped access to the four-table, shared SQLite work database."""
+"""Project-scoped SQLite catalog, work stream, and transactional Handle outbox."""
 
 import json
 import sqlite3
@@ -16,7 +16,7 @@ from piddiplatsch.catalog.models import (
 )
 from piddiplatsch.exceptions import CatalogError
 
-_SCHEMA_VERSION = 4
+_SCHEMA_VERSION = 5
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS catalog_items (
     project TEXT NOT NULL, collection_id TEXT NOT NULL, item_id TEXT NOT NULL,
@@ -53,6 +53,19 @@ CREATE TABLE IF NOT EXISTS stats (
     full_events INTEGER NOT NULL DEFAULT 0, patch_events INTEGER NOT NULL DEFAULT 0,
     message TEXT, runtime TEXT,
     PRIMARY KEY(kind, project, id)
+);
+CREATE TABLE IF NOT EXISTS outbox_batches (
+    project TEXT NOT NULL, batch_id TEXT NOT NULL,
+    first_work_id INTEGER NOT NULL, status TEXT NOT NULL CHECK(status IN ('ready','published')),
+    manifest BLOB NOT NULL,
+    PRIMARY KEY(project,batch_id)
+);
+CREATE INDEX IF NOT EXISTS outbox_ready ON outbox_batches(project,status,first_work_id);
+CREATE TABLE IF NOT EXISTS handle_outbox (
+    project TEXT NOT NULL, batch_id TEXT NOT NULL, position INTEGER NOT NULL,
+    handle TEXT NOT NULL, payload BLOB NOT NULL,
+    published INTEGER NOT NULL DEFAULT 0 CHECK(published IN (0,1)),
+    PRIMARY KEY(project,batch_id,position)
 );
 """
 
@@ -93,7 +106,7 @@ class SQLiteCatalog(BaseCatalog):
     """One project view of piddi.db. Connections belong to one thread.
 
     Read-only instances hold a stable snapshot. Writers use short explicit
-    transactions. No legacy schema migration is performed.
+    transactions. Version 4 upgrades add the transactional publication outbox.
     """
 
     def __init__(self, project, path, *, timeout=5.0, read_only=False):
@@ -112,9 +125,9 @@ class SQLiteCatalog(BaseCatalog):
                     isolation_level=None,
                 )
                 self._execute("BEGIN")
-                if (
-                    self._execute("PRAGMA user_version").fetchone()[0]
-                    != _SCHEMA_VERSION
+                if self._execute("PRAGMA user_version").fetchone()[0] not in (
+                    4,
+                    _SCHEMA_VERSION,
                 ):
                     raise CatalogError(
                         "Unsupported database schema; start with a fresh piddi.db"
@@ -145,12 +158,12 @@ class SQLiteCatalog(BaseCatalog):
                         "Legacy database detected; start with a fresh piddi.db"
                     )
                 version = self._execute("PRAGMA user_version").fetchone()[0]
-                if version not in (0, _SCHEMA_VERSION):
+                if version not in (0, 4, _SCHEMA_VERSION):
                     raise CatalogError("Unsupported database schema")
                 self._execute("PRAGMA journal_mode=WAL")
                 self._execute("PRAGMA synchronous=FULL")
                 self._require_connection().executescript(
-                    "BEGIN IMMEDIATE;\n" + _SCHEMA + "\nPRAGMA user_version=4;\nCOMMIT;"
+                    "BEGIN IMMEDIATE;\n" + _SCHEMA + "\nPRAGMA user_version=5;\nCOMMIT;"
                 )
         except (OSError, sqlite3.Error, CatalogError) as exc:
             self.close()
@@ -356,7 +369,9 @@ class SQLiteCatalog(BaseCatalog):
             raise CatalogError(f"Work entry {identity} is missing")
         return WorkItem(_decode(row[0]), identity, row[1])
 
-    def seal_batch(self, batch_id, outcomes):
+    def seal_batch(
+        self, batch_id, outcomes, *, records=None, manifest=None, successes=None
+    ):
         """Commit one retained batch summary with its work-state transitions."""
         with self.transaction():
             items = invalid = handles = aliases = full = patches = 0
@@ -399,6 +414,8 @@ class SQLiteCatalog(BaseCatalog):
                 full += int(row[2] == "full")
                 patches += int(row[2] == "patch")
             if existing:
+                if records is not None:
+                    self._store_outbox(batch_id, records, manifest, successes)
                 return
             if not items and not invalid:
                 raise CatalogError("Cannot seal an empty batch")
@@ -423,8 +440,78 @@ class SQLiteCatalog(BaseCatalog):
                     patches,
                 ),
             )
+            if records is not None:
+                self._store_outbox(batch_id, records, manifest, successes)
 
-    def publish_batch(self, batch_id, handle_count, *, error=None):
+    def _store_outbox(self, batch_id, records, manifest, successes):
+        if self._execute(
+            "SELECT 1 FROM outbox_batches WHERE project=? AND batch_id=?",
+            (self.project, batch_id),
+        ).fetchone():
+            return
+        successes = successes or {}
+        count = 0
+        for count, record in enumerate(records, 1):
+            handle = record.get("handle")
+            if (
+                not isinstance(handle, str)
+                or not handle
+                or record.get("project") != self.project
+            ):
+                raise CatalogError("Invalid Handle in publication outbox")
+            self._execute(
+                "INSERT INTO handle_outbox(project,batch_id,position,handle,payload,published) VALUES (?,?,?,?,?,?)",
+                (
+                    self.project,
+                    batch_id,
+                    count,
+                    handle,
+                    zlib.compress(json.dumps(record, allow_nan=False).encode()),
+                    int(count <= successes.get(handle, 0)),
+                ),
+            )
+        prepared = self._execute(
+            "SELECT prepared_handles FROM stats WHERE kind='batch' AND project=? AND id=?",
+            (self.project, batch_id),
+        ).fetchone()[0]
+        if count != manifest["handle_count"] or count != prepared:
+            raise CatalogError("Outbox Handle count does not match mapped batch")
+        for handle, position in successes.items():
+            if self._execute(
+                "SELECT handle FROM handle_outbox WHERE project=? AND batch_id=? AND position=?",
+                (self.project, batch_id, position),
+            ).fetchone() != (handle,):
+                raise CatalogError(
+                    "Legacy publication progress does not match outbox payloads"
+                )
+        saved = dict(manifest, mapping_acknowledged=True, outbox=True)
+        self._execute(
+            "INSERT INTO outbox_batches(project,batch_id,first_work_id,status,manifest) VALUES (?,?,?,'ready',?)",
+            (
+                self.project,
+                batch_id,
+                min(row["id"] for row in saved["outcomes"]),
+                zlib.compress(json.dumps(saved, allow_nan=False).encode()),
+            ),
+        )
+
+    def outbox_manifest(self, batch_id):
+        row = self._execute(
+            "SELECT manifest FROM outbox_batches WHERE project=? AND batch_id=?",
+            (self.project, batch_id),
+        ).fetchone()
+        return json.loads(zlib.decompress(row[0])) if row else None
+
+    def ready_outbox(self):
+        return [
+            json.loads(zlib.decompress(row[0]))
+            for row in self._execute(
+                "SELECT manifest FROM outbox_batches WHERE project=? AND status='ready' ORDER BY first_work_id,batch_id",
+                (self.project,),
+            )
+        ]
+
+    def publish_batch(self, batch_id, handle_count, *, error=None, manifest=None):
         """Update the same batch row; only full completion counts as published."""
         with self.transaction():
             row = self._execute(
@@ -440,6 +527,14 @@ class SQLiteCatalog(BaseCatalog):
                 )
             if status == "published":
                 return
+            if (
+                error is None
+                and self._execute(
+                    "SELECT 1 FROM handle_outbox WHERE project=? AND batch_id=? AND published=0 LIMIT 1",
+                    (self.project, batch_id),
+                ).fetchone()
+            ):
+                raise CatalogError("Outbox still contains unacknowledged Handle writes")
             now = _now()
             if error is not None:
                 self._execute(
@@ -461,6 +556,27 @@ class SQLiteCatalog(BaseCatalog):
                     "UPDATE stats SET status='published',handles=prepared_handles,published_at=?,updated_at=?,message=NULL "
                     "WHERE kind='batch' AND project=? AND id=?",
                     (now, now, self.project, batch_id),
+                )
+            saved = manifest or self.outbox_manifest(batch_id)
+            if saved is not None:
+                saved = dict(saved)
+                if error is None:
+                    saved.update(status="published", published_at=now)
+                    saved.pop("publication_error", None)
+                    self._execute(
+                        "DELETE FROM handle_outbox WHERE project=? AND batch_id=?",
+                        (self.project, batch_id),
+                    )
+                else:
+                    saved["publication_error"] = str(error)
+                self._execute(
+                    "UPDATE outbox_batches SET status=?,manifest=? WHERE project=? AND batch_id=?",
+                    (
+                        "published" if error is None else "ready",
+                        zlib.compress(json.dumps(saved, allow_nan=False).encode()),
+                        self.project,
+                        batch_id,
+                    ),
                 )
 
     def retry_invalid(self, identities):
@@ -503,6 +619,8 @@ class SQLiteCatalog(BaseCatalog):
             self._execute("DELETE FROM catalog_items WHERE project=?", (self.project,))
             self._execute("DELETE FROM work_items WHERE project=?", (self.project,))
             self._execute("DELETE FROM kafka_checkpoints")
+            self._execute("DELETE FROM handle_outbox WHERE project=?", (self.project,))
+            self._execute("DELETE FROM outbox_batches WHERE project=?", (self.project,))
 
     def compact(self):
         if (

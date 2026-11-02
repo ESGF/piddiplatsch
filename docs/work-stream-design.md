@@ -1,13 +1,14 @@
-# Proposed catalog and work-stream design
+# Catalog, work stream, and transactional outbox
 
-Agreed and implemented on 2026-11-01. This describes the fresh-start storage
-format. Existing per-project catalogs, monitoring databases, and batch manifests
-are not migrated. Start with an empty output directory.
+The work stream was implemented on 2026-11-01 and extended with a SQLite
+transactional outbox on 2026-11-02. Schema 4 upgrades additively to schema 5;
+ready manifest-v3 batches and their progress are imported when processed.
+Per-project catalogs and other incompatible formats still require a fresh start.
 
 ## Storage and responsibilities
 
 Use one SQLite database, `piddi.db`, with WAL mode. Keep catalog records, work
-entries, Kafka checkpoints, and summary statistics in separate tables in that
+entries, Kafka checkpoints, summary statistics, and the Handle outbox in that
 database. Project columns support filtering and project-scoped operations.
 
 Harvest runs independently of mapping and publication. For each event:
@@ -128,11 +129,19 @@ publication do not increment them. Reset/retry preserve the original event type.
 ## Mapping and publication
 
 A batch is a limited selection of work entries, filtered by project and state.
-Mapping validates the saved snapshots and writes Handle output to JSONL files.
-Keep those files; there is no `work_handles` table in this design.
+Mapping validates the saved snapshots using bounded temporary JSONL spools, then
+commits payloads, batch metadata, exact work outcomes, and counters in one SQLite
+transaction. Files left after that commit are optional audit exports.
+
+`outbox_batches` stores `(project, batch_id)`, the first work ID, a ready/published
+status, and compressed batch metadata. Its `(project, status, first_work_id)`
+index selects unfinished batches without scanning completed history.
+`handle_outbox` stores immutable compressed Handle payloads and a committed
+publication flag, keyed by `(project, batch_id, position)`. Repeated Handle IDs
+remain separate positions so their updates retain source order.
 
 - `pending`: awaiting mapping.
-- `mapped`: Handle JSONL output has been durably saved and associated through
+- `mapped`: Handle payloads have been committed to the SQLite outbox through
   `batch_id`; awaiting publication.
 - `invalid`: mapping/validation failed; `message` explains the failure. An
   explicit retry can move an entry back to `pending`, for example after a Piddi
@@ -141,13 +150,14 @@ Keep those files; there is no `work_handles` table in this design.
   published.
 
 Publication failures leave work entries `mapped`, with details in `message`.
-Retry publication using saved output without mapping again. Keep updates for the
+Retry publication using the SQLite payloads without mapping again. Keep updates for the
 same item or Handle in order so an older update cannot overwrite a newer one.
 
-The local database transaction does not include JSONL files or the external
-Handle server. This design does not promise exactly-once remote HTTP execution
-across crashes. Publication retries resume saved output using a durable per-Handle success
-journal; explicit invalid retries use the conservative policy described below.
+No local transaction spans a remote request. Each successful Handle position is
+committed before the next update to the same Handle starts. A crash between HTTP
+success and that commit may repeat the same payload and ID. It cannot replay an
+older committed version over a newer one. Explicit invalid retries use the
+conservative policy described below.
 
 ### Batch scheduling and future parallelism
 
@@ -253,11 +263,11 @@ Kafka dumps survive this policy. Published-work retention remains independent.
 
 ### Future task: daily statistics rollup
 
-Deferred, not implemented. Keep the current four-table design until measured
+Deferred, not implemented. Keep the current six-table design until measured
 growth of batch summaries justifies a rollup. The future option should be
 disabled by default and independent of published-work and run-history retention.
 
-Add a fifth application table, `daily_stats`, inside the same `piddi.db`, rather
+Add a separate application table, `daily_stats`, inside the same `piddi.db`, rather
 than a separate database. Retain recent batch summaries and all unfinished or
 failed batches in `stats`. Older fully published batches become eligible only
 after publication/archive recovery is complete. Invalid-only batches need an
@@ -297,7 +307,7 @@ supervised operation described above.
 ## Implementation details and limits
 
 The database lives at `<consumer.output_dir>/piddi.db`, or under
-`catalog.directory`. It has the four application tables above; SQLite also
+`catalog.directory`. It has the six application tables above; SQLite also
 maintains its internal `sqlite_sequence` table to prevent work ID reuse after
 retention. `stac_blob` contains a zlib-compressed snapshot envelope with the
 unchanged full STAC item, collection/version identity, publication timestamp,
@@ -310,22 +320,21 @@ date selector it processes all pending work; date selectors filter local
 Explicit file publication remains available for operator-managed files but does
 not acknowledge database work. Use queued publication for the work stream.
 
-Batch manifests record exact work IDs and mapping outcomes. After files and their
-directories are durable, one transaction associates successful work with the
-batch, marks rejected work invalid, and inserts its mapping/error summary.
+Batch metadata records exact work IDs and mapping outcomes. One transaction
+inserts queued payloads and metadata, associates successful work with the batch,
+marks rejected work invalid, and inserts its mapping/error summary.
 Recovery repeats this transaction idempotently. Successful publication advances
-mapped work and updates the same summary row in one transaction, also
+mapped work, updates the same summary, and deletes completed payloads in one transaction, also
 idempotently. Publication failure records a failed batch attempt and leaves work
 mapped; a failed-attempt summary is not a unique-job count. HTTP may repeat after
 a crash, but a repeated successful acknowledgement does not repeat the summary.
 
-Each ready batch has an append-only `publication-progress.jsonl` journal tied to
-its output checksum. Successful Handle writes are fsynced before any later write
-to the same Handle. Recovery skips already completed positions, so replay cannot
+Each ready batch has publication progress in SQLite. Successful Handle positions
+commit before any later write to the same Handle. Recovery skips already completed positions, so replay cannot
 roll a Handle back to an earlier successful snapshot. An unsuccessful write blocks
 later writes to that Handle for that attempt, including across input chunks.
-A torn final journal line is removed on recovery; a corrupt complete line blocks
-publication. The most recent unrecorded remote write may still repeat after a crash.
+Existing file journals are verified and imported atomically with legacy ready
+payloads. The most recent unrecorded remote write may still repeat after a crash.
 
 Manual mapping filters may prepare newer work first. Publication waits for older
 pending work, and sync maps the older prefix before publishing ready batches in
@@ -346,8 +355,9 @@ prunes expired completed run rows. `top` reads one database snapshot for live
 activity, prepared/published Handle totals, and backlog. It does not inspect
 output manifests or status files. Batch summaries survive work retention and
 run-history cleanup. Reset deletes only the selected project's statistics.
-Database schema version 4 and batch manifest version 3 require a fresh start;
-no migration is provided. Harvest checkpoints are shared by topic/partition: a
+Database schema 4 upgrades to 5 by adding empty outbox tables; no existing event
+history is rewritten. Manifest-v3 ready batches are imported as needed, preserving
+their recorded successes. Harvest checkpoints are shared by topic/partition: a
 harvest clean must include every stored project. Project processing reset
 preserves checkpoints and only requeues that project's retained work.
 

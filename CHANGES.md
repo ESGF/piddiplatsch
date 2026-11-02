@@ -4,6 +4,11 @@
 
 ### Added
 
+- Transactional SQLite Handle outbox: mapping commits payloads, work states, and
+  statistics together; publication progress survives missing batch files and
+  resumes ordered Handle updates. Schema 4 upgrades additively to 5, importing
+  legacy ready batches and their progress journals when processed. Batch files
+  remain audit exports; completed queue payloads are removed transactionally.
 - Per-project `priority` weights for sync, integers 0–255 with an equal default
   of 100. Zero disables sync for the project; eligible projects compete by weight
   at each batch boundary. Explicit map/publish and harvest remain independent.

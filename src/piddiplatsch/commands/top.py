@@ -374,6 +374,8 @@ def _table_size_lines(sizes):
         "work_items": "work",
         "catalog_items": "catalog",
         "kafka_checkpoints": "checkpoints",
+        "handle_outbox": "outbox",
+        "outbox_batches": "batches",
     }
     entries = " · ".join(
         f"{names.get(row['name'], row['name'])} {_bytes(row['total_bytes'])}"

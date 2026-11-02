@@ -3,11 +3,13 @@
 ## Fresh start
 
 Stop harvest and batch services. Archive the previous output directory and old
-monitoring database, then configure a new empty output directory. There is no
-migration from per-project catalogs, dirty-item queues, older shared database
-schemas, or older batch manifests. Full/patch event tracking requires schema 4;
-restart tests with a new empty output directory, rather than a project reset.
-Keep each new database paired with its batch directory and harvest control file.
+monitoring database, then configure a new empty output directory when migrating
+from per-project catalogs, dirty-item queues, or incompatible manifests. Schema
+4 upgrades to schema 5 automatically, without a fresh start: the new SQLite
+outbox tables are added, and ready manifest-v3 batches and their per-Handle
+journals are imported transactionally when processed. Keep those legacy files
+until imported. Stop all services when upgrading the application; older code
+does not support schema 5. Preserve the database and harvest control file.
 
 ## Disk safety recovery
 
@@ -86,7 +88,9 @@ mapped again by a repeated command.
 
 Inspect `batches/<project>/ready/<batch-id>/handles.jsonl`, `failures.jsonl`, and
 `manifest.json`. The manifest records settings, checksums, exact work IDs, and
-mapping outcomes. All Handles for one work entry stay together.
+mapping outcomes. All Handles for one work entry stay together. These files are
+audit exports; the work transitions, queued payloads, and batch counters commit
+together in SQLite. Once committed, publication does not depend on the exports.
 
 ## Publish and sync
 
@@ -112,12 +116,16 @@ Failed publication blocks later publication for its project while other projects
 continue. Manual mapping of newer work cannot bypass older pending work: map that
 older work or use sync before publishing the newer batch.
 
-Publication uses saved output and a durable per-Handle success journal; retries
-skip completed positions and do not remap. A failed write defers later updates to
-that Handle for the attempt. Receipts go under
+Publication streams immutable Handle payloads from `handle_outbox`; successful
+positions commit to SQLite before a later update to the same Handle starts.
+Retries skip committed positions and do not remap. A failed write defers later
+updates to that Handle for the attempt. Receipts go under
 `published/YYYY/MM/DD/`. Successful batches move to
 `batches/<project>/published/YYYY/MM/DD/<batch-id>/`. A crash may repeat HTTP
-writes, but database acknowledgements and batch summaries are idempotent.
+writes against the same Handle ID. SQLite work-state changes, completion counters,
+and removal of finished outbox payloads commit together. No transaction is held
+while waiting for HTTP. Exports and receipts are not needed to resume a committed
+queue. Standalone file publication continues to support its optional file journal.
 
 Explicit `piddi publish PATH...` is available for operator-managed JSONL files.
 It does not acknowledge database work or add to the work-stream batch totals.
@@ -227,7 +235,8 @@ piddi maintain
 
 Top reads only `piddi.db`, including when `--db PATH` selects another database.
 The SQLite table sizes are rough estimates, include indexes, and cover all
-projects, even with `--project`. Top estimates the four application tables from
+projects, even with `--project`. Top estimates the application tables, including
+the outbox, from
 up to 16 rows per project/table and assumes 75% page occupancy. Estimates can
 be biased by changing row sizes and fragmentation; they are not measured disk
 allocations. JSON labels them with `estimated: true` and includes the method

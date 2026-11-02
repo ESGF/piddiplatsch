@@ -7,6 +7,7 @@ from contextlib import closing
 from copy import deepcopy
 from datetime import UTC, datetime, timedelta
 from io import StringIO
+from types import SimpleNamespace
 
 import pytest
 from click.testing import CliRunner
@@ -39,6 +40,16 @@ class Publisher:
         assert all(record["project"] == kwargs["project"] for record in records)
         self.calls.append(path)
         self.options.append(kwargs)
+        for _, position, record in kwargs.get("record_source", ()):
+            kwargs["journal"].record(
+                SimpleNamespace(
+                    line_number=position,
+                    handle=record["handle"],
+                    error=(
+                        RuntimeError("test publication failed") if self.fail else None
+                    ),
+                )
+            )
         return PublishResult(
             total=len(records),
             succeeded=0 if self.fail else len(records),
@@ -512,6 +523,7 @@ def test_top_shows_entire_batch_lifecycle_without_counter_gaps(setup, monkeypatc
     write = worker._write_items
     fingerprint = sync._fingerprint
     acknowledge = worker._acknowledge
+    verify = worker._verify_output
     record = worker._record_publication
 
     def selecting(*args, **kwargs):
@@ -523,8 +535,12 @@ def test_top_shows_entire_batch_lifecycle_without_counter_gaps(setup, monkeypatc
         return write(*args, **kwargs)
 
     def checking(*args, **kwargs):
-        snapshot("sealing" if kwargs.get("sync") else "verifying")
+        snapshot(worker._activity.run["phase"])
         return fingerprint(*args, **kwargs)
+
+    def verifying(*args, **kwargs):
+        snapshot(worker._activity.run["phase"])
+        return verify(*args, **kwargs)
 
     def acknowledging(*args, **kwargs):
         # The first acknowledgement seals; the second is recovery verification.
@@ -539,6 +555,7 @@ def test_top_shows_entire_batch_lifecycle_without_counter_gaps(setup, monkeypatc
     monkeypatch.setattr(worker, "_write_items", mapping)
     monkeypatch.setattr(sync, "_fingerprint", checking)
     monkeypatch.setattr(worker, "_acknowledge", acknowledging)
+    monkeypatch.setattr(worker, "_verify_output", verifying)
     monkeypatch.setattr(worker, "_record_publication", finalizing)
     assert len(worker.run()) == 1
     assert not worker.errors

@@ -12,15 +12,20 @@ saved batches -> Handle service + work progress       publish
 pending work -> project batches -> publication        sync
 ```
 
-Harvest maintains one SQLite database with four application tables:
-`catalog_items`, `work_items`, `kafka_checkpoints`, and `stats`. It archives each
+Harvest and publication share one SQLite database with six application tables:
+`catalog_items`, `work_items`, `kafka_checkpoints`, `stats`, `outbox_batches`, and
+`handle_outbox`. Harvest archives each
 Kafka event before committing catalog updates, an independent full work snapshot,
 and its shared topic/partition checkpoint together. Repeated events are skipped;
 new events remain independent even when their payloads match.
 
-Map reads pending snapshots and writes dataset/file Handles to project batches.
+Map reads pending snapshots and writes dataset/file Handles to a transactional
+SQLite outbox, atomically with work-state changes and batch statistics. Bounded
+temporary JSONL spools support mapping; the resulting files remain audit exports.
 It stays offline and validates the fields and Handle records it needs rather
-than the entire STAC schema. Publication retries use the saved files. Sync runs
+than the entire STAC schema. Publication retries use immutable database payloads
+and committed per-Handle progress. No database transaction spans an HTTP request.
+Sync runs
 one project batch at a time, selected by eligible projects' priority weights and
 capped at 2,000 work entries by default. Weights default to 100; zero disables sync.
 Projects never write to the same Handle; parallel project execution is deferred.

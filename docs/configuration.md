@@ -168,8 +168,9 @@ kafka_commit_interval_seconds = 1.0
 The shared database defaults to `<consumer.output_dir>/piddi.db`. Set
 `catalog.directory` to change its directory. SQLite is the supported backend.
 `enabled` controls catalog/work writes during harvest. Map always reads database
-work snapshots. This format requires a fresh output directory; there is no legacy
-schema migration.
+work snapshots. Schema 4 is upgraded additively to schema 5, adding the Handle
+outbox without rebuilding existing work. Older incompatible storage formats
+still require a fresh output directory.
 
 `ignore_unknown_projects` defaults to `false`: an unknown project stops harvest
 without advancing its checkpoint or acknowledging the event. Set it to `true` to
@@ -263,8 +264,11 @@ remain until you explicitly set a positive period, such as 30 days. Once enabled
 cutoff. Pending, mapped, invalid, catalog, and summary rows remain. Maintenance
 never runs `VACUUM` or deletes JSONL output.
 
-The batch directory defaults to `<consumer.output_dir>/batches`. Keep it paired
-with its database. All batch commands use a shared lock beside `piddi.db`, even
+The batch directory defaults to `<consumer.output_dir>/batches`. Mapping uses it
+for temporary spools and optional audit exports. Committed Handle payloads and
+publication progress live in `piddi.db`; missing exports do not block publication.
+Keep legacy ready files until they have been imported into the outbox.
+All batch commands use a shared lock beside `piddi.db`, even
 when a custom batch directory is configured. The Ansible setting
 `piddi_sync_check_interval` controls how often the timer runs, defaulting to
 20 seconds after the previous run finishes. A running sync continues processing

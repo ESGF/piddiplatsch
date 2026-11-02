@@ -1,4 +1,4 @@
-"""Map pending database work into durable project batches without publishing."""
+"""Map pending work into the SQLite Handle outbox without publishing."""
 
 import json
 from datetime import datetime

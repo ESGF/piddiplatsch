@@ -217,7 +217,10 @@ def rebuild_work(settings, *, vacuum=False):
             connection.execute("BEGIN IMMEDIATE")
             plan = None
             try:
-                if connection.execute("PRAGMA user_version").fetchone()[0] != 4:
+                if connection.execute("PRAGMA user_version").fetchone()[0] not in (
+                    4,
+                    5,
+                ):
                     raise ValueError("Unsupported piddi database schema")
                 _require_completed_work(connection)
                 count = connection.execute(

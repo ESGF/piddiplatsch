@@ -26,8 +26,17 @@ def estimate_table_sizes(connection, health):
     allocated = page_size * connection.execute("PRAGMA page_count").fetchone()[0]
     free = page_size * connection.execute("PRAGMA freelist_count").fetchone()[0]
     tables = []
-    for table in ("catalog_items", "work_items", "kafka_checkpoints", "stats"):
+    for table in (
+        "catalog_items",
+        "work_items",
+        "kafka_checkpoints",
+        "stats",
+        "outbox_batches",
+        "handle_outbox",
+    ):
         columns = connection.execute(f"PRAGMA table_info({_quote(table)})").fetchall()
+        if not columns:
+            continue  # Read-only monitoring also supports pre-upgrade databases.
         expressions = [_value_bytes(column[1]) for column in columns]
         table_expression = "8 + " + " + ".join(f"({expr})" for expr in expressions)
         index_expressions = []

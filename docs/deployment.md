@@ -106,6 +106,10 @@ make status
 Keep your existing configuration files. If an update fails, fix the error before
 restarting. `make deploy` updates packages and applies settings. It may start
 enabled services. The final restart loads the new code and starts a sync run.
+Schema 4 upgrades add the transactional outbox automatically; do not start an
+older application against the upgraded schema 5 database. Keep legacy ready
+batch files and journals until the new worker imports them. No catalog/work
+rebuild or reset is needed.
 
 For settings changes only, edit the relevant file and run `make play`:
 

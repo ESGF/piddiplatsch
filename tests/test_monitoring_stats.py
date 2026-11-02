@@ -275,6 +275,8 @@ def test_fresh_database_contains_only_current_monitoring_tables(tmp_path):
         "work_items",
         "kafka_checkpoints",
         "stats",
+        "handle_outbox",
+        "outbox_batches",
     }
 
 

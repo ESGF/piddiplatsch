@@ -5,7 +5,7 @@ import json
 import logging
 import os
 import random
-from contextlib import closing, contextmanager
+from contextlib import ExitStack, closing, contextmanager
 from datetime import UTC, datetime
 from pathlib import Path
 from uuid import uuid4
@@ -15,6 +15,7 @@ from piddiplatsch.catalog.api import (
     get_catalog_path,
     open_catalog,
 )
+from piddiplatsch.catalog.outbox import OutboxJournal
 from piddiplatsch.catalog.ownership import ensure_no_work_rebuild
 from piddiplatsch.catalog.state import HarvestState
 from piddiplatsch.config import config
@@ -203,9 +204,9 @@ class _BatchMapper:
 class SyncWorker:
     """Single-process coordinator; immutable payloads and crash-recoverable progress.
 
-    Mapping acknowledgement happens only after durable sealing. A crash between
-    seal and acknowledgement recovers from the manifest. Failed publication stays
-    ready and blocks newer work for its project, preventing stale overwrite replay.
+    Mapping payloads, outcomes, and counts commit together in SQLite. Legacy
+    ready exports are imported transactionally, including publication progress.
+    Failed publication blocks newer work for its project to preserve Handle order.
     """
 
     def __init__(
@@ -281,6 +282,7 @@ class SyncWorker:
                 LOGGER.info("[sync] Skipped | another worker holds the lock")
                 return completed
             ensure_no_work_rebuild(self.catalog_directory)
+            self._upgrade_catalog()
             LOGGER.info(
                 "[sync] Starting | projects: %s",
                 ", ".join(p.name for p in self.plugins),
@@ -354,6 +356,17 @@ class SyncWorker:
         if self._activity is not None:
             self._activity.set_phase(phase)
 
+    def _upgrade_catalog(self):
+        if (
+            self.plugins
+            and get_catalog_path(
+                self.plugins[0].name, directory=self.catalog_directory
+            ).is_file()
+        ):
+            # Additive schema upgrade; queued legacy files are imported lazily.
+            with open_catalog(self.plugins[0].name, directory=self.catalog_directory):
+                pass
+
     def _project_priorities(self):
         if self.map_only or self.publish_only:
             return None
@@ -390,7 +403,7 @@ class SyncWorker:
         )
 
     def _has_sync_work(self, project, force):
-        if any((self.root / project / "ready").glob("*/manifest.json")):
+        if self._ready_batches(self.root / project):
             return True
         if not get_catalog_path(project, directory=self.catalog_directory).is_file():
             return False
@@ -472,7 +485,8 @@ class SyncWorker:
                     # DISTINCT otherwise favors work_batches to avoid sorting,
                     # reading the whole project history just to filter its state.
                     "SELECT DISTINCT batch_id FROM work_items INDEXED BY work_selection "
-                    "WHERE project=? AND state='mapped'",
+                    "WHERE project=? AND state='mapped' AND NOT EXISTS "
+                    "(SELECT 1 FROM outbox_batches b WHERE b.project=work_items.project AND b.batch_id=work_items.batch_id)",
                     (project,),
                 )
             ]
@@ -517,6 +531,14 @@ class SyncWorker:
             )
             if not entries:
                 return None
+            # Filtered manual mapping may already have queued an intervening
+            # event. Never put work from both sides into a single newer batch.
+            boundary = reader._execute(
+                "SELECT MIN(id) FROM work_items WHERE project=? AND state='mapped' AND id>?",
+                (project, entries[0]),
+            ).fetchone()[0]
+            if boundary is not None:
+                entries = [identity for identity in entries if identity < boundary]
             project_root.mkdir(parents=True, exist_ok=True)
             _sync_directory(self.root)
             batch_id = self.now().strftime("%Y%m%dT%H%M%S") + "-" + uuid4().hex
@@ -670,32 +692,146 @@ class SyncWorker:
         with open_catalog(
             manifest["project"], directory=self.catalog_directory
         ) as catalog:
-            catalog.seal_batch(manifest["batch_id"], manifest["outcomes"])
+            if catalog.outbox_manifest(manifest["batch_id"]) is None:
+                self._verify_output(batch, manifest)
+                # Old ready batches may already have a per-Handle file journal.
+                # Import it atomically with the immutable payloads and outcomes.
+                successes = {}
+                journal = batch / "publication-progress.jsonl"
+                if journal.is_file():
+                    from piddiplatsch.runners.publish import _PublicationJournal
+
+                    with closing(
+                        _PublicationJournal(journal, batch / "handles.jsonl")
+                    ) as old:
+                        successes = dict(old.successes)
+                with (batch / "handles.jsonl").open() as stream:
+                    catalog.seal_batch(
+                        manifest["batch_id"],
+                        manifest["outcomes"],
+                        records=(json.loads(line) for line in stream),
+                        manifest=manifest,
+                        successes=successes,
+                    )
         if not manifest["mapping_acknowledged"]:
             manifest["mapping_acknowledged"] = True
-            _save_manifest(batch / "manifest.json", manifest)
+        manifest["outbox"] = True
+        self._save_export(batch / "manifest.json", manifest)
 
-    @staticmethod
-    def _ready_batches(project_root):
-        batches = []
-        for batch in (project_root / "ready").glob("*"):
-            if batch.is_dir() and not batch.name.startswith("."):
-                manifest = json.loads((batch / "manifest.json").read_text())
-                batches.append(
-                    (
-                        min(
-                            (entry["id"] for entry in manifest.get("outcomes", [])),
-                            default=0,
-                        ),
-                        batch,
+    def _ready_batches(self, project_root):
+        project = project_root.name
+        with ExitStack() as stack:
+            reader = None
+            if get_catalog_path(project, directory=self.catalog_directory).is_file():
+                reader = stack.enter_context(
+                    open_catalog(
+                        project, directory=self.catalog_directory, read_only=True
                     )
                 )
-        return [batch for _, batch in sorted(batches)]
+            batches = (
+                {manifest["batch_id"]: manifest for manifest in reader.ready_outbox()}
+                if reader
+                else {}
+            )
+            for batch in (project_root / "ready").glob("*"):
+                if (
+                    not batch.is_dir()
+                    or batch.name.startswith(".")
+                    or batch.name in batches
+                ):
+                    continue
+                saved = reader.outbox_manifest(batch.name) if reader else None
+                if saved is not None:
+                    # A completed DB transaction needs no replay, even when an
+                    # interruption left its optional export in the ready folder.
+                    self._save_export(batch / "manifest.json", saved)
+                    self._archive_export(batch)
+                    continue
+                batches[batch.name] = json.loads((batch / "manifest.json").read_text())
+        ordered = sorted(
+            batches.values(),
+            key=lambda manifest: (
+                min(entry["id"] for entry in manifest["outcomes"]),
+                manifest["batch_id"],
+            ),
+        )
+        return [project_root / "ready" / manifest["batch_id"] for manifest in ordered]
+
+    @staticmethod
+    def _save_export(path, manifest):
+        try:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            _save_manifest(path, manifest)
+        except OSError:
+            LOGGER.warning(
+                "[sync] Could not write optional batch export %s; SQLite retains the queue",
+                path,
+                exc_info=True,
+            )
+
+    def _restore_export(self, batch, manifest):
+        self._save_export(batch / "manifest.json", manifest)
+        if (batch / "handles.jsonl").exists():
+            return
+        try:
+            with closing(
+                OutboxJournal(
+                    get_catalog_path(
+                        manifest["project"], directory=self.catalog_directory
+                    ),
+                    manifest["project"],
+                    manifest["batch_id"],
+                )
+            ) as journal:
+                temporary = batch / "handles.jsonl.tmp"
+                with temporary.open("w") as stream:
+                    for _, _, record in journal.records():
+                        stream.write(json.dumps(record) + "\n")
+                temporary.replace(batch / "handles.jsonl")
+            (batch / "failures.jsonl").touch(exist_ok=True)
+        except OSError:
+            LOGGER.warning(
+                "[sync] Could not restore optional payload export %s",
+                batch,
+                exc_info=True,
+            )
+
+    def _load_batch_manifest(self, project, batch):
+        with open_catalog(
+            project, directory=self.catalog_directory, read_only=True
+        ) as reader:
+            manifest = reader.outbox_manifest(batch.name)
+        return (
+            manifest
+            if manifest is not None
+            else json.loads((batch / "manifest.json").read_text())
+        )
+
+    def _archive_export(self, batch):
+        try:
+            self._archive(batch)
+        except OSError:
+            LOGGER.warning(
+                "[sync] Could not archive optional export %s; publication is committed",
+                batch,
+                exc_info=True,
+            )
+
+    @staticmethod
+    def _check_batch_order(project, reader, manifest, first_id):
+        last_id = max(entry["id"] for entry in manifest["outcomes"])
+        if reader._execute(
+            "SELECT 1 FROM work_items WHERE project=? AND state='mapped' AND id>? AND id<? AND batch_id<>? LIMIT 1",
+            (project, first_id, last_id, manifest["batch_id"]),
+        ).fetchone():
+            raise BatchError(
+                "Mapped batches overlap in work order; refusing to overwrite newer Handle versions"
+            )
 
     def _publish_ready(self, project, project_root):
         for batch in self._ready_batches(project_root):
             manifest_path = batch / "manifest.json"
-            manifest = json.loads(manifest_path.read_text())
+            manifest = self._load_batch_manifest(project, batch)
             if manifest["project"] != project or manifest.get("schema_version") != 3:
                 raise ValueError(f"Invalid batch manifest: {manifest_path}")
             if manifest["status"] == "published":
@@ -713,6 +849,7 @@ class SyncWorker:
             with open_catalog(
                 project, directory=self.catalog_directory, read_only=True
             ) as reader:
+                self._check_batch_order(project, reader, manifest, first_id)
                 if (
                     manifest["handle_count"]
                     and reader._execute(
@@ -730,7 +867,7 @@ class SyncWorker:
             manifest["publication_attempts"] = (
                 manifest.get("publication_attempts", 0) + 1
             )
-            _save_manifest(manifest_path, manifest)
+            self._save_export(manifest_path, manifest)
             if self.progress is not None:
                 self.progress.close()
             with get_progress(
@@ -753,20 +890,29 @@ class SyncWorker:
                 if self.publisher is None:
                     self.publisher = get_publisher()
                 self._set_phase("publishing")
-                result = self._send_batch(
-                    output,
-                    manifest,
-                    (output,),
-                    project=project,
-                    handle_profile=self.handle_profile or manifest["handle_profile"],
-                    log_operation="sync/publish",
-                    expected_handles=manifest["handle_count"],
-                    batch_id=manifest["batch_id"],
-                    publication_journal=batch / "publication-progress.jsonl",
-                    workers=self.publish_workers,
-                    retries=self.publish_retries,
-                    progress_callback=show_progress,
-                )
+                with closing(
+                    OutboxJournal(
+                        get_catalog_path(project, directory=self.catalog_directory),
+                        project,
+                        manifest["batch_id"],
+                    )
+                ) as journal:
+                    result = self._send_batch(
+                        output,
+                        manifest,
+                        (output,),
+                        project=project,
+                        handle_profile=self.handle_profile
+                        or manifest["handle_profile"],
+                        log_operation="sync/publish",
+                        expected_handles=manifest["handle_count"],
+                        batch_id=manifest["batch_id"],
+                        record_source=journal.records(),
+                        journal=journal,
+                        workers=self.publish_workers,
+                        retries=self.publish_retries,
+                        progress_callback=show_progress,
+                    )
             self._set_phase("finalizing")
             manifest["receipt"] = (
                 str(result.result_file) if result.result_file else None
@@ -791,15 +937,15 @@ class SyncWorker:
                     f"Published {result.succeeded}/{manifest['handle_count']}; failed {result.failed}"
                 )
                 self._record_publication(manifest, error=manifest["publication_error"])
-                _save_manifest(manifest_path, manifest)
+                self._save_export(manifest_path, manifest)
                 raise BatchError(f"Publication failed for {batch}; batch remains ready")
             self._record_publication(manifest)
             self.published_handles += manifest["handle_count"]
             manifest["status"] = "published"
             manifest["published_at"] = self.now().isoformat()
             manifest.pop("publication_error", None)
-            _save_manifest(manifest_path, manifest)
-            self._archive(batch)
+            self._save_export(manifest_path, manifest)
+            self._archive_export(batch)
             return True
         return False
 
@@ -809,11 +955,13 @@ class SyncWorker:
         except Exception as exc:
             manifest["publication_error"] = str(exc)
             self._record_publication(manifest, error=str(exc))
-            _save_manifest(output.parent / "manifest.json", manifest)
+            self._save_export(output.parent / "manifest.json", manifest)
             raise
 
-    @staticmethod
-    def _verify_output(batch, manifest):
+    def _verify_output(self, batch, manifest):
+        if manifest.get("outbox"):
+            self._restore_export(batch, manifest)
+            return batch / "handles.jsonl"
         manifest_path = batch / "manifest.json"
         if manifest["status"] != "ready":
             raise ValueError(f"Unexpected batch status: {manifest_path}")
@@ -832,7 +980,10 @@ class SyncWorker:
             manifest["project"], directory=self.catalog_directory
         ) as catalog:
             catalog.publish_batch(
-                manifest["batch_id"], manifest["handle_count"], error=error
+                manifest["batch_id"],
+                manifest["handle_count"],
+                error=error,
+                manifest=manifest,
             )
 
     @staticmethod

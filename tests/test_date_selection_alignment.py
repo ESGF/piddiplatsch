@@ -4,6 +4,7 @@ import json
 from contextlib import closing
 from copy import deepcopy
 from datetime import date, datetime
+from types import SimpleNamespace
 from unittest.mock import patch
 
 import pytest
@@ -87,6 +88,12 @@ def test_publication_orders_work_before_batch_creation_time(tmp_path, testdata_p
         def run(self, paths, **kwargs):
             manifest = json.loads((paths[0].parent / "manifest.json").read_text())
             calls.append([outcome["id"] for outcome in manifest["outcomes"]])
+            for _, position, record in kwargs.get("record_source", ()):
+                kwargs["journal"].record(
+                    SimpleNamespace(
+                        line_number=position, handle=record["handle"], error=None
+                    )
+                )
             return PublishResult(
                 total=manifest["handle_count"], succeeded=manifest["handle_count"]
             )

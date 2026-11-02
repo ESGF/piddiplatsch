@@ -397,7 +397,7 @@ def map_messages(
     version_history: bool | None,
     handle_profile: str | None,
 ) -> None:
-    """Map pending work snapshots into durable Handle JSONL batches."""
+    """Map pending work into the SQLite Handle outbox and JSONL audit exports."""
     commands.MapCommand(
         verbose=ctx.obj["verbose"],
         directory=directory,
