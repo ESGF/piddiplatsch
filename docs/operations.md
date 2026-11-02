@@ -188,6 +188,8 @@ database schema, and unallocated free pages. SQLite builds without `dbstat`
 show sizes as unavailable.
 Size scans have a 0.25-second execution budget so large databases do not block
 the display; a scan exceeding this budget shows `size scan timed out` instead.
+Exact catalog/backlog scans have a separate 0.5-second budget. If exceeded, top
+still shows run status, marks these counts as unknown, and reports the timeout.
 Catalog items count distinct stored STAC items. The summary shows
 `Mapped: N / total events`, where total is successfully mapped + currently pending
 + currently invalid events. This is all accepted queued event history, rather

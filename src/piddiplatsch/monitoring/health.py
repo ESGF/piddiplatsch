@@ -8,15 +8,17 @@ from piddiplatsch.config import config
 
 def database_health(connection, project=None):
     """Read processing health from the caller's database snapshot."""
-    names = {
-        row[0]
-        for row in connection.execute(
-            "SELECT project FROM catalog_items UNION SELECT project FROM work_items "
-            "UNION SELECT project FROM stats WHERE project<>''"
-        )
-    }
-    if project:
-        names = {project.casefold()}
+    names = (
+        {project.casefold()}
+        if project
+        else {
+            row[0]
+            for row in connection.execute(
+                "SELECT project FROM catalog_items UNION SELECT project FROM work_items "
+                "UNION SELECT project FROM stats WHERE project<>''"
+            )
+        }
+    )
     projects = []
     for name in sorted(names):
         total, pending, invalid, full, patches = connection.execute(

@@ -164,6 +164,34 @@ def test_top_samples_table_sizes_once_per_minute(tmp_path, monkeypatch):
     assert samples == [True, False, True]
 
 
+def test_slow_backlog_does_not_hide_run_status(tmp_path, monkeypatch):
+    from piddiplatsch.monitoring import health, status
+
+    db = tmp_path / "piddi.db"
+    _monitoring_db(db)
+
+    def slow_health(connection, project):
+        connection.execute(
+            "WITH RECURSIVE numbers(n) AS (VALUES(0) UNION ALL "
+            "SELECT n+1 FROM numbers WHERE n<1000000) SELECT SUM(n) FROM numbers"
+        ).fetchone()
+        pytest.fail("Slow backlog query should have been interrupted")
+
+    clock = iter(range(100))
+    monkeypatch.setattr(status.time, "monotonic", lambda: next(clock, 100))
+    monkeypatch.setattr(health, "database_health", slow_health)
+    snapshot = read_status(db, include_table_sizes=False)
+    assert snapshot["runs"][0]["command"] == "consume"
+    rows = snapshot["health"]["projects"]
+    assert {row["project"] for row in rows} == {"cmip6", "cmip7"}
+    assert all(row["pending_items"] is None for row in rows)
+    assert snapshot["event_totals"]["total"] is None
+    stream = StringIO()
+    Console(file=stream, width=150).print(TopCommand._overview(snapshot))
+    assert "cmip6" in stream.getvalue()
+    assert "counts timed out" in stream.getvalue()
+
+
 def test_top_once_filters_project(tmp_path):
     db_path = tmp_path / "piddi.db"
     config._set("catalog", "directory", str(tmp_path))

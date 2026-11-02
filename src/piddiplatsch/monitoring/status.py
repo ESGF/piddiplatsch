@@ -48,9 +48,6 @@ def read_status(
             "AND (? IS NULL OR lower(project)=lower(?))",
             (project, project),
         ).fetchone()[0]
-        from piddiplatsch.monitoring.health import database_health
-
-        health = database_health(connection, project)
         table_sizes = read_table_sizes(connection) if include_table_sizes else None
         payloads = {}
         latest = None
@@ -69,6 +66,11 @@ def read_status(
                 payload["run"] = fragment["run"]
             payload["projects"].extend(fragment["projects"])
             payload["samples"].extend(fragment["samples"])
+        names = {row["project"] for row in handle_totals}
+        for payload in payloads.values():
+            names.update(row["project"] for row in payload["projects"])
+            names.update(payload["run"].get("selected_projects", []))
+        health = _bounded_health(connection, project, names)
         if latest:
             health["storage"] = latest.get("storage", [])
         result_runs = []
@@ -130,6 +132,44 @@ def read_status(
         "totals_since": totals_since,
         "table_sizes": table_sizes,
     }
+
+
+def _bounded_health(connection, project, names):
+    """Keep exact backlog scans from blocking live run status on large queues."""
+    from piddiplatsch.monitoring.health import database_health
+
+    deadline = time.monotonic() + 0.5
+    timed_out = False
+
+    def stop_slow_scan():
+        nonlocal timed_out
+        timed_out = time.monotonic() >= deadline
+        return timed_out
+
+    connection.set_progress_handler(stop_slow_scan, 1000)
+    try:
+        return database_health(connection, project)
+    except sqlite3.OperationalError:
+        if not timed_out:
+            raise
+        return dict(
+            storage=[],
+            projects=[
+                dict(
+                    project=name,
+                    total_items=None,
+                    pending_items=None,
+                    invalid_items=None,
+                    ready_handles=None,
+                    errors=[
+                        "Exact catalog/backlog counts timed out; run status is still available."
+                    ],
+                )
+                for name in sorted({project.casefold()} if project else names)
+            ],
+        )
+    finally:
+        connection.set_progress_handler(None, 0)
 
 
 def read_table_sizes(connection):
