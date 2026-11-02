@@ -9,8 +9,8 @@ from contextlib import closing
 from itertools import pairwise
 from pathlib import Path
 
-from piddiplatsch.monitoring.eta import publication_progress
 from piddiplatsch.monitoring.estimates import estimate_table_sizes
+from piddiplatsch.monitoring.eta import publication_progress
 
 
 def read_status(
