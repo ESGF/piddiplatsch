@@ -217,10 +217,34 @@ Manual `map` processes pending work immediately.
 
 `max_items` caps each project batch at 2,000 work entries by default. It does not
 limit Handles or bytes; an entry's dataset and file Handles stay together. Sync
-processes one batch per eligible project in round robin order. Project processing
-is sequential; `publish_workers` only controls concurrent Handle requests within
+selects each next batch using the eligible projects' priority weights. Projects
+run sequentially; `publish_workers` only controls concurrent Handle requests within
 the current batch. `publish_retries` controls temporary HTTP retries. Sync's
 `--workers` and `--retries` override these values for one run.
+
+Set `priority` under each `[plugins.<project>]` table to an integer from 0 to
+255. Every project defaults to 100. Zero disables both mapping and queued
+publication by `sync`, including `sync --project ... --force-map`; explicit
+`map` and `publish` commands remain available and keep their existing project
+order. Harvest is unaffected.
+
+```toml
+[plugins.cmip6]
+priority = 100
+
+[plugins.cmip7]
+priority = 200
+```
+
+At each batch boundary, sync draws one project with probability proportional
+to its weight, considering only projects with due pending events or ready batches.
+In this example, CMIP7 has twice CMIP6's chance when both have eligible work.
+Equal weights give equal chances, and consecutive turns for one project are
+possible. Positive weights provide a chance on every draw, not a maximum waiting
+time or guaranteed turn. Weights govern batch turns, not Handle counts or elapsed
+time, and do not interrupt an active batch or bypass count/time thresholds.
+Each project's pending snapshot boundary remains fixed for the sync run; events
+arriving after that boundary wait for the next run.
 
 `plugins.<project>.max_errors` limits mapping errors per batch. Mapping stores
 invalid work and its explanation, rolls back partial Handle output for the failed
@@ -338,6 +362,7 @@ previous UTC days, leaving today's files available for appending.
 | --- | --- |
 | `consumer.output_dir` | Root directory for catalogs, Handle files, receipts, and diagnostic files. |
 | `plugins.<name>.max_errors` | Project mapping error limit. Default: `1`; `0` also stops on the first error; `-1` removes the limit. |
+| `plugins.<name>.priority` | Sync selection weight, integer `0`–`255`. Default: `100`; `0` disables sync for the project. |
 | `schema.strict_mode` | Reject incomplete or unsupported records. Default: `true`. |
 | `plugins.<name>.landing_page_url` | Base URL for Handle landing pages. |
 | `plugins.<name>.max_parts` | Limit dataset `HAS_PARTS` entries; `-1` means unlimited. |

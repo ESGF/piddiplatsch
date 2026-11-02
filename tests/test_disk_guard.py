@@ -159,6 +159,7 @@ def test_sync_stops_all_projects_on_disk_error(monkeypatch):
     config._set("consumer", "projects", ["cmip6", "cmip7"])
     worker = SyncWorker()
     publish = Mock(side_effect=DiskSpaceError("disk critical"))
+    monkeypatch.setattr(worker, "_has_sync_work", lambda *args: True)
     monkeypatch.setattr(worker, "_publish_ready", publish)
     with pytest.raises(DiskSpaceError, match="disk critical"):
         worker.run()

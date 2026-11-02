@@ -162,12 +162,14 @@ Handle output for one work entry together. The ceiling does not require waiting
 for a full batch; automatic-run thresholds and maximum wait times are separate
 scheduling policies.
 
-Initially execute batches sequentially, taking one eligible batch per project
-in round robin order before returning to a project with more work. Select work
+Execute sync batches sequentially, drawing an eligible project at each batch
+boundary using its priority weight (0–255, default 100). Zero disables sync;
+positive weights determine relative chances and allow consecutive turns.
+Explicit map/publish commands retain round robin project order. Select work
 in ascending `id` order within each project. Retry older unpublished batches
 before publishing newer batches for that project. A publication failure blocks
 later publication for that project while other eligible projects can continue.
-Explicit invalid retries use additional stale-output checks; round robin
+Explicit invalid retries use additional stale-output checks; weighted
 scheduling alone does not resolve stale retries.
 
 Projects never write to the same Handle. This permits future parallel execution

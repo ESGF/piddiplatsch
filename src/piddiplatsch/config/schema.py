@@ -293,6 +293,7 @@ class LoggingConfig(BaseModel):
 
 class ProjectPluginConfig(BaseModel):
     model_config = ConfigDict(extra="allow")
+    priority: int = Field(default=100, ge=0, le=255, strict=True)
     max_errors: int = Field(default=1, ge=-1)
     force_dataset_pid: bool = Field(default=False, strict=True)
     landing_page_url: str | None = None

@@ -102,8 +102,12 @@ states. It does not map. Sync maps eligible pending work and publishes saved
 batches. The threshold is 100 pending work entries or 30 minutes; force-map skips
 the wait. The default ceiling is 2,000 work entries per project batch.
 
-Projects run sequentially, round robin. Requests for different Handles within
-the current batch may run concurrently. Projects never write the same Handle.
+Sync runs projects sequentially, choosing each next batch by the eligible
+projects' `plugins.<project>.priority` weights (default 100, range 0–255).
+Zero disables sync for that project, including forced sync; manual map/publish
+remain available. Higher weights increase selection probability. Requests for
+different Handles within the current batch may run concurrently. Projects never
+write the same Handle.
 Failed publication blocks later publication for its project while other projects
 continue. Manual mapping of newer work cannot bypass older pending work: map that
 older work or use sync before publishing the newer batch.

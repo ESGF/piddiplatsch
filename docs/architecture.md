@@ -21,7 +21,8 @@ new events remain independent even when their payloads match.
 Map reads pending snapshots and writes dataset/file Handles to project batches.
 It stays offline and validates the fields and Handle records it needs rather
 than the entire STAC schema. Publication retries use the saved files. Sync runs
-one project batch at a time, round robin, capped at 2,000 work entries by default.
+one project batch at a time, selected by eligible projects' priority weights and
+capped at 2,000 work entries by default. Weights default to 100; zero disables sync.
 Projects never write to the same Handle; parallel project execution is deferred.
 
 See the [storage and work-stream design](work-stream-design.md) for schema,

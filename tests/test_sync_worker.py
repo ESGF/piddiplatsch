@@ -1,6 +1,7 @@
 """Durable pending changes, sealed batches, triggers, and publication recovery."""
 
 import json
+import random
 import sqlite3
 from contextlib import closing
 from copy import deepcopy
@@ -157,6 +158,141 @@ def test_batch_scheduling_cost_is_bounded_by_threshold(setup, monkeypatch, force
     # Allow query-planner overhead, but reject work proportional to 10,000 rows.
     assert large <= small + 100
     assert repeated <= small + 100
+
+
+@pytest.fixture
+def priority_scheduler(setup, monkeypatch):
+    """Keep real scheduling, replacing batch publication with finite queues."""
+    config._set("consumer", "projects", ["cmip6", "cmip7"])
+    worker = SyncWorker(publisher=Publisher())
+    jobs = {"cmip6": 1000, "cmip7": 1000}
+    turns = []
+    monkeypatch.setattr(
+        worker, "_has_sync_work", lambda project, force: jobs[project] > 0
+    )
+
+    def publish(project, root):
+        jobs[project] -= 1
+        turns.append(project)
+        return True
+
+    monkeypatch.setattr(worker, "_publish_ready", publish)
+    worker.random = random.Random(42)  # noqa: S311 - deterministic scheduling test
+    return worker, jobs, turns
+
+
+@pytest.mark.parametrize("cmip7_priority,expected_share", [(100, 0.5), (255, 0.75)])
+def test_sync_uses_weighted_batch_selection(
+    priority_scheduler, cmip7_priority, expected_share
+):
+    worker, jobs, turns = priority_scheduler
+    config._set("plugins", "cmip7", {"priority": cmip7_priority})
+    # 255:85 is exactly 3:1; equal defaults must instead give equal chances.
+    config._set("plugins", "cmip6", {"priority": 85 if cmip7_priority == 255 else 100})
+    worker.run()
+    assert not worker.errors
+    share = turns[:1000].count("cmip7") / 1000
+    assert share == pytest.approx(expected_share, abs=0.05)
+    assert turns[:1000].count("cmip6") > 0
+    assert jobs == {"cmip6": 0, "cmip7": 0}
+
+
+def test_sync_failure_does_not_block_other_priority_projects(
+    priority_scheduler, monkeypatch
+):
+    worker, jobs, turns = priority_scheduler
+    publish = worker._publish_ready
+
+    def fail_cmip7(project, root):
+        if project == "cmip7":
+            raise OSError("publication unavailable")
+        return publish(project, root)
+
+    monkeypatch.setattr(worker, "_publish_ready", fail_cmip7)
+    worker.run()
+    assert worker.errors == ["cmip7: publication unavailable"]
+    assert jobs == {"cmip6": 0, "cmip7": 1000}
+    assert turns == ["cmip6"] * 1000
+
+
+@pytest.mark.parametrize("force", [False, True])
+def test_priority_zero_skips_pending_and_ready_work(setup, force):
+    put, directory, root = setup
+    put(1)
+    publisher = Publisher()
+    publisher.fail = True
+    SyncWorker(publisher=publisher).run(force_map=True)
+    ready, _manifest = manifests(root)[0]
+    put(2)
+    config._set("plugins", "cmip7", {"priority": 0})
+    publisher.fail = False
+    publisher.calls.clear()
+    worker = SyncWorker(publisher=publisher)
+    assert worker.run(force_map=force) == []
+    assert not worker.errors
+    assert not publisher.calls
+    assert ready.exists()
+    assert pending(directory).count == 1
+    # Manual operations can still finish queued work and map disabled projects.
+    worker.run(publish_only=True)
+    assert len(publisher.calls) == 1
+    worker.run(force_map=True, map_only=True)
+    assert pending(directory).count == 0
+    assert len(publisher.calls) == 1
+    config._set("plugins", "cmip7", {"priority": 255})
+    worker.run()
+    assert not worker.errors
+    assert len(publisher.calls) == 2
+
+
+def test_sync_lottery_excludes_idle_and_not_due_projects(setup, monkeypatch):
+    put, _directory, _root = setup
+    put(1)
+    config._set("consumer", "projects", ["cmip6", "cmip7"])
+    config._set("plugins", "cmip6", {"priority": 255})
+    config._set("plugins", "cmip7", {**config.get_plugin("cmip7"), "priority": 1})
+    draws = []
+
+    def choose(population, weights, k):
+        draws.append(([p.name for p in population], weights))
+        return [population[0]]
+
+    worker = SyncWorker(publisher=Publisher())
+    monkeypatch.setattr(worker.random, "choices", choose)
+    assert worker.run() == []
+    assert not draws  # One recent event is below this fixture's trigger of two.
+    paths = worker.run(force_map=True)
+    assert len(paths) == 1
+    assert draws == [(["cmip7"], [1])]
+    assert not worker.errors
+
+
+def test_sync_nonprogressing_candidate_does_not_spin_or_stop_other_projects(
+    priority_scheduler, monkeypatch
+):
+    worker, jobs, turns = priority_scheduler
+    # A mapped batch waiting on older, not-yet-due work can remain a candidate.
+    jobs["cmip6"] = 1
+    publish = worker._publish_ready
+    monkeypatch.setattr(worker, "_has_sync_work", lambda project, force: True)
+
+    def blocked(project, root):
+        if project == "cmip6":
+            return False
+        if jobs[project]:
+            return publish(project, root)
+        return False
+
+    monkeypatch.setattr(worker, "_publish_ready", blocked)
+    monkeypatch.setattr(worker, "_check_mapped_batches", lambda *args: None)
+    monkeypatch.setattr(worker, "_map_due", lambda *args: None)
+    # Ensure the database exists so the normal no-progress path is exercised.
+    with SQLiteCatalog("cmip6", worker.catalog_directory / "piddi.db"):
+        pass
+    worker.run()
+    assert not worker.errors
+    assert jobs == {"cmip6": 1, "cmip7": 0}
+    assert turns == ["cmip7"] * 1000
 
 
 @pytest.mark.parametrize("force", [False, True])

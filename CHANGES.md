@@ -4,6 +4,9 @@
 
 ### Added
 
+- Per-project `priority` weights for sync, integers 0–255 with an equal default
+  of 100. Zero disables sync for the project; eligible projects compete by weight
+  at each batch boundary. Explicit map/publish and harvest remain independent.
 - Companion error log beside the normal log (`piddi.error.log`), containing
   ERROR/CRITICAL messages and tracebacks, with deployment log rotation.
 - Raw JSONL dump rotation by UTC day and event count (`consumer.dump_max_events`,

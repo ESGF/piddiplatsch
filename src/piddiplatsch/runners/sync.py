@@ -4,6 +4,7 @@ import hashlib
 import json
 import logging
 import os
+import random
 from contextlib import closing, contextmanager
 from datetime import UTC, datetime
 from pathlib import Path
@@ -260,11 +261,13 @@ class SyncWorker:
         self.horizons = {}
         self.skipped_through = {}
         self.mapping_stops = {}
+        self.random = random.SystemRandom()
 
     def run(self, *, force_map=False, map_only=False, publish_only=False) -> list[Path]:
         check_disk_space(force=True)
         self.map_only = map_only
         self.publish_only = publish_only
+        priorities = self._project_priorities()
         self.published_handles = 0
         completed = []
         self.errors = []
@@ -284,14 +287,14 @@ class SyncWorker:
                 raise CatalogError(
                     "Catalog clean is incomplete; run harvest before batch processing"
                 )
-            plugins = self.plugins
             blocked = set()
             recovered = set()
             while True:
+                plugins = self._select_projects(blocked, priorities, force_map)
+                if not plugins:
+                    break
                 made_progress = False
                 for plugin in plugins:
-                    if plugin.name in blocked:
-                        continue
                     project_root = self.root / plugin.name
                     try:
                         if not map_only or plugin.name not in recovered:
@@ -332,13 +335,115 @@ class SyncWorker:
                             "[sync] %s | batch processing failed: %s", plugin.name, exc
                         )
                 if not made_progress:
-                    break
+                    # Ready batches may be waiting for older, not-yet-due work.
+                    # Stop retrying these candidates while other projects finish.
+                    blocked.update(plugin.name for plugin in plugins)
         LOGGER.info(
             "[sync] Complete | %d batches sealed | %d project errors",
             len(completed),
             len(self.errors),
         )
         return completed
+
+    def _project_priorities(self):
+        if self.map_only or self.publish_only:
+            return None
+        return {
+            plugin.name: config.get_sync_priority(plugin.name)
+            for plugin in self.plugins
+        }
+
+    def _select_projects(self, blocked, priorities, force):
+        active = [plugin for plugin in self.plugins if plugin.name not in blocked]
+        if priorities is None:
+            return active
+        eligible = []
+        for plugin in active:
+            if not priorities[plugin.name]:
+                continue
+            try:
+                if self._has_sync_work(plugin.name, force):
+                    eligible.append(plugin)
+            except DiskSpaceError:
+                raise
+            except Exception as exc:
+                blocked.add(plugin.name)
+                self.errors.append(f"{plugin.name}: {exc}")
+                LOGGER.error(
+                    "[sync] %s | batch processing failed: %s", plugin.name, exc
+                )
+        return (
+            self.random.choices(
+                eligible, weights=[priorities[p.name] for p in eligible], k=1
+            )
+            if eligible
+            else []
+        )
+
+    def _has_sync_work(self, project, force):
+        if any((self.root / project / "ready").glob("*/manifest.json")):
+            return True
+        if not get_catalog_path(project, directory=self.catalog_directory).is_file():
+            return False
+        with open_catalog(
+            project, directory=self.catalog_directory, read_only=True
+        ) as reader:
+            frontier = self._mapping_frontier(project, reader)
+            if self._mapping_due(project, reader, frontier, force):
+                return True
+            # Missing output for mapped work must still be reported as an error.
+            return (
+                reader._execute(
+                    "SELECT 1 FROM work_items WHERE project=? AND state='mapped' LIMIT 1",
+                    (project,),
+                ).fetchone()
+                is not None
+            )
+
+    def _mapping_frontier(self, project, reader):
+        if project not in self.horizons:
+            self.horizons[project] = reader._execute(
+                "SELECT COALESCE(MAX(id),0) FROM work_items WHERE project=? AND state='pending'",
+                (project,),
+            ).fetchone()[0]
+        frontier = self.horizons[project]
+        mapped = reader._execute(
+            "SELECT MIN(id) FROM work_items WHERE project=? AND state='mapped'",
+            (project,),
+        ).fetchone()[0]
+        if (
+            not self.map_only
+            and mapped is not None
+            and reader._execute(
+                "SELECT 1 FROM work_items WHERE project=? AND state='pending' AND id<? LIMIT 1",
+                (project, mapped),
+            ).fetchone()
+        ):
+            frontier = min(frontier, mapped - 1)
+        return frontier
+
+    def _mapping_due(self, project, reader, frontier, force):
+        # Only scan the covering index up to the trigger, or one entry when
+        # forced. Timestamp reads are bounded to queues below the trigger.
+        threshold_met = reader._execute(
+            "SELECT 1 FROM work_items WHERE project=? AND state='pending' AND id<=? "
+            "LIMIT 1 OFFSET ?",
+            (project, frontier, 0 if force else self.trigger_items - 1),
+        ).fetchone()
+        if threshold_met:
+            return True
+        if force:
+            return False
+        oldest = reader._execute(
+            "SELECT MIN(created_at) FROM work_items "
+            "WHERE project=? AND state='pending' AND id<=?",
+            (project, frontier),
+        ).fetchone()[0]
+        return (
+            oldest is not None
+            and (self.now() - datetime.fromisoformat(oldest)).total_seconds()
+            >= self.max_wait_seconds
+        )
 
     def _finish_mapped_batch(self, project, project_root, batch):
         if not self.map_only:
@@ -373,46 +478,9 @@ class SyncWorker:
         with open_catalog(
             project, directory=self.catalog_directory, read_only=True
         ) as reader:
-            if project not in self.horizons:
-                self.horizons[project] = reader._execute(
-                    "SELECT COALESCE(MAX(id),0) FROM work_items WHERE project=? AND state='pending'",
-                    (project,),
-                ).fetchone()[0]
-            frontier = self.horizons[project]
-            mapped = reader._execute(
-                "SELECT MIN(id) FROM work_items WHERE project=? AND state='mapped'",
-                (project,),
-            ).fetchone()[0]
-            if (
-                not self.map_only
-                and mapped is not None
-                and reader._execute(
-                    "SELECT 1 FROM work_items WHERE project=? AND state='pending' AND id<? LIMIT 1",
-                    (project, mapped),
-                ).fetchone()
-            ):
-                frontier = min(frontier, mapped - 1)
-            if not force:
-                # The covering work_selection index can stop at the threshold.
-                # Counting the whole backlog and reading every created_at makes
-                # each small batch increasingly expensive on large catalogs.
-                threshold_met = reader._execute(
-                    "SELECT 1 FROM work_items WHERE project=? AND state='pending' AND id<=? "
-                    "LIMIT 1 OFFSET ?",
-                    (project, frontier, self.trigger_items - 1),
-                ).fetchone()
-                if not threshold_met:
-                    oldest = reader._execute(
-                        "SELECT MIN(created_at) FROM work_items "
-                        "WHERE project=? AND state='pending' AND id<=?",
-                        (project, frontier),
-                    ).fetchone()[0]
-                    if (
-                        oldest is None
-                        or (self.now() - datetime.fromisoformat(oldest)).total_seconds()
-                        < self.max_wait_seconds
-                    ):
-                        return None
+            frontier = self._mapping_frontier(project, reader)
+            if not self._mapping_due(project, reader, frontier, force):
+                return None
             # Select a concrete, bounded batch before invoking its executor.
             if self.offset:
                 skipped, last_skipped = reader.skip_work(

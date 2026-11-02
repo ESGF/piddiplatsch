@@ -42,6 +42,35 @@ def test_production_defaults_stop_on_first_error():
     assert Config().get_mapping_max_errors("cmip6plus") == 1
 
 
+def test_project_priorities_default_to_equal_weights():
+    settings = Config()
+    assert ProjectPluginConfig().priority == 100
+    for project in ("cmip6", "cmip6plus", "cmip7", "cordex-cmip6"):
+        assert settings.get_sync_priority(project) == 100
+    settings._set("plugins", "cmip7", {})
+    assert settings.get_sync_priority("cmip7") == 100
+
+
+@pytest.mark.parametrize("priority", [0, 1, 100, 255])
+def test_project_priority_accepts_integer_weights(priority):
+    settings = Config()
+    settings._set("plugins", "cmip7", {"priority": priority})
+    assert settings.get_sync_priority("cmip7") == priority
+    assert settings.get_sync_priority("cmip6") == 100
+
+
+@pytest.mark.parametrize("priority", [-1, 256, 1.5, "100", True, None])
+def test_project_priority_rejects_invalid_weights(priority):
+    data = _base_config()
+    data["plugins"] = {"cmip6": {"priority": priority}}
+    errors, _ = validate_config(data)
+    assert any("plugins.cmip6.priority" in error for error in errors)
+    settings = Config()
+    settings._set("plugins", "cmip6", {"priority": priority})
+    with pytest.raises(ValueError):
+        settings.get_sync_priority("cmip6")
+
+
 @pytest.mark.parametrize("limit", [-1, 0, 1, 10000])
 def test_project_mapping_error_limit_is_project_specific(limit):
     settings = Config()

@@ -157,6 +157,9 @@ strict_mode = true
 # Project Handle profiles are optional. Every plugin inherits [handles].default.
 # Uncomment `handle` in a plugin table to override it for that project.
 [plugins.cmip6]
+# Sync selection weight, 0-255. Zero disables sync; manual map/publish still work.
+# Equal weights give equal chances at each batch boundary, not a fixed order.
+priority = 100
 # Mapping error limit; catalog harvest independently stops on any error.
 # 0 and 1 stop on the first error; -1 allows unlimited errors.
 max_errors = 1
@@ -177,6 +180,7 @@ excluded_asset_keys = ["reference_file", "globus", "thumbnail", "quicklook"]
 collection = "CMIP6"
 
 [plugins.cmip7]
+priority = 100
 max_errors = 1
 # handle = "profile-name"
 force_dataset_pid = false
@@ -190,6 +194,7 @@ excluded_asset_keys = ["reference_file", "globus", "thumbnail", "quicklook"]
 collection = "CMIP7"
 
 [plugins.cordex-cmip6]
+priority = 100
 max_errors = 1
 # handle = "profile-name"
 force_dataset_pid = false
@@ -201,6 +206,7 @@ excluded_asset_keys = ["reference_file", "globus", "thumbnail", "quicklook"]
 collection = "CORDEX-CMIP6"
 
 [plugins.cmip6plus]
+priority = 100
 # Override mapping errors for this project without changing other projects.
 # max_errors = 10000
 max_errors = 1

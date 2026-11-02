@@ -120,6 +120,14 @@ class Config:
         """Resolve a project's mapping limit; stop on the first error by default."""
         return self.get_plugin(project, "max_errors", 1)
 
+    def get_sync_priority(self, project: str) -> int:
+        """Return a validated sync weight; zero disables automatic sync."""
+        from piddiplatsch.config.schema import ProjectPluginConfig
+
+        return ProjectPluginConfig(
+            priority=self.get_plugin(project, "priority", 100)
+        ).priority
+
     def get_stac(self, project: str | None = None) -> dict:
         """Resolve global STAC settings with optional project overrides."""
         merged = dict(self.config_data.get("stac", {}) or {})
