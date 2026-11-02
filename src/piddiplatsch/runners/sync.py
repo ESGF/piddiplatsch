@@ -249,7 +249,7 @@ class SyncWorker:
         self.offset = 0
         self.map_only = False
         self.trigger_items = settings["trigger_items"]
-        self.max_wait_seconds = settings.get("max_wait_seconds", 3600)
+        self.max_wait_seconds = settings["max_wait_seconds"]
         self.max_items = settings["max_items"]
         self.publish_workers = settings.get("publish_workers", 4)
         self.publish_retries = settings.get("publish_retries", 3)

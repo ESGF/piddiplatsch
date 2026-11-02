@@ -203,10 +203,12 @@ def test_sync_map_info_reports_force_setting_and_alias_summary(setup, caplog, fo
         ).fetchone() == (1, 2 if force else 0)
 
 
-def test_hour_trigger_preserves_successive_event_snapshots(setup):
+@pytest.mark.parametrize("max_wait_seconds", [1800, 3600])
+def test_time_trigger_preserves_successive_event_snapshots(setup, max_wait_seconds):
     put, directory, root = setup
     put(1)
     config._set("batch", "trigger_items", 3)
+    config._set("batch", "max_wait_seconds", max_wait_seconds)
     first = pending(directory)
     put(1, extra={"custom:change": 2})
     updated = pending(directory)
@@ -216,12 +218,14 @@ def test_hour_trigger_preserves_successive_event_snapshots(setup):
     publisher = Publisher()
     assert (
         SyncWorker(
-            now=lambda: first.oldest_at + timedelta(seconds=3599), publisher=publisher
+            now=lambda: first.oldest_at + timedelta(seconds=max_wait_seconds - 1),
+            publisher=publisher,
         ).run()
         == []
     )
     worker = SyncWorker(
-        now=lambda: first.oldest_at + timedelta(hours=1), publisher=publisher
+        now=lambda: first.oldest_at + timedelta(seconds=max_wait_seconds),
+        publisher=publisher,
     )
     assert len(worker.run()) == 1
     assert not worker.errors
@@ -539,9 +543,9 @@ def test_defaults_and_cli_worker_tick(setup, monkeypatch):
     from piddiplatsch.config.schema import BatchConfig
 
     assert BatchConfig().publish_workers == 4
-    assert BatchConfig().trigger_items == 1000
+    assert BatchConfig().trigger_items == 100
     assert BatchConfig().max_items == 2000
-    assert BatchConfig().max_wait_seconds == 3600
+    assert BatchConfig().max_wait_seconds == 1800
     put, _directory, _root = setup
     put(1)
     publisher = Publisher()
@@ -561,10 +565,12 @@ def test_worker_uses_default_batch_limits_when_settings_are_omitted(setup):
 
     config._set("batch", None, {})
     worker = SyncWorker(publisher=Publisher())
-    assert worker.trigger_items == 1000
+    assert worker.trigger_items == 100
     assert worker.max_items == 2000
-    assert Config().get("batch", "trigger_items") == 1000
+    assert worker.max_wait_seconds == 1800
+    assert Config().get("batch", "trigger_items") == 100
     assert Config().get("batch", "max_items") == 2000
+    assert Config().get("batch", "max_wait_seconds") == 1800
 
 
 def test_archive_partition_is_stable_across_publication_midnight(setup):

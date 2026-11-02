@@ -28,12 +28,15 @@
 
 ### Changed
 
+- Scheduled sync checks default to 20 seconds after each run, with one-second
+  timer accuracy; mapping starts at 100 pending events per project or a maximum
+  wait of 30 minutes.
 - Removed legacy `[handle]` and root project settings, transient mapping/force
   options, failure-file retry helpers, the dummy STAC client, and old Ansible
   timer aliases. Mapping consumes full records; harvest owns PATCH recovery.
   Use named Handle profiles and `[plugins.<project>]` settings.
 - Published sync batches use UTC date directories; default sync batches now
-  trigger at 1,000 and contain up to 2,000 catalog items.
+  trigger at 100 and contain up to 2,000 catalog items.
 - Publication receipts also use UTC date directories under `published/`.
 - Simpler INFO progress logs; per-record details moved to DEBUG.
 - Statistics summaries every 30 seconds or 10,000 messages by default.

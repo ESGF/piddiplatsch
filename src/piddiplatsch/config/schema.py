@@ -241,8 +241,8 @@ class BatchConfig(BaseModel):
     model_config = ConfigDict(extra="forbid", allow_inf_nan=False)
 
     directory: str | None = Field(default=None, min_length=1)
-    trigger_items: int = Field(default=1000, ge=1, strict=True)
-    max_wait_seconds: float = Field(default=3600, gt=0)
+    trigger_items: int = Field(default=100, ge=1, strict=True)
+    max_wait_seconds: float = Field(default=1800, gt=0)
     max_items: int = Field(default=2000, ge=1, strict=True)
     publish_workers: int = Field(default=4, ge=1, strict=True)
     publish_retries: int = Field(default=3, ge=0, strict=True)

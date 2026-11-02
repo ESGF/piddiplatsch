@@ -99,7 +99,7 @@ piddi sync --project cmip6
 
 Publish without paths sends saved queued batches and updates their database
 states. It does not map. Sync maps eligible pending work and publishes saved
-batches. The threshold is 1,000 pending work entries or one hour; force-map skips
+batches. The threshold is 100 pending work entries or 30 minutes; force-map skips
 the wait. The default ceiling is 2,000 work entries per project batch.
 
 Projects run sequentially, round robin. Requests for different Handles within

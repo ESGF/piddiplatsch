@@ -201,8 +201,8 @@ acknowledgement for each message and can reduce throughput.
 
 ```toml
 [batch]
-trigger_items = 1000
-max_wait_seconds = 3600
+trigger_items = 100
+max_wait_seconds = 1800
 max_items = 2000
 publish_workers = 4
 publish_retries = 3
@@ -210,8 +210,8 @@ retention_days = 0 # Disabled; set e.g. 30 to enable published-work cleanup.
 # directory = "/var/lib/piddi/batches"
 ```
 
-Sync maps a project when either 1,000 work entries are pending or the oldest
-has waited one hour. Every event has an independent snapshot, including repeated
+Sync maps a project when either 100 work entries are pending or the oldest
+has waited 30 minutes. Every event has an independent snapshot, including repeated
 updates to the same item. `sync --force-map` skips these waiting thresholds.
 Manual `map` processes pending work immediately.
 
@@ -242,7 +242,9 @@ never runs `VACUUM` or deletes JSONL output.
 The batch directory defaults to `<consumer.output_dir>/batches`. Keep it paired
 with its database. All batch commands use a shared lock beside `piddi.db`, even
 when a custom batch directory is configured. The Ansible setting
-`piddi_sync_check_interval` controls how often the timer runs.
+`piddi_sync_check_interval` controls how often the timer runs, defaulting to
+20 seconds after the previous run finishes. A running sync continues processing
+eligible batches; the timer interval applies between runs.
 
 ## Completed output maintenance
 

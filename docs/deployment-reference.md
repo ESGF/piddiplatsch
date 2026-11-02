@@ -60,7 +60,8 @@ run. It starts sync even if the timer is disabled at boot. Ansible controls whic
 units start after reboot. Log rotation runs hourly when harvest is enabled.
 
 Set `piddi_sync_check_interval` in Ansible YAML to change the timer interval.
-The default is `1min`, measured after the previous run finishes. Batch thresholds
+The default is `20s`, measured after the previous run finishes, with one-second
+timer accuracy. Batch thresholds
 are separate [TOML settings](configuration.md#scheduled-batches).
 
 Ansible validates application settings before installing them. It restarts
