@@ -8,6 +8,10 @@
 
 ### Added
 
+- Harvest logs per-project patch-resolution summaries at the configured stats
+  time/patch-count limits and on shutdown: local resolutions, remote STAC
+  recoveries, resolution errors, and total/average resolution time. Counters are
+  in memory; duplicate Kafka offsets and startup refreshes are excluded.
 - Mapping logs one version-lookup summary per batch, with predecessor found/absent
   counts, lookup errors, total and average lookup time, and share of mapping time.
 - `top` shows combined harvest/mapping (events/s) and publication (Handles/s)

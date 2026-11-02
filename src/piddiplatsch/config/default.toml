@@ -227,10 +227,11 @@ backend = "catalog"
 enabled = false
 
 [stats]
-# Log interval (seconds) for console/DB reporters.
+# Log interval (seconds) for console/DB reporters and active patch summaries.
 interval_seconds = 30
 
 # Message count threshold before logging a stats snapshot.
+# Also used as the patch-count threshold for harvest resolution summaries.
 summary_interval = 10000
 
 # Enable live heartbeats and rate samples in piddi.db's stats table.

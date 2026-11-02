@@ -115,12 +115,84 @@ def test_patch_replay_is_idempotent_and_new_updates_replace_existing_item(
         )
 
 
-def test_missing_base_stops_before_acknowledgement_and_records_source(tmp_path):
+@pytest.mark.parametrize("trigger", ["count", "time", "shutdown"])
+def test_patch_resolution_summary_timing_and_flush(
+    tmp_path, monkeypatch, caplog, trigger
+):
+    config._set("stats", "interval_seconds", 30)
+    config._set("stats", "summary_interval", 2 if trigger == "count" else 10000)
+    clock = [0.0]
+    monkeypatch.setattr("piddiplatsch.catalog.harvest.perf_counter", lambda: clock[0])
+    resolve = CatalogHarvester._resolve_patch
+
+    def timed_resolution(self, *args):
+        clock[0] += 0.25
+        return resolve(self, *args)
+
+    monkeypatch.setattr(CatalogHarvester, "_resolve_patch", timed_resolution)
+    caplog.set_level("INFO")
+    with closing(CatalogHarvester(tmp_path)) as harvester:
+        harvester.process_with_source("post", publication(), KafkaSource("topic", 0, 0))
+        for offset in (1, 2):
+            if trigger == "time" and offset == 2:
+                clock[0] += 31
+            harvester.process_with_source(
+                "patch", patch_message([]), KafkaSource("topic", 0, offset)
+            )
+            assert harvester.process_with_source(
+                "duplicate", patch_message([]), KafkaSource("topic", 0, offset)
+            ).filtered
+        summaries = [line for line in caplog.messages if "patch resolutions:" in line]
+        assert len(summaries) == (0 if trigger == "shutdown" else 1)
+    # Explicit and context-manager closes must not repeat the summary.
+    harvester.close()
+    summaries = [line for line in caplog.messages if "patch resolutions:" in line]
+    assert len(summaries) == 1
+    assert (
+        "[harvest] cmip6 | patch resolutions: 2 | local: 2 | remote STAC: 0 | errors: 0"
+        in summaries[0]
+    )
+    assert "0.500s total | 250.000ms avg" in summaries[0]
+
+
+def test_patch_summaries_keep_projects_separate_and_reset_after_logging(
+    tmp_path, caplog
+):
+    config._set("stats", "summary_interval", 2)
+    config._set("stats", "interval_seconds", 3600)
+    with caplog.at_level("INFO"), closing(CatalogHarvester(tmp_path)) as harvester:
+        for offset, project in enumerate(("CMIP6", "CMIP7")):
+            harvester.process_with_source(
+                "post", publication(project), KafkaSource("topic", 0, offset)
+            )
+        for offset, project in enumerate(("CMIP6", "CMIP7", "CMIP6"), start=2):
+            harvester.process_with_source(
+                "patch",
+                patch_message([], project=project),
+                KafkaSource("topic", 0, offset),
+            )
+    summaries = [line for line in caplog.messages if "patch resolutions:" in line]
+    assert len(summaries) == 3
+    for line, project in zip(summaries, ("cmip6", "cmip7", "cmip6"), strict=True):
+        assert (
+            f"[harvest] {project} | patch resolutions: 1 | local: 1 | remote STAC: 0 | errors: 0"
+            in line
+        )
+
+
+def test_post_only_harvest_has_no_patch_summary(tmp_path, caplog):
+    with caplog.at_level("INFO"), closing(CatalogHarvester(tmp_path)) as harvester:
+        harvester.process_with_source("post", publication(), KafkaSource("topic", 0, 0))
+    assert not any("patch resolutions:" in line for line in caplog.messages)
+
+
+def test_missing_base_stops_before_acknowledgement_and_records_source(tmp_path, caplog):
     config._set("consumer", "output_dir", str(tmp_path))
     config._set("stac", "base_url", "")
     patch = patch_message([])
     acknowledge = MagicMock()
     following_ack = MagicMock()
+    caplog.set_level("INFO")
     with closing(HarvestProcessor(catalog_dir=tmp_path / "catalog")) as processor:
         pipeline = ProcessingPipeline(
             [
@@ -140,6 +212,11 @@ def test_missing_base_stops_before_acknowledgement_and_records_source(tmp_path):
             pipeline.close_progress()
     acknowledge.assert_not_called()
     following_ack.assert_not_called()
+    summaries = [line for line in caplog.messages if "patch resolutions:" in line]
+    assert len(summaries) == 1
+    assert (
+        "patch resolutions: 1 | local: 0 | remote STAC: 0 | errors: 1" in summaries[0]
+    )
     with SQLiteCatalog("cmip6", tmp_path / "catalog/piddi.db") as catalog:
         assert catalog.get_checkpoint("topic", 2) is None
         assert list(catalog.iter_items()) == []
@@ -364,12 +441,13 @@ def test_configured_catalog_directory_and_disable_setting(tmp_path, monkeypatch)
 
 
 def test_remote_recovery_never_reapplies_patch_and_survives_restart(
-    tmp_path, monkeypatch
+    tmp_path, monkeypatch, caplog
 ):
     from copy import deepcopy
 
     from piddiplatsch.catalog.remote import fetch_current_item
 
+    caplog.set_level("INFO")
     config._set("stac", "base_url", "https://stac.example")
     current = publication()["data"]["payload"]["item"]
     current["properties"]["updates"] = ["already-applied"]
@@ -413,6 +491,12 @@ def test_remote_recovery_never_reapplies_patch_and_survives_restart(
         # An older full publication cannot regress the recovered item or clear mode.
         harvester.process_with_source("post", publication(), KafkaSource("topic", 0, 7))
     assert len(calls) == 4
+    summaries = [line for line in caplog.messages if "patch resolutions:" in line]
+    assert len(summaries) == 2
+    assert all(
+        "patch resolutions: 1 | local: 0 | remote STAC: 1 | errors: 0" in line
+        for line in summaries
+    )
     with SQLiteCatalog("cmip6", tmp_path / "piddi.db", read_only=True) as catalog:
         entry = catalog.get_item("CMIP6", "CMIP6.dataset.v1")
         assert entry.item == current
