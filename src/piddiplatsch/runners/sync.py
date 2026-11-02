@@ -373,7 +373,12 @@ class SyncWorker:
         with open_catalog(
             project, directory=self.catalog_directory, read_only=True
         ) as reader:
-            frontier = self.horizons.setdefault(project, reader.pending_work().last_id)
+            if project not in self.horizons:
+                self.horizons[project] = reader._execute(
+                    "SELECT COALESCE(MAX(id),0) FROM work_items WHERE project=? AND state='pending'",
+                    (project,),
+                ).fetchone()[0]
+            frontier = self.horizons[project]
             mapped = reader._execute(
                 "SELECT MIN(id) FROM work_items WHERE project=? AND state='mapped'",
                 (project,),
@@ -387,16 +392,27 @@ class SyncWorker:
                 ).fetchone()
             ):
                 frontier = min(frontier, mapped - 1)
-            pending = reader.pending_work(max_id=frontier)
-            if not pending.count:
-                return None
-            waited = (self.now() - pending.oldest_at).total_seconds()
-            if (
-                not force
-                and pending.count < self.trigger_items
-                and waited < self.max_wait_seconds
-            ):
-                return None
+            if not force:
+                # The covering work_selection index can stop at the threshold.
+                # Counting the whole backlog and reading every created_at makes
+                # each small batch increasingly expensive on large catalogs.
+                threshold_met = reader._execute(
+                    "SELECT 1 FROM work_items WHERE project=? AND state='pending' AND id<=? "
+                    "LIMIT 1 OFFSET ?",
+                    (project, frontier, self.trigger_items - 1),
+                ).fetchone()
+                if not threshold_met:
+                    oldest = reader._execute(
+                        "SELECT MIN(created_at) FROM work_items "
+                        "WHERE project=? AND state='pending' AND id<=?",
+                        (project, frontier),
+                    ).fetchone()[0]
+                    if (
+                        oldest is None
+                        or (self.now() - datetime.fromisoformat(oldest)).total_seconds()
+                        < self.max_wait_seconds
+                    ):
+                        return None
             # Select a concrete, bounded batch before invoking its executor.
             if self.offset:
                 skipped, last_skipped = reader.skip_work(

@@ -43,6 +43,8 @@
 
 ### Fixed
 
+- Sync scheduling uses bounded index checks instead of repeatedly scanning the
+  pending backlog before each batch, reducing gaps between mapping/publication.
 - A zero error limit stops at the first actual error instead of stopping after
   a successful record.
 - `piddi top` retains errors from the latest finished mapping run after switching

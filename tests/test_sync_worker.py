@@ -106,6 +106,60 @@ def test_count_trigger_seals_and_publishes_then_empty_tick_does_nothing(setup):
 
 
 @pytest.mark.parametrize("force", [False, True])
+def test_batch_scheduling_cost_is_bounded_by_threshold(setup, monkeypatch, force):
+    """More pending events must not add a full backlog scan before each batch."""
+    from piddiplatsch.runners import sync
+
+    put, directory, root = setup
+    put(1)
+    put(2)
+    instructions = 0
+    original_open = sync.open_catalog
+
+    def count_instructions():
+        nonlocal instructions
+        instructions += 1
+        return 0
+
+    def instrumented_open(*args, **kwargs):
+        reader = original_open(*args, **kwargs)
+        reader._require_connection().set_progress_handler(count_instructions, 1)
+        return reader
+
+    class SelectionReachedError(Exception):
+        pass
+
+    def stop_at_selection(*args, **kwargs):
+        raise SelectionReachedError
+
+    monkeypatch.setattr(sync, "open_catalog", instrumented_open)
+    monkeypatch.setattr(SQLiteCatalog, "select_work_ids", stop_at_selection)
+
+    def scheduling_cost(worker):
+        nonlocal instructions
+        instructions = 0
+        with pytest.raises(SelectionReachedError):
+            worker._map_due("cmip7", root / "batches/cmip7", force)
+        return instructions
+
+    small = scheduling_cost(SyncWorker(publisher=Publisher()))
+    with closing(sqlite3.connect(directory / "piddi.db")) as connection:
+        connection.execute(
+            "WITH RECURSIVE extra(n) AS (SELECT 2 UNION ALL SELECT n+1 FROM extra WHERE n<10001) "
+            "INSERT INTO work_items(project,topic,partition,offset,stac_blob,event_type,created_at,updated_at) "
+            "SELECT project,topic,partition,n,stac_blob,event_type,created_at,updated_at "
+            "FROM work_items CROSS JOIN extra WHERE id=1"
+        )
+        connection.commit()
+    worker = SyncWorker(publisher=Publisher())
+    large = scheduling_cost(worker)
+    repeated = scheduling_cost(worker)
+    # Allow query-planner overhead, but reject work proportional to 10,000 rows.
+    assert large <= small + 100
+    assert repeated <= small + 100
+
+
+@pytest.mark.parametrize("force", [False, True])
 def test_sync_map_info_reports_force_setting_and_alias_summary(setup, caplog, force):
     put, directory, _root = setup
     config._set(
