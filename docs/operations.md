@@ -176,8 +176,13 @@ published batch row.
 The overall publication ETA appears below the table and covers only the current
 backlog, using recent Handle-write speed and observed Handles per mapped event.
 Recent mapping runs supply that ratio; retained batch totals provide a fallback
-when run history has been cleaned up. Future harvest arrivals and mapping time
-are not forecast. If some pending work lacks a ratio or counts are unavailable,
+when run history has been cleaned up. During the first 30 seconds of a healthy
+new batch, the overall ETA can reuse the latest successful batch's speed for the
+same project(s), provided it finished within five minutes and has sufficient
+samples. The line labels this as recent batch speed during warm-up; current speed
+replaces it as soon as available. Stale publishers, publication errors, and longer
+stalls do not use that fallback. JSON identifies the speed source in `rate_source`.
+Future harvest arrivals and mapping time are not forecast. If some pending work lacks a ratio or counts are unavailable,
 `top` shows a **partial** estimate for the known portion and names the unestimated
 projects, their pending event counts when known, and the reason. Known ready
 Handles remain included even when that project's pending events cannot be

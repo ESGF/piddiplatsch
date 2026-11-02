@@ -136,6 +136,59 @@ def _remaining_work(status, usable):
     )
 
 
+def _recent_batch_rate(runs, projects, now):
+    """Use the latest successful batch for the same projects, at most 5m old."""
+    candidates = []
+    for run in runs:
+        if run["command"] != "publish" or run.get("status") != "completed":
+            continue
+        finished = run.get("finished_at")
+        if not finished or {row["project"] for row in run["projects"]} != projects:
+            continue
+        if any(row.get("failed", 0) for row in run["projects"]):
+            continue
+        timestamp = datetime.fromisoformat(finished)
+        if not 0 <= (now - timestamp).total_seconds() <= 300:
+            continue
+        rate = sum(
+            row["handle_rate"]
+            for row in run.get("history", [])
+            if row["elapsed_seconds"] >= 5
+        )
+        if rate > 0:
+            candidates.append((timestamp, rate))
+    return max(candidates)[1] if candidates else None
+
+
+def _publisher_rate(run, status):
+    if run["state"] != "healthy":
+        return None, None
+    measured = run.get("publication", {}).get("handles_per_second")
+    if measured:
+        return measured, "live"
+    # Do not extend an old rate over a stalled or stale publisher. A brief
+    # warm-up allowance bridges new batches while their first samples arrive.
+    started = run.get("started_at")
+    now = datetime.fromisoformat(status["generated_at"])
+    if (
+        not started
+        or not 0 <= (now - datetime.fromisoformat(started)).total_seconds() <= 30
+    ):
+        return None, None
+    projects = {row["project"] for row in run["projects"]}
+    rate = _recent_batch_rate(status["runs"], projects, now)
+    return (rate, "recent_batch") if rate else (None, None)
+
+
+def _usable_publishers(active, status):
+    rated = [(run, _publisher_rate(run, status)) for run in active]
+    usable = [run for run, (rate, _) in rated if rate]
+    rate = sum(value for _, (value, _) in rated if value)
+    sources = {source for _, (value, source) in rated if value}
+    source = next(iter(sources)) if len(sources) == 1 else "mixed"
+    return usable, rate, source
+
+
 def backlog_estimate(status: dict) -> dict:
     active = [
         run
@@ -145,6 +198,7 @@ def backlog_estimate(status: dict) -> dict:
     result = {
         "remaining_handles": None,
         "handles_per_second": None,
+        "rate_source": None,
         "eta_seconds": None,
         "estimated_end": None,
         "approximate": True,
@@ -160,12 +214,7 @@ def backlog_estimate(status: dict) -> dict:
     ):
         result["reason"] = "publication errors require retry"
         return result
-    usable = [
-        run
-        for run in active
-        if run["state"] == "healthy"
-        and run.get("publication", {}).get("handles_per_second")
-    ]
+    usable, rate, source = _usable_publishers(active, status)
     if not usable:
         if active:
             result["reason"] = "waiting for a healthy publisher with speed samples"
@@ -179,11 +228,11 @@ def backlog_estimate(status: dict) -> dict:
     if not remaining and unestimated:
         result["reason"] = "waiting for estimable backlog counts or mapping history"
         return result
-    rate = sum(run["publication"]["handles_per_second"] for run in usable)
     seconds = remaining / rate
     result.update(
         remaining_handles=round(remaining),
         handles_per_second=rate,
+        rate_source=source,
         eta_seconds=seconds,
         estimated_end=(
             datetime.fromisoformat(status["generated_at"]) + timedelta(seconds=seconds)

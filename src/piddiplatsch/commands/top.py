@@ -260,6 +260,8 @@ def _backlog_eta_lines(backlog):
                 f"{label}: ~{_eta_duration(backlog['eta_seconds'])} ({end:%Y-%m-%d %H:%M} UTC) · current backlog only"
             )
         ]
+        if backlog.get("rate_source") in {"recent_batch", "mixed"}:
+            lines[0].append(" · using recent batch speed during warm-up")
     else:
         reason = backlog.get("reason") or "waiting for an estimate"
         lines = [Text(f"{label}: unavailable · {reason}", style="dim")]
