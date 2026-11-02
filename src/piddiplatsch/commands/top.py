@@ -287,40 +287,26 @@ class TopCommand(Command):
         return Group(
             *lines,
             table,
-            *_processing_rate_lines(status.get("processing_rates", [])),
+            *_processing_rate_lines(status.get("processing_rates", {})),
             *alerts,
         )
 
 
-def _processing_rate_lines(rows):
-    if not rows:
+def _processing_rate_lines(rates):
+    if not rates:
         return []
-    lines = [
-        Text(
-            "Combined average speeds ~ (10m / 30m / 1h; active time, available samples):",
-            style="dim",
+    parts = ["Avg ~ 10m/30m/1h"]
+    for phase, title, unit in (
+        ("harvest", "Harvest", "events/s"),
+        ("map", "Map", "events/s"),
+        ("publish", "Publish", "handles/s"),
+    ):
+        values = [rates[phase][label]["per_second"] for label in WINDOWS]
+        speeds = "/".join(
+            f"{value:,.1f}" if value is not None else "—" for value in values
         )
-    ]
-    speeds = {}
-    for phase in ("map", "publish"):
-        values = []
-        for label in WINDOWS:
-            samples = [row[phase][label] for row in rows]
-            elapsed = sum(sample["active_seconds"] for sample in samples)
-            count = sum(
-                sample["per_second"] * sample["active_seconds"]
-                for sample in samples
-                if sample["per_second"] is not None
-            )
-            values.append(f"{count / elapsed:,.1f}" if elapsed else "—")
-        speeds[phase] = " / ".join(values)
-    lines.append(
-        Text(
-            f"Map: {speeds['map']} events/s"
-            f" · Publish: {speeds['publish']} handles/s"
-        )
-    )
-    return lines
+        parts.append(f"{title} {speeds} {unit}")
+    return [Text(" · ".join(parts))]
 
 
 def _backlog_eta_lines(backlog):

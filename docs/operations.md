@@ -286,18 +286,19 @@ If the activity heartbeat becomes stale, the last phase remains visible with a
 stale warning. Failed batch stages close their activity record and raise an error
 alert, including failures after mapping has finished.
 
-Below the table, `Combined average speeds ~` shows the overall mapping speed in
-successfully mapped events/s and publication speed in Handles/s for the last
-10 minutes, 30 minutes, and one hour. Rates combine existing samples across
-batches and projects, weighted by time spent in each operation. `--project`
+Below the table, one `Avg ~ 10m/30m/1h` line shows overall harvest speed in
+received events/s, mapping speed in successfully mapped events/s, and publication
+speed in Handles/s for the last 10 minutes, 30 minutes, and one hour. Rates combine
+existing samples across batches and projects, weighted by time spent in each operation. `--project`
 restricts the meter to that project. Time between runs is excluded;
 stalls within a run count. These are processing speeds, rather than total
 throughput including idle time. Short histories use the available samples;
 `—` means no measured interval in that window, while `0.0` means observed zero
 progress. Window boundaries are approximate between samples, and stale runs
 contribute only through their last heartbeat. No extra database writes are needed.
-JSON exposes `processing_rates`, with `map` and `publish` entries for `10m`,
-`30m`, and `1h`, each containing `per_second` and the measured `active_seconds`.
+JSON exposes combined `processing_rates`, with `harvest`, `map`, and `publish`
+entries for `10m`, `30m`, and `1h`, each containing `per_second` and the measured
+`active_seconds`.
 The live `Handles/s`, batch ETA, and five-minute harvest average are unchanged.
 
 The harvest summary adds `stored: N full / M patch` for the displayed harvest

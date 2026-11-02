@@ -4,10 +4,10 @@
 
 ### Added
 
-- `top` shows combined mapping (events/s) and publication (Handles/s)
+- `top` shows combined harvest/mapping (events/s) and publication (Handles/s)
   averages over 10 minutes, 30 minutes, and one hour, using existing samples
   weighted by active processing time across batches/projects without extra DB
-  writes. JSON retains per-project rates.
+  writes, displayed together on one compact line.
 - `top` displays the configured batch event trigger, maximum wait, and batch size.
 - `piddi admin clean` removes completed outbox records without rebuilding work
   history; `--apply` performs cleanup and optional `--vacuum` reclaims file space.
