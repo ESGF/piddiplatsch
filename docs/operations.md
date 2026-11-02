@@ -180,16 +180,20 @@ piddi maintain
 ```
 
 Top reads only `piddi.db`, including when `--db PATH` selects another database.
-The SQLite table sizes include indexes and cover all projects, even with
-`--project`. Interactive top samples these allocated sizes once a minute;
-`--once` and `--json` measure them immediately. JSON includes `table_sizes` with
+The SQLite table sizes are rough estimates, include indexes, and cover all
+projects, even with `--project`. Top estimates the four application tables from
+up to 16 rows per project/table and assumes 75% page occupancy. Estimates can
+be biased by changing row sizes and fragmentation; they are not measured disk
+allocations. JSON labels them with `estimated: true` and includes the method
+and sample counts. Catalog and queue row counts remain exact, using covering
+indexes without loading STAC blobs or counting pending event types.
+Interactive top samples counts and estimated sizes in a background
+thread, then waits a minute after completion before sampling again. Live
+activity keeps refreshing while scans run. Until the first result, counts show
+as unknown; subsequent scans retain the last values and show their sample time.
+`--once` and `--json` use the same fast estimates. JSON includes `table_sizes` with
 per-table `table_bytes`, `index_bytes`, and `total_bytes`. Sizes exclude the WAL,
-database schema, and unallocated free pages. SQLite builds without `dbstat`
-show sizes as unavailable.
-Size scans have a 0.25-second execution budget so large databases do not block
-the display; a scan exceeding this budget shows `size scan timed out` instead.
-Exact catalog/backlog scans have a separate 0.5-second budget. If exceeded, top
-still shows run status, marks these counts as unknown, and reports the timeout.
+database schema, and unallocated free pages. No `dbstat` scan is performed.
 Catalog items count distinct stored STAC items. The summary shows
 `Mapped: N / total events`, where total is successfully mapped + currently pending
 + currently invalid events. This is all accepted queued event history, rather

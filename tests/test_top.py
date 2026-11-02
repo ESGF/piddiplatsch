@@ -1,5 +1,4 @@
 import json
-import sqlite3
 from io import StringIO
 from types import SimpleNamespace
 
@@ -63,133 +62,56 @@ def test_top_json_is_project_aware(tmp_path):
     assert history["cmip6"]["deltas"]["consumed"] == 1
 
 
-def test_top_table_sizes_include_indexes_and_ignore_project_filter(tmp_path):
-    db = tmp_path / "piddi.db"
-    _monitoring_db(db)
-    with sqlite3.connect(db) as connection:
-        connection.execute("CREATE TABLE extra (id TEXT PRIMARY KEY, value BLOB)")
-        connection.execute("INSERT INTO extra VALUES ('one', zeroblob(20000))")
-        try:
-            expected = connection.execute(
-                "SELECT SUM(pgsize) FROM dbstat WHERE name IN "
-                "('extra', 'sqlite_autoindex_extra_1')"
-            ).fetchone()[0]
-        except sqlite3.OperationalError:
-            pytest.skip("SQLite build lacks dbstat")
-    before = db.read_bytes()
-    sizes = read_status(db)["table_sizes"]
-    assert sizes["available"]
-    assert read_status(db, project="cmip7")["table_sizes"] == sizes
-    row = next(row for row in sizes["tables"] if row["name"] == "extra")
-    assert row["table_bytes"] >= 20000
-    assert row["index_bytes"] > 0
-    assert row["total_bytes"] == expected
-    assert db.read_bytes() == before
-    result = CliRunner().invoke(cli, ["top", "--db", str(db), "--once"])
-    assert result.exit_code == 0, result.output
-    assert "indexes included" in result.output
-    assert "extra:" in result.output
-    result = CliRunner().invoke(cli, ["top", "--db", str(db), "--json"])
-    assert result.exit_code == 0, result.output
-    assert json.loads(result.output)["table_sizes"] == sizes
-
-
-def test_table_sizes_unavailable_without_dbstat():
-    from piddiplatsch.monitoring.status import read_table_sizes
-
-    class WithoutDbstat:
-        def set_progress_handler(self, callback, steps):
-            pass
-
-        def execute(self, sql):
-            raise sqlite3.OperationalError("no such table: dbstat")
-
-    sizes = read_table_sizes(WithoutDbstat())
-    assert sizes == {"available": False, "tables": []}
-    stream = StringIO()
-    Console(file=stream).print(
-        TopCommand._overview(
-            dict(runs=[], health=dict(projects=[], storage=[]), table_sizes=sizes)
-        )
-    )
-    assert "SQLite table sizes: unavailable" in stream.getvalue()
-
-
-def test_slow_table_size_scan_is_interrupted_and_connection_remains_usable(monkeypatch):
-    from piddiplatsch.monitoring import status
-
-    with sqlite3.connect(":memory:") as connection:
-        connection.execute("CREATE TABLE large (value BLOB)")
-        connection.executemany(
-            "INSERT INTO large VALUES (zeroblob(4096))", [() for _ in range(500)]
-        )
-        try:
-            connection.execute("SELECT * FROM dbstat LIMIT 1").fetchall()
-        except sqlite3.OperationalError:
-            pytest.skip("SQLite build lacks dbstat")
-        clock = iter([0, 1])
-        monkeypatch.setattr(status.time, "monotonic", lambda: next(clock, 1))
-        sizes = status.read_table_sizes(connection)
-        assert sizes == dict(available=False, tables=[], reason="size scan timed out")
-        # The deadline handler must not interrupt subsequent status queries.
-        assert connection.execute("SELECT COUNT(*) FROM large").fetchone()[0] == 500
-
-
-def test_top_samples_table_sizes_once_per_minute(tmp_path, monkeypatch):
+def test_live_top_skips_expensive_metrics_in_foreground(tmp_path, monkeypatch):
     from piddiplatsch.commands import top
 
-    clock = [0]
-    samples = []
+    calls = []
 
-    def status(*args, include_table_sizes, **kwargs):
-        samples.append(include_table_sizes)
+    def status(*args, include_table_sizes, include_health, **kwargs):
+        calls.append((include_table_sizes, include_health))
         return dict(
             runs=[],
             health=dict(projects=[], storage=[]),
-            table_sizes=(
-                dict(available=True, tables=[]) if include_table_sizes else None
-            ),
+            table_sizes=None,
         )
 
     def sleep(seconds):
-        clock[0] += seconds
-        if clock[0] >= 90:
-            raise KeyboardInterrupt
+        raise KeyboardInterrupt
 
+    class Metrics:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def update(self, status):
+            status["metrics"] = dict(sampling=True, counts_sampled_at=None)
+
+    monkeypatch.setattr(top, "BackgroundMetrics", Metrics)
     monkeypatch.setattr(top, "read_status", status)
     monkeypatch.setattr(top, "backlog_estimate", lambda status: {})
-    monkeypatch.setattr(top.time, "monotonic", lambda: clock[0])
     monkeypatch.setattr(top.time, "sleep", sleep)
-    TopCommand(db_path=tmp_path / "unused.db", refresh_seconds=30).execute()
-    assert samples == [True, False, True]
+    TopCommand(db_path=tmp_path / "unused.db").execute()
+    assert calls == [(False, False)]
 
 
-def test_slow_backlog_does_not_hide_run_status(tmp_path, monkeypatch):
+def test_foreground_status_skips_backlog_and_size_scans(tmp_path, monkeypatch):
     from piddiplatsch.monitoring import health, status
 
     db = tmp_path / "piddi.db"
     _monitoring_db(db)
-
-    def slow_health(connection, project):
-        connection.execute(
-            "WITH RECURSIVE numbers(n) AS (VALUES(0) UNION ALL "
-            "SELECT n+1 FROM numbers WHERE n<1000000) SELECT SUM(n) FROM numbers"
-        ).fetchone()
-        pytest.fail("Slow backlog query should have been interrupted")
-
-    clock = iter(range(100))
-    monkeypatch.setattr(status.time, "monotonic", lambda: next(clock, 100))
-    monkeypatch.setattr(health, "database_health", slow_health)
-    snapshot = read_status(db, include_table_sizes=False)
+    monkeypatch.setattr(
+        health,
+        "database_health",
+        lambda *args: pytest.fail("Backlog scan in foreground"),
+    )
+    monkeypatch.setattr(
+        status,
+        "estimate_table_sizes",
+        lambda *args: pytest.fail("Size sample in foreground"),
+    )
+    snapshot = read_status(db, include_table_sizes=False, include_health=False)
     assert snapshot["runs"][0]["command"] == "consume"
-    rows = snapshot["health"]["projects"]
-    assert {row["project"] for row in rows} == {"cmip6", "cmip7"}
-    assert all(row["pending_items"] is None for row in rows)
     assert snapshot["event_totals"]["total"] is None
-    stream = StringIO()
-    Console(file=stream, width=150).print(TopCommand._overview(snapshot))
-    assert "cmip6" in stream.getvalue()
-    assert "counts timed out" in stream.getvalue()
+    assert all(row["pending_items"] is None for row in snapshot["health"]["projects"])
 
 
 def test_top_once_filters_project(tmp_path):

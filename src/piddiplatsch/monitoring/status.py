@@ -5,12 +5,12 @@ from __future__ import annotations
 import datetime
 import json
 import sqlite3
-import time
 from contextlib import closing
 from itertools import pairwise
 from pathlib import Path
 
 from piddiplatsch.monitoring.eta import publication_progress
+from piddiplatsch.monitoring.estimates import estimate_table_sizes
 
 
 def read_status(
@@ -20,6 +20,7 @@ def read_status(
     stale_after_seconds: float = 15.0,
     history_seconds: float = 3600.0,
     include_table_sizes: bool = True,
+    include_health: bool = True,
 ) -> dict:
     """Return the shared status model used by operator-facing commands."""
     path = Path(db_path)
@@ -48,7 +49,6 @@ def read_status(
             "AND (? IS NULL OR lower(project)=lower(?))",
             (project, project),
         ).fetchone()[0]
-        table_sizes = read_table_sizes(connection) if include_table_sizes else None
         payloads = {}
         latest = None
         for row in connection.execute("SELECT id,runtime FROM stats WHERE kind='run'"):
@@ -70,7 +70,22 @@ def read_status(
         for payload in payloads.values():
             names.update(row["project"] for row in payload["projects"])
             names.update(payload["run"].get("selected_projects", []))
-        health = _bounded_health(connection, project, names)
+        from piddiplatsch.monitoring.health import database_health
+
+        health = (
+            database_health(connection, None, fast=True)
+            if include_health or include_table_sizes
+            else pending_health(project, names)
+        )
+        table_sizes = None
+        if include_table_sizes:
+            table_sizes = estimate_table_sizes(connection, health)
+        if project:
+            health["projects"] = [
+                row
+                for row in health["projects"]
+                if row["project"].casefold() == project.casefold()
+            ]
         if latest:
             health["storage"] = latest.get("storage", [])
         result_runs = []
@@ -134,90 +149,22 @@ def read_status(
     }
 
 
-def _bounded_health(connection, project, names):
-    """Keep exact backlog scans from blocking live run status on large queues."""
-    from piddiplatsch.monitoring.health import database_health
-
-    deadline = time.monotonic() + 0.5
-    timed_out = False
-
-    def stop_slow_scan():
-        nonlocal timed_out
-        timed_out = time.monotonic() >= deadline
-        return timed_out
-
-    connection.set_progress_handler(stop_slow_scan, 1000)
-    try:
-        return database_health(connection, project)
-    except sqlite3.OperationalError:
-        if not timed_out:
-            raise
-        return dict(
-            storage=[],
-            projects=[
-                dict(
-                    project=name,
-                    total_items=None,
-                    pending_items=None,
-                    invalid_items=None,
-                    ready_handles=None,
-                    errors=[
-                        "Exact catalog/backlog counts timed out; run status is still available."
-                    ],
-                )
-                for name in sorted({project.casefold()} if project else names)
-            ],
-        )
-    finally:
-        connection.set_progress_handler(None, 0)
-
-
-def read_table_sizes(connection):
-    """Allocated table and index bytes, across all projects in this snapshot.
-
-    dbstat walks database pages, so bound its runtime and sample sparingly.
-    Some SQLite builds do not provide the optional dbstat virtual table.
-    """
-    deadline = time.monotonic() + 0.25
-    timed_out = False
-
-    def stop_slow_scan():
-        nonlocal timed_out
-        timed_out = time.monotonic() >= deadline
-        return timed_out
-
-    connection.set_progress_handler(stop_slow_scan, 1000)
-    try:
-        rows = connection.execute(
-            "SELECT s.tbl_name, "
-            "SUM(CASE WHEN s.type='table' THEN d.bytes ELSE 0 END) AS table_bytes, "
-            "SUM(CASE WHEN s.type='index' THEN d.bytes ELSE 0 END) AS index_bytes "
-            "FROM sqlite_schema AS s JOIN "
-            "(SELECT name, SUM(pgsize) AS bytes FROM dbstat GROUP BY name) AS d "
-            "ON d.name=s.name WHERE s.type IN ('table','index') "
-            "AND s.tbl_name NOT LIKE 'sqlite_%' GROUP BY s.tbl_name "
-            "ORDER BY SUM(d.bytes) DESC, s.tbl_name"
-        ).fetchall()
-    except sqlite3.OperationalError as exc:
-        if timed_out:
-            return {"available": False, "tables": [], "reason": "size scan timed out"}
-        if "no such table: dbstat" not in str(exc):
-            raise
-        return {"available": False, "tables": []}
-    finally:
-        connection.set_progress_handler(None, 0)
-    return {
-        "available": True,
-        "tables": [
+def pending_health(project, names):
+    """Unknown counts until the background snapshot finishes."""
+    return dict(
+        storage=[],
+        projects=[
             dict(
-                name=name,
-                table_bytes=table_bytes,
-                index_bytes=index_bytes,
-                total_bytes=table_bytes + index_bytes,
+                project=name,
+                total_items=None,
+                pending_items=None,
+                invalid_items=None,
+                ready_handles=None,
+                errors=[],
             )
-            for name, table_bytes, index_bytes in rows
+            for name in sorted({project.casefold()} if project else names)
         ],
-    }
+    )
 
 
 def summarize_event_totals(projects, batch_totals):

@@ -6,29 +6,38 @@ from contextlib import closing
 from piddiplatsch.config import config
 
 
-def database_health(connection, project=None):
+def database_health(connection, project=None, *, fast=False):
     """Read processing health from the caller's database snapshot."""
     names = (
         {project.casefold()}
         if project
-        else {
-            row[0]
-            for row in connection.execute(
-                "SELECT project FROM catalog_items UNION SELECT project FROM work_items "
-                "UNION SELECT project FROM stats WHERE project<>''"
-            )
-        }
+        else {row[0] for row in _project_names(connection)}
     )
     projects = []
     for name in sorted(names):
-        total, pending, invalid, full, patches = connection.execute(
-            "SELECT (SELECT COUNT(*) FROM catalog_items WHERE project=?), "
-            "(SELECT COUNT(*) FROM work_items WHERE project=? AND state='pending'), "
-            "(SELECT COUNT(*) FROM work_items WHERE project=? AND state='invalid'), "
-            "(SELECT COUNT(*) FROM work_items WHERE project=? AND state='pending' AND event_type='full'), "
-            "(SELECT COUNT(*) FROM work_items WHERE project=? AND state='pending' AND event_type='patch')",
-            (name, name, name, name, name),
-        ).fetchone()
+        if fast:
+            total = connection.execute(
+                "SELECT COUNT(*) FROM catalog_items INDEXED BY catalog_versions WHERE project=?",
+                (name,),
+            ).fetchone()[0]
+            states = dict(
+                connection.execute(
+                    "SELECT state,COUNT(*) FROM work_items INDEXED BY work_selection "
+                    "WHERE project=? GROUP BY state",
+                    (name,),
+                )
+            )
+            pending, invalid = states.get("pending", 0), states.get("invalid", 0)
+            full = patches = None
+        else:
+            total, pending, invalid, full, patches = connection.execute(
+                "SELECT (SELECT COUNT(*) FROM catalog_items WHERE project=?), "
+                "(SELECT COUNT(*) FROM work_items WHERE project=? AND state='pending'), "
+                "(SELECT COUNT(*) FROM work_items WHERE project=? AND state='invalid'), "
+                "(SELECT COUNT(*) FROM work_items WHERE project=? AND state='pending' AND event_type='full'), "
+                "(SELECT COUNT(*) FROM work_items WHERE project=? AND state='pending' AND event_type='patch')",
+                (name, name, name, name, name),
+            ).fetchone()
         batches = connection.execute(
             "SELECT id,prepared_handles,status='publication_failed' FROM stats "
             "WHERE kind='batch' AND project=? AND status IN ('ready','publication_failed') "
@@ -64,7 +73,36 @@ def database_health(connection, project=None):
                 errors=[],
             )
         )
+        if fast:
+            projects[-1]["work_items"] = sum(states.values())
     return {"storage": [], "projects": projects}
+
+
+def _project_names(connection):
+    """Seek to the next project in each index instead of visiting every row."""
+    names = {
+        row[0]
+        for row in connection.execute(
+            "SELECT DISTINCT project FROM stats WHERE project<>''"
+        )
+    }
+    for table in ("catalog_items", "work_items"):
+        previous = None
+        while True:
+            if previous is None:
+                row = connection.execute(
+                    f"SELECT project FROM {table} ORDER BY project LIMIT 1"  # noqa: S608 - fixed table allowlist
+                ).fetchone()
+            else:
+                row = connection.execute(
+                    f"SELECT project FROM {table} WHERE project>? ORDER BY project LIMIT 1",  # noqa: S608 - fixed table allowlist
+                    (previous,),
+                ).fetchone()
+            if row is None:
+                break
+            previous = row[0]
+            names.add(previous)
+    return [(name,) for name in names]
 
 
 def read_health(project: str | None = None) -> dict:

@@ -14,6 +14,7 @@ from rich.table import Table
 from rich.text import Text
 
 from piddiplatsch.monitoring.eta import backlog_estimate
+from piddiplatsch.monitoring.sampling import BackgroundMetrics
 from piddiplatsch.monitoring.status import read_status, summarize_event_totals
 
 from .base import Command
@@ -32,27 +33,22 @@ class TopCommand(Command):
 
     def execute(self) -> None:
         console = Console()
-        table_sizes = None
-        sizes_updated_at = None
+        live = not (self.once or self.json_output)
+        metrics = BackgroundMetrics(self.db_path, self.project) if live else None
         if not self.json_output:
             console.print("Reading database status…", style="dim")
         while True:
             try:
-                sample_sizes = (
-                    sizes_updated_at is None
-                    or time.monotonic() - sizes_updated_at >= 60
-                )
                 status = read_status(
                     self.db_path,
                     project=self.project,
                     stale_after_seconds=self.stale_after_seconds,
                     history_seconds=300,
-                    include_table_sizes=sample_sizes,
+                    include_table_sizes=not live,
+                    include_health=not live,
                 )
-                if sample_sizes:
-                    table_sizes = status["table_sizes"]
-                    sizes_updated_at = time.monotonic()
-                status["table_sizes"] = table_sizes
+                if metrics is not None:
+                    metrics.update(status)
                 status["backlog_estimate"] = backlog_estimate(status)
             except (FileNotFoundError, ValueError) as exc:
                 raise click.ClickException(str(exc)) from exc
@@ -96,6 +92,7 @@ class TopCommand(Command):
             )
             lines.append(Text(f"Disk: {space} · {disk['state']} · {disk['path']}"))
         lines.extend(_table_size_lines(status.get("table_sizes")))
+        lines.extend(_metrics_lines(status.get("metrics")))
         harvest = [run for run in active if run["command"] == "harvest"]
         harvest_rates = _harvest_rates(harvest)
         if harvest:
@@ -366,12 +363,33 @@ def _table_size_lines(sizes):
     if sizes is None:
         return []
     if not sizes["available"]:
-        reason = sizes.get("reason", "dbstat missing")
+        reason = sizes.get("reason", "estimate unavailable")
         return [Text(f"SQLite table sizes: unavailable ({reason})", style="dim")]
     entries = " · ".join(
         f"{row['name']}: {_bytes(row['total_bytes'])}" for row in sizes["tables"]
     )
-    return [Text(f"SQLite tables (all projects, indexes included): {entries}")]
+    label = "SQLite tables ~estimated" if sizes.get("estimated") else "SQLite tables"
+    return [Text(f"{label} (all projects, indexes included): {entries}")]
+
+
+def _metrics_lines(metrics):
+    if metrics is None:
+        return []
+    if metrics.get("error"):
+        return [Text(f"Database metrics: {metrics['error']}", style="yellow")]
+    sampled_at = metrics.get("counts_sampled_at")
+    if sampled_at is None:
+        return [
+            Text(
+                "Catalog/backlog counts and table sizes: measuring in background…",
+                style="dim",
+            )
+        ]
+    timestamp = datetime.fromisoformat(sampled_at).astimezone(UTC)
+    suffix = " · refreshing in background" if metrics["sampling"] else ""
+    return [
+        Text(f"Database counts: sampled {timestamp:%H:%M:%S} UTC{suffix}", style="dim")
+    ]
 
 
 def _bytes(value: int) -> str:
