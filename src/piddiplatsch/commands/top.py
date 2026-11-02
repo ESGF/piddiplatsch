@@ -14,7 +14,7 @@ from rich.table import Table
 from rich.text import Text
 
 from piddiplatsch.monitoring.eta import backlog_estimate
-from piddiplatsch.monitoring.status import read_status
+from piddiplatsch.monitoring.status import read_status, summarize_event_totals
 
 from .base import Command
 
@@ -281,13 +281,11 @@ def _totals_line(status: dict) -> Text:
     items = (
         sum(counts) if counts and all(value is not None for value in counts) else None
     )
-    generated = [
-        row["mapped_items"]
-        for row in status.get("handle_totals", [])
-        if row.get("mapped_items") is not None
-    ]
+    events = status.get("event_totals") or summarize_event_totals(
+        projects, status.get("handle_totals", [])
+    )
     return Text(
-        f"Catalog: {_count(items)} items · Mapped: {_count(sum(generated) if generated else None)} events"
+        f"Catalog: {_count(items)} items · Mapped: {_count(events['mapped'])} / {_count(events['total'])} events"
     )
 
 

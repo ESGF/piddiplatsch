@@ -390,15 +390,15 @@ def test_catalog_and_generated_totals_include_all_projects():
     status = {
         "health": {
             "projects": [
-                {"total_items": 800000, "pending_items": 100},
-                {"total_items": 200000, "pending_items": 0},
+                {"total_items": 800000, "pending_items": 100, "invalid_items": 5},
+                {"total_items": 200000, "pending_items": 0, "invalid_items": 0},
             ]
         },
         "handle_totals": [{"mapped_items": 500000}, {"mapped_items": 250000}],
     }
     assert (
         _totals_line(status).plain
-        == "Catalog: 1,000,000 items · Mapped: 750,000 events"
+        == "Catalog: 1,000,000 items · Mapped: 750,000 / 750,105 events"
     )
     status["health"]["projects"][1]["total_items"] = None
     assert "Catalog: — items" in _totals_line(status).plain
@@ -424,3 +424,75 @@ def test_top_explicit_database_uses_its_own_health(tmp_path, monkeypatch):
     }
     assert all(not row["errors"] for row in status["health"]["projects"])
     assert not (tmp_path / "unrelated").exists()
+
+
+def test_event_progress_counts_unique_work_through_retry_cleanup_and_reset(tmp_path):
+    from piddiplatsch.catalog import CatalogEntry
+    from piddiplatsch.catalog.sqlite import SQLiteCatalog
+    from piddiplatsch.commands.top import _totals_line
+    from piddiplatsch.core.messages import KafkaSource
+    from piddiplatsch.runners.reset import reset_processing
+
+    config._set("consumer", "output_dir", str(tmp_path))
+    config._set("catalog", "directory", str(tmp_path))
+    database = tmp_path / "piddi.db"
+    with SQLiteCatalog("cmip6", database) as catalog:
+        with catalog.transaction() as transaction:
+            for offset in range(4):
+                transaction.add_work(
+                    CatalogEntry("CMIP6", dict(id="one"), "dataset", 1),
+                    KafkaSource("topic", 0, offset),
+                    event_type="patch" if offset else "full",
+                )
+        catalog.seal_batch("invalid-first", [dict(id=1, error="mapping failed")])
+        assert read_status(database)["event_totals"] == dict(
+            mapped=0, pending=3, invalid=1, total=4
+        )
+        catalog.retry_invalid([1])
+        assert read_status(database)["event_totals"] == dict(
+            mapped=0, pending=4, invalid=0, total=4
+        )
+        catalog.seal_batch("invalid-again", [dict(id=1, error="mapping failed again")])
+        catalog.seal_batch("ready", [dict(id=2, error=None, handle_count=2)])
+        catalog.seal_batch("published", [dict(id=3, error=None, handle_count=2)])
+        catalog.publish_batch("published", 2, error="temporary publication failure")
+        catalog.publish_batch("published", 2)
+    with SQLiteCatalog("cmip7", database) as catalog:
+        with catalog.transaction() as transaction:
+            transaction.add_work(
+                CatalogEntry("CMIP7", dict(id="other"), "dataset", 1),
+                KafkaSource("topic", 0, 4),
+            )
+    before = read_status(database)
+    assert before["event_totals"] == dict(mapped=2, pending=2, invalid=1, total=5)
+    assert _totals_line(before).plain == "Catalog: 0 items · Mapped: 2 / 5 events"
+    # Successful published work may be cleaned, while its count remains in stats.
+    with SQLiteCatalog("cmip6", database) as catalog, catalog.transaction():
+        catalog._execute("DELETE FROM work_items WHERE state='published'")
+    assert read_status(database)["event_totals"] == before["event_totals"]
+    assert read_status(database, project="cmip6")["event_totals"] == dict(
+        mapped=2, pending=1, invalid=1, total=4
+    )
+    selected = read_status(database, project="cmip7")
+    assert selected["event_totals"] == dict(mapped=0, pending=1, invalid=0, total=1)
+    assert "Mapped: 0 / 1 events" in _totals_line(selected).plain
+    reset_processing(config, "cmip6")
+    # Reset intentionally starts processing history over, using retained events.
+    assert read_status(database)["event_totals"] == dict(
+        mapped=0, pending=4, invalid=0, total=4
+    )
+
+
+def test_event_progress_does_not_treat_unknown_counts_as_zero():
+    from piddiplatsch.commands.top import _totals_line
+    from piddiplatsch.monitoring.status import summarize_event_totals
+
+    projects = [dict(total_items=1, pending_items=None, invalid_items=0)]
+    totals = [dict(mapped_items=1)]
+    assert summarize_event_totals(projects, totals) == dict(
+        mapped=1, pending=None, invalid=0, total=None
+    )
+    assert (
+        _totals_line(dict(health=dict(projects=projects), handle_totals=totals)).plain
+        == "Catalog: 1 items · Mapped: 1 / — events"
+    )

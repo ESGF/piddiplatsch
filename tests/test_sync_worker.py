@@ -902,6 +902,7 @@ def test_full_and_patch_event_types_survive_harvest_mapping_and_publication(setu
             stats.record_result(result)
     stats.close(status="completed")
     before = read_status(database)
+    assert before["event_totals"] == dict(mapped=0, pending=3, invalid=0, total=3)
     harvested = before["runs"][0]["projects"][0]
     assert (
         harvested["consumed"],
@@ -922,6 +923,7 @@ def test_full_and_patch_event_types_survive_harvest_mapping_and_publication(setu
     assert not worker.errors
     assert len(publisher.calls) == 1
     after = read_status(database)
+    assert after["event_totals"] == dict(mapped=3, pending=0, invalid=0, total=3)
     assert after["handle_totals"][0]["full_events"] == 2
     assert after["handle_totals"][0]["patch_events"] == 1
     mapped = next(run for run in after["runs"] if run["command"] == "sync")

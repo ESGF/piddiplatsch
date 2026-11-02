@@ -123,8 +123,30 @@ def read_status(
         "runs": result_runs,
         "health": health,
         "handle_totals": [dict(row) for row in handle_totals],
+        "event_totals": summarize_event_totals(health["projects"], handle_totals),
         "totals_since": totals_since,
     }
+
+
+def summarize_event_totals(projects, batch_totals):
+    """Count accepted source events, including retained failures and cleaned work.
+
+    A successful mapping is counted once in batch stats. Pending/invalid events
+    have not mapped successfully yet, including events explicitly retried.
+    """
+    mapped = _known_sum([row["mapped_items"] for row in batch_totals])
+    pending = _known_sum([row.get("pending_items") for row in projects])
+    invalid = _known_sum([row.get("invalid_items") for row in projects])
+    return dict(
+        mapped=mapped,
+        pending=pending,
+        invalid=invalid,
+        total=_known_sum([mapped, pending, invalid]),
+    )
+
+
+def _known_sum(values):
+    return None if None in values else sum(values)
 
 
 def _summarize_history(rows: list[sqlite3.Row]) -> list[dict]:
@@ -187,4 +209,4 @@ def _summarize_history(rows: list[sqlite3.Row]) -> list[dict]:
     return summaries
 
 
-__all__ = ["read_status"]
+__all__ = ["read_status", "summarize_event_totals"]

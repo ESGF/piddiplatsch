@@ -152,8 +152,17 @@ piddi maintain
 ```
 
 Top reads only `piddi.db`, including when `--db PATH` selects another database.
-Catalog items count distinct stored STAC items. Pending and mapped events count
-processing events; several events can refer to the same catalog item.
+Catalog items count distinct stored STAC items. The summary shows
+`Mapped: N / total events`, where total is successfully mapped + currently pending
++ currently invalid events. This is all accepted queued event history, rather
+than the number of distinct catalog items or received Kafka deliveries. Several
+events can refer to the same catalog item. Filtered/replayed deliveries, ignored
+unknown projects, and publication-attempt errors do not add to the denominator.
+Explicit invalid retries move the same event between states without increasing
+the total. Mapped counts survive published-work cleanup in retained batch stats;
+project reset clears that project's mapped history and requeues retained work.
+`top --json` exposes `event_totals` with `mapped`, `pending`, `invalid`, and `total`,
+respecting `--project` when selected.
 The harvest summary adds `stored: N full / M patch` for the displayed harvest
 runs. These counts include only successfully stored events. The received-event
 total also includes filtered/replayed deliveries and failures, so it can be larger.
