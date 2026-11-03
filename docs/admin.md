@@ -76,3 +76,39 @@ cd /opt/piddiplatsch
 Harvest runs continuously; the sync timer schedules mapping and publication.
 The sync service is normally inactive between runs.
 Start and restart also trigger sync, which can publish Handles.
+
+## Switch CMIP7 to the production PID service
+
+With complete CMIP7 work history retained, run as root (default paths):
+
+```bash
+cd /opt/piddiplatsch
+make stop
+# Optional backup:
+# tar -czf "/root/piddi-backup-$(date +%Y%m%dT%H%M%S).tar.gz" \
+#     /etc/piddi /var/lib/piddi custom.toml
+
+# Preview, then reset CMIP7.
+piddi admin reset --project cmip7
+piddi admin reset --project cmip7 --apply
+
+# Set the production Handle server, credentials, and prefix.
+vim custom.toml
+
+piddi config explain --project cmip7
+# Optional: map and inspect a sample.
+# piddi map --project cmip7 --limit 1
+# less /var/lib/piddi/batches/cmip7/ready/*/handles.jsonl
+
+# Deploy the changes and restart.
+make play
+make restart
+```
+
+The final commands can publish immediately. For custom data paths, adjust the
+backup and sample inspection paths; see [Backups](deployment-reference.md#backups).
+
+Reset keeps the dumps and database, preserving STAC records and Kafka checkpoints;
+no Kafka replay is needed.
+It remaps retained work and does not delete Handles from the old service.
+If needed, stop the services and repeat the reset.
