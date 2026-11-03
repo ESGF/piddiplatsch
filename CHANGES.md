@@ -1,112 +1,34 @@
 # Changelog
 
-## [Unreleased]
-
-- Version history is enabled by default for all projects, using the local catalog
-  index to link the nearest older dataset version. Set `catalog.version_history`
-  to `false` or use `map --no-version-history` to disable linking.
+## [2.4.0] - 2026-11-03
 
 ### Added
 
-- Harvest logs per-project patch-resolution summaries at the configured stats
-  time/patch-count limits and on shutdown: local resolutions, remote STAC
-  recoveries, resolution errors, and total/average resolution time. Counters are
-  in memory; duplicate Kafka offsets and startup refreshes are excluded.
-- Mapping logs one version-lookup summary per batch, with predecessor found/absent
-  counts, lookup errors, total and average lookup time, and share of mapping time.
-- `top` shows combined harvest/mapping (events/s) and publication (Handles/s)
-  averages over 10 minutes, 30 minutes, and one hour, using existing samples
-  weighted by active processing time across batches/projects without extra DB
-  writes, displayed together on one compact line.
-- `top` displays the configured batch event trigger, maximum wait, and batch size.
-- `piddi admin clean` removes completed outbox records without rebuilding work
-  history; `--apply` performs cleanup and optional `--vacuum` reclaims file space.
-  Unfinished batches and completion markers needed for ready exports are retained.
-- Transactional SQLite Handle outbox: mapping commits payloads, work states, and
-  statistics together; publication progress survives missing batch files and
-  resumes ordered Handle updates. Schema 4 upgrades additively to 5, importing
-  legacy ready batches and their progress journals when processed. Batch files
-  remain audit exports; completed queue payloads are removed transactionally.
-- Per-project `priority` weights for sync, integers 0–255 with an equal default
-  of 100. Zero disables sync for the project; eligible projects compete by weight
-  at each batch boundary. Explicit map/publish and harvest remain independent.
-- Companion error log beside the normal log (`piddi.error.log`), containing
-  ERROR/CRITICAL messages and tracebacks, with deployment log rotation.
-- Raw JSONL dump rotation by UTC day and event count (`consumer.dump_max_events`,
-  default 100,000), with numbered parts, restart continuation, and maintenance
-  compression of previous days' parts.
-- Project-specific mapping error limits under `[plugins.<name>].max_errors`;
-  removed the consumer-level setting. Unconfigured projects stop on the first error.
-- Per-project numeric `Errors` totals in `piddi top`, including finished runs.
-- `make status` lists the state of all deployed Piddi services and timers.
-- `piddi reset --project NAME` previews a processing reset; `--apply` backs up
-  project output, clears its monitoring counters, and requeues its existing
-  catalog items while preserving STAC records and Kafka checkpoints.
-- Publication batch ETA and approximate known-backlog completion estimates in
-  `piddi top`, based on recent Handle throughput and observed mapping ratios.
-- Configurable disk-space warning/stop guards, daily maintenance for closed raw
-  dump compression, and storage/backlog/publication health in `piddi top`.
-- Shared alias Handle schema and dataset redirects for all projects when
-  `force_dataset_pid` is enabled, including CMIP7.
-- Service controls: `make start`, `make stop`, and `make restart`.
-- Sync options: `--project`, `--workers`, and `--retries`.
-- Dependency checks in CI and `make audit`.
+- Shared SQLite catalog with Kafka checkpoints, PATCH recovery, and retained work
+  history for mapping and replay.
+- Automatic mapping and publication with `piddi sync`, configurable batches, and
+  per-project priorities.
+- Transactional Handle outbox with resumable publication and ordered updates.
+- Recovery commands under `piddi admin` to reset, rebuild, clean, and recover work.
+- Disk-space guards, dump rotation, and scheduled output maintenance.
+- Dataset alias Handles for all projects when `force_dataset_pid` is enabled.
 
 ### Changed
 
-- Publication acknowledgements waiting behind a SQLite commit share the next
-  transaction, reducing disk syncs under contention. Workers still wait for
-  their own durable acknowledgement before the next update to the same Handle;
-  `synchronous=FULL` and crash-recovery ordering are unchanged.
-- `top` distinguishes `waiting` (below both batch triggers), `ready` (eligible
-  for mapping), and `queued` (mapped and awaiting publication), using configured
-  thresholds. Priority-zero projects with work show `disabled`.
-- `admin rebuild` archives and clears completed SQLite outbox records alongside
-  work consolidation, refusing unfinished outbox work. Existing `--vacuum`
-  optionally returns the freed database pages to the filesystem.
-- Standalone `map` defaults its total event limit to `[batch].max_items` (2,000)
-  across selected projects. Explicit `--limit N` overrides that total; sync retains
-  continuous batch-by-batch mapping/publication.
-- Scheduled sync checks default to 20 seconds after each run, with one-second
-  timer accuracy; mapping starts at 100 pending events per project or a maximum
-  wait of 10 minutes.
-- Removed legacy `[handle]` and root project settings, transient mapping/force
-  options, failure-file retry helpers, the dummy STAC client, and old Ansible
-  timer aliases. Mapping consumes full records; harvest owns PATCH recovery.
-  Use named Handle profiles and `[plugins.<project>]` settings.
-- Published sync batches use UTC date directories; default sync batches now
-  trigger at 100 and contain up to 2,000 catalog items.
-- Publication receipts also use UTC date directories under `published/`.
-- Simpler INFO progress logs; per-record details moved to DEBUG.
-- Statistics summaries every 30 seconds or 10,000 messages by default.
-- Four publication workers by default.
-- Updated dependencies, security minimums, and development tools.
-- Removed obsolete docs, simplified the guides, and added deployment to MkDocs.
+- Version history links use the local catalog and are enabled by default.
+  Disable with `catalog.version_history = false` or `map --no-version-history`.
+- Improved `piddi top` with batch phases, error totals, processing rates, and
+  publication estimates.
+- Clearer progress logs, PATCH and version-lookup summaries, and a separate error log.
+- Simpler deployment and admin guides, service controls, and updated dependencies.
+- Removed legacy configuration, Elasticsearch lookup, pyhandle support, and retry
+  commands. Use named Handle profiles, REST publication, and catalog processing.
 
 ### Fixed
 
-- Sync's mapped-batch validation uses the project/state index, avoiding a scan
-  of pending and completed work before preparing each new batch.
-- `piddi top` retains a batch activity heartbeat through preparation, mapping,
-  sealing, verification, publication, and finalization, displaying each phase
-  instead of appearing pending between mapping and publishing.
-- Sync scheduling uses bounded index checks instead of repeatedly scanning the
-  pending backlog before each batch, reducing gaps between mapping/publication.
-- A zero error limit stops at the first actual error instead of stopping after
-  a successful record.
-- `piddi top` retains errors from the latest finished mapping run after switching
-  to publication, including batches with rejected items and zero Handles.
-- Sync batches retain valid Handles and quarantine rejected items in a durable
-  `failures.jsonl`, advancing past both instead of repeatedly generating partial
-  batches. Reaching `max_errors` seals processed work before stopping the pass;
-  later ticks continue with remaining items. Failed items are retried on a later
-  harvested update. Partial Handles from rejected items are removed.
-- Keep prepared/published Handle totals visible in `piddi top` alongside harvest,
-  and persist live publication progress and heartbeats.
-- Explain malformed asset checksums, including duplicated SHA-256 multihash
-  prefixes; standalone map rejects invalid assets and processing defaults to
-  stopping at the first error when no error limit is configured.
-- Suppressed the expected Brotli GIL warning in CLI commands.
+- Faster batch scheduling and validation for large backlogs.
+- Durable handling of rejected items without repeatedly blocking later work.
+- More reliable publication progress, error reporting, and recovery after interruption.
 
 ## [2.3.0] - 2026-10-12
 
