@@ -14,6 +14,7 @@ from datetime import date
 from pathlib import Path
 
 from piddiplatsch.config import config
+from piddiplatsch.dump_scan_cache import DumpScanCache, file_signature
 from piddiplatsch.helpers import utc_now
 from piddiplatsch.maintenance import _sync_directory
 from piddiplatsch.monitoring.disk import get_disk_guard
@@ -43,10 +44,62 @@ def _fingerprint(line: bytes) -> bytes | None:
     return hashlib.sha256(canonical.encode("utf-8")).digest()
 
 
-def _rewrite(path, seen, directory, guard, *, dry_run):
+def _read_fingerprints(path, guard, *, dry_run):
+    opener = gzip.open if path.suffix == ".gz" else open
+    with opener(path, "rb") as source:
+        for number, line in enumerate(source, 1):
+            if not dry_run:
+                guard.check()
+            if not line.endswith(b"\n"):
+                raise ValueError(
+                    f"Incomplete dump record: {path}:{number}; keeping original"
+                )
+            try:
+                yield _fingerprint(line)
+            except (ValueError, UnicodeError) as exc:
+                raise ValueError(
+                    f"Invalid dump record: {path}:{number}; keeping original"
+                ) from exc
+
+
+def _rewrite(path, seen, directory, guard, *, dry_run, progress=None):
+    signature = file_signature(path)
+    cache = DumpScanCache(directory)
+    rows = cache.read(path, signature)
+    cached = rows is not None
+    if rows is None:
+        rows = _read_fingerprints(path, guard, dry_run=dry_run)
+        if not dry_run:
+            rows = cache.store(path, signature, rows)
+    seen.execute(
+        "CREATE TEMP TABLE IF NOT EXISTS duplicate_lines (number INTEGER PRIMARY KEY)"
+    )
+    seen.execute("DELETE FROM duplicate_lines")
+    duplicates = 0
+    with closing(rows):
+        for number, fingerprint in enumerate(rows, 1):
+            if progress is not None and number % 10000 == 0:
+                progress(
+                    f"  Scanned {number:,} events" + (" (cached)" if cached else "")
+                )
+            if not dry_run and number % 1000 == 0:
+                guard.check()
+            if (
+                fingerprint is not None
+                and seen.execute(
+                    "INSERT OR IGNORE INTO seen VALUES (?)", (fingerprint,)
+                ).rowcount
+                == 0
+            ):
+                duplicates += 1
+                seen.execute("INSERT INTO duplicate_lines VALUES (?)", (number,))
+    if file_signature(path) != signature:
+        raise OSError(f"Dump changed during deduplication; keeping original: {path}")
+    if not duplicates or dry_run:
+        return duplicates
+
     before = path.stat()
     opener = gzip.open if path.suffix == ".gz" else open
-    duplicates = 0
     with (
         tempfile.TemporaryDirectory(
             dir=directory, prefix=".deduplicate-part-"
@@ -59,62 +112,42 @@ def _rewrite(path, seen, directory, guard, *, dry_run):
             if path.suffix == ".gz"
             else temporary
         )
+        skipped = iter(
+            row[0]
+            for row in seen.execute(
+                "SELECT number FROM duplicate_lines ORDER BY number"
+            )
+        )
+        next_skip = next(skipped, None)
         try:
             for number, line in enumerate(source, 1):
-                if not dry_run:
-                    guard.check()
-                if not line.endswith(b"\n"):
-                    raise ValueError(
-                        f"Incomplete dump record: {path}:{number}; keeping original"
-                    )
-                try:
-                    fingerprint = _fingerprint(line)
-                except (ValueError, UnicodeError) as exc:
-                    raise ValueError(
-                        f"Invalid dump record: {path}:{number}; keeping original"
-                    ) from exc
-                duplicate = (
-                    fingerprint is not None
-                    and seen.execute(
-                        "INSERT OR IGNORE INTO seen VALUES (?)", (fingerprint,)
-                    ).rowcount
-                    == 0
-                )
-                if duplicate:
-                    duplicates += 1
-                elif not dry_run:
+                guard.check()
+                if number == next_skip:
+                    next_skip = next(skipped, None)
+                else:
                     output.write(line)
         finally:
             if output is not temporary:
                 output.close()
-        if duplicates and not dry_run:
-            temporary.flush()
-            owner = os.fstat(temporary.fileno())
-            if (owner.st_uid, owner.st_gid) != (before.st_uid, before.st_gid):
-                os.fchown(temporary.fileno(), before.st_uid, before.st_gid)
-            os.fchmod(temporary.fileno(), before.st_mode & 0o777)
-            os.utime(temporary.name, ns=(before.st_atime_ns, before.st_mtime_ns))
-            os.fsync(temporary.fileno())
-            # Coordinate with DumpRecorder so checking and replacing the file
-            # cannot race a writer finishing yesterday's file at midnight.
-            with (directory / ".dump.lock").open("a") as lock:
-                fcntl.flock(lock, fcntl.LOCK_EX)
-                after = path.stat()
-                if (
-                    before.st_dev,
-                    before.st_ino,
-                    before.st_size,
-                    before.st_mtime_ns,
-                ) != (after.st_dev, after.st_ino, after.st_size, after.st_mtime_ns):
-                    raise OSError(
-                        f"Dump changed during deduplication; keeping original: {path}"
-                    )
-                Path(temporary.name).replace(path)
-                _sync_directory(directory)
-        return duplicates
+        temporary.flush()
+        owner = os.fstat(temporary.fileno())
+        if (owner.st_uid, owner.st_gid) != (before.st_uid, before.st_gid):
+            os.fchown(temporary.fileno(), before.st_uid, before.st_gid)
+        os.fchmod(temporary.fileno(), before.st_mode & 0o777)
+        os.utime(temporary.name, ns=(before.st_atime_ns, before.st_mtime_ns))
+        os.fsync(temporary.fileno())
+        with (directory / ".dump.lock").open("a") as lock:
+            fcntl.flock(lock, fcntl.LOCK_EX)
+            if file_signature(path) != signature:
+                raise OSError(
+                    f"Dump changed during deduplication; keeping original: {path}"
+                )
+            Path(temporary.name).replace(path)
+            _sync_directory(directory)
+    return duplicates
 
 
-def deduplicate_closed_dumps(*, dry_run=False) -> int:
+def deduplicate_closed_dumps(*, dry_run=False, progress=None) -> int:
     """Keep the first identical coordinate-bearing event across closed parts.
 
     SQLite bounds memory usage. Each changed file is replaced atomically; an
@@ -139,6 +172,9 @@ def deduplicate_closed_dumps(*, dry_run=False) -> int:
         ) as scratch:
             with closing(sqlite3.connect(Path(scratch) / "seen.db")) as seen:
                 seen.execute(
+                    "PRAGMA cache_size=-32768"
+                )  # Bound the scratch index cache to 32 MiB.
+                seen.execute(
                     "CREATE TABLE seen (fingerprint BLOB PRIMARY KEY) WITHOUT ROWID"
                 )
                 paths = sorted(
@@ -160,7 +196,11 @@ def deduplicate_closed_dumps(*, dry_run=False) -> int:
                         continue
                     if not dry_run:
                         guard.check(force=True)
-                    duplicates = _rewrite(path, seen, directory, guard, dry_run=dry_run)
+                    if progress is not None:
+                        progress(f"Scanning dump: {path.name}")
+                    duplicates = _rewrite(
+                        path, seen, directory, guard, dry_run=dry_run, progress=progress
+                    )
                     seen.commit()
                     removed += duplicates
                     if duplicates:

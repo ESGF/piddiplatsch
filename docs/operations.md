@@ -84,6 +84,13 @@ To include deduplication in the daily maintenance timer, enable:
 deduplicate_dumps = true
 ```
 
-Each run scans the closed dumps and uses temporary disk space for its index and
-one replacement file. Interrupted runs can be repeated safely. This is disabled
-by default; `--no-deduplicate-dumps` overrides the setting for one run.
+The first scan reads all closed dumps. Later runs reuse checksummed fingerprints
+in `dump/.deduplicate-cache/` for unchanged files, avoiding decompression and JSON
+parsing. Changed files and invalid caches are rescanned; files are rewritten only
+when duplicates need removal. Progress identifies each file and reports every
+10,000 scanned events. Dry runs reuse existing caches but do not populate them.
+
+The cache is disposable: deleting it forces a full scan. Maintenance also uses
+temporary disk space for its index and one replacement file. Interrupted runs
+can be repeated safely. Deduplication is disabled by default;
+`--no-deduplicate-dumps` overrides the setting for one run.

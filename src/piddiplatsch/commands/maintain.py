@@ -34,7 +34,9 @@ class MaintainCommand(Command):
             if not self.dry_run:
                 check_disk_space(force=True)
             duplicates = (
-                deduplicate_closed_dumps(dry_run=self.dry_run) if deduplicate else 0
+                deduplicate_closed_dumps(dry_run=self.dry_run, progress=click.echo)
+                if deduplicate
+                else 0
             )
             paths = compress_closed_dumps(dry_run=self.dry_run)
             outputs = maintain_outputs(dry_run=self.dry_run)

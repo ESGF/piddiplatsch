@@ -10,6 +10,8 @@
 
 ### Fixed
 
+- Cache fingerprints for unchanged dump archives, skip unnecessary rewrites, and
+  report scan progress during deduplication maintenance.
 - Show stopped harvest failures and their saved error summaries in `piddi top`,
   and retain harvest errors when displaying mapping/publication totals.
 - Stop automatic harvest service restarts on invalid publications (exit status

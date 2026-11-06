@@ -78,7 +78,11 @@ def test_deduplication_across_plain_and_gzip_parts_preserves_order_and_conflicts
         path: (path.stat().st_mode, path.stat().st_mtime_ns) for path in (first, second)
     } == before
     assert deduplicate_closed_dumps() == 0
-    assert not list(archives.glob(".deduplicate-*"))
+    assert not [
+        path
+        for path in archives.glob(".deduplicate-*")
+        if path.name != ".deduplicate-cache"
+    ]
 
 
 def test_only_old_raw_dumps_are_deduplicated(archives):
@@ -153,7 +157,11 @@ def test_invalid_or_incomplete_file_is_kept_intact(archives, tail):
     with pytest.raises(ValueError, match="keeping original"):
         deduplicate_closed_dumps()
     assert path.read_bytes() == original
-    assert not list(archives.glob(".deduplicate-*"))
+    assert not [
+        path
+        for path in archives.glob(".deduplicate-*")
+        if path.name != ".deduplicate-cache"
+    ]
 
 
 def test_failed_replacement_preserves_original(archives, monkeypatch):
@@ -166,7 +174,11 @@ def test_failed_replacement_preserves_original(archives, monkeypatch):
     with pytest.raises(OSError, match="disk full"):
         deduplicate_closed_dumps()
     assert path.read_bytes() == original
-    assert not list(archives.glob(".deduplicate-*"))
+    assert not [
+        path
+        for path in archives.glob(".deduplicate-*")
+        if path.name != ".deduplicate-cache"
+    ]
 
 
 def test_changed_dump_is_not_replaced(archives, monkeypatch):
@@ -196,6 +208,73 @@ def test_overlapping_maintenance_is_skipped(archives):
         fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
         assert deduplicate_closed_dumps() == 0
     assert read(path) == [event(), event()]
+
+
+def test_unchanged_archives_reuse_cache_without_parsing_or_recompression(
+    archives, monkeypatch
+):
+    path = write(archives, "dump_messages_2026-10-29.jsonl.gz", [event(), event(2)])
+    original = path.read_bytes()
+    assert deduplicate_closed_dumps() == 0
+    monkeypatch.setattr(
+        "piddiplatsch.dump_maintenance._fingerprint",
+        Mock(side_effect=AssertionError("Unchanged archive parsed again")),
+    )
+    monkeypatch.setattr(
+        "piddiplatsch.dump_maintenance.gzip.GzipFile.write",
+        Mock(side_effect=AssertionError("Unchanged archive recompressed")),
+    )
+    assert deduplicate_closed_dumps() == 0
+    assert deduplicate_closed_dumps(dry_run=True) == 0
+    assert path.read_bytes() == original
+
+
+def test_new_archive_duplicates_are_detected_against_cached_older_records(
+    archives, monkeypatch
+):
+    from piddiplatsch.dump_maintenance import _fingerprint
+
+    first = write(archives, "dump_messages_2026-10-28.jsonl.gz", [event()])
+    assert deduplicate_closed_dumps() == 0
+    second = write(archives, "dump_messages_2026-10-29.jsonl", [event(), event(2)])
+    fingerprint = Mock(wraps=_fingerprint)
+    monkeypatch.setattr("piddiplatsch.dump_maintenance._fingerprint", fingerprint)
+    assert deduplicate_closed_dumps() == 1
+    assert fingerprint.call_count == 2
+    assert read(first) == [event()]
+    assert read(second) == [event(2)]
+
+
+@pytest.mark.parametrize("corruption", ["truncated", "checksum", "header"])
+def test_corrupt_cache_is_discarded_and_source_is_rescanned(archives, corruption):
+    first = write(archives, "dump_messages_2026-10-28.jsonl", [event()])
+    assert deduplicate_closed_dumps() == 0
+    cache = next((archives / ".deduplicate-cache").glob("*.bin"))
+    data = cache.read_bytes()
+    if corruption == "truncated":
+        data = data[:-10]
+    elif corruption == "checksum":
+        data = data[:-1] + bytes([data[-1] ^ 1])
+    else:
+        data = b"invalid header\n" + data
+    cache.write_bytes(data)
+    second = write(archives, "dump_messages_2026-10-29.jsonl", [event(), event(2)])
+    assert deduplicate_closed_dumps() == 1
+    assert read(first) == [event()]
+    assert read(second) == [event(2)]
+
+
+def test_changed_or_removed_sources_do_not_leave_stale_cached_events(archives):
+    first = write(archives, "dump_messages_2026-10-28.jsonl", [event()])
+    assert deduplicate_closed_dumps() == 0
+    write(archives, first.name, [event(2)])
+    second = write(archives, "dump_messages_2026-10-29.jsonl", [event(), event(2)])
+    assert deduplicate_closed_dumps() == 1
+    assert read(second) == [event()]
+    first.unlink()
+    third = write(archives, "dump_messages_2026-10-29_000001.jsonl", [event(2)])
+    assert deduplicate_closed_dumps() == 0
+    assert read(third) == [event(2)]
 
 
 @pytest.mark.parametrize(
