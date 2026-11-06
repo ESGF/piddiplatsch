@@ -412,6 +412,7 @@ def test_cli_invalid_patch_blocks_service_restart_and_preserves_failed_offset(
 ):
     config._set("consumer", "output_dir", str(tmp_path / "outputs"))
     config._set("catalog", "directory", str(tmp_path / "catalog"))
+    config._set("stats", "enable_db", True)
     patch = patch_message(
         [
             {
@@ -460,6 +461,11 @@ def test_cli_invalid_patch_blocks_service_restart_and_preserves_failed_offset(
     assert len(failures) == 1
     assert len(failures[0].read_text().splitlines()) == 1
     assert json.loads(failures[0].read_text())["__infos__"]["kafka"]["offset"] == 1
+    top = CliRunner().invoke(cli, ["top", "--once"])
+    assert top.exit_code == 0, top.output
+    assert "Harvest: failed" in top.output
+    assert "Could not apply PATCH" in top.output
+    assert "cmip6: errors recorded" in top.output
 
 
 def test_cli_remote_failure_keeps_retryable_exit_status(monkeypatch):

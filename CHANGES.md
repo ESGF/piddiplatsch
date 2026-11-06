@@ -4,6 +4,8 @@
 
 ### Fixed
 
+- Show stopped harvest failures and their saved error summaries in `piddi top`,
+  and retain harvest errors when displaying mapping/publication totals.
 - Stop automatic harvest service restarts on invalid publications (exit status
   65), preventing repeated logs and dump records for a blocked Kafka event while
   preserving its checkpoint and retries for transient failures.

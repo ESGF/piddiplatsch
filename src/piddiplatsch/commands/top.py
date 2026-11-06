@@ -126,6 +126,9 @@ class TopCommand(Command):
         lines.extend(_table_size_lines(status.get("table_sizes")))
         lines.extend(_metrics_lines(status.get("metrics")))
         harvest = [run for run in active if run["command"] == "harvest"]
+        latest_harvest = next(
+            (run for run in status["runs"] if run["command"] == "harvest"), None
+        )
         harvest_rates = _harvest_rates(harvest)
         if harvest:
             state = (
@@ -153,6 +156,9 @@ class TopCommand(Command):
                     + _harvest_event_types(harvest)
                 )
             )
+        elif latest_harvest and latest_harvest.get("state") == "failed":
+            summary = latest_harvest.get("error_summary") or "inspect the error log"
+            lines.append(Text(f"Harvest: failed · {summary}", style="red"))
         else:
             lines.append(Text("Harvest: inactive"))
         table = Table(box=None, padding=(0, 1))
@@ -203,9 +209,16 @@ class TopCommand(Command):
                 error_totals[name] = error_totals.get(name, 0) + project.get(
                     "failed", 0
                 )
-        error_totals.update(
-            {name: counts.get("errors", 0) for name, counts in totals.items()}
-        )
+        # Batch totals cover mapping/publication, but never rejected harvest events.
+        for name, counts in totals.items():
+            harvest_errors = sum(
+                project.get("failed", 0)
+                for run in status["runs"]
+                if run["command"] == "harvest"
+                for project in run["projects"]
+                if project["project"] == name
+            )
+            error_totals[name] = counts.get("errors", 0) + harvest_errors
         alerts = []
         for name in sorted(names):
             row = health.get(name, {})
@@ -235,6 +248,15 @@ class TopCommand(Command):
                 or row.get("invalid_items")
                 or _latest_mapping_has_errors(name, status["runs"])
                 or _latest_batch_has_errors(name, status["runs"])
+                or (
+                    latest_harvest
+                    and latest_harvest.get("state") == "failed"
+                    and any(
+                        p.get("failed", 0)
+                        for p in latest_harvest["projects"]
+                        if p["project"] == name
+                    )
+                )
                 or any(
                     p.get("failed", 0)
                     for run in runs
