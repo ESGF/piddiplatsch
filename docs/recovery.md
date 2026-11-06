@@ -20,8 +20,20 @@ can continue. Keep legacy ready exports until imported into the SQLite outbox.
 
 ## Invalid records
 
-Check `failures.jsonl` and the error log. A corrected Kafka event creates new work;
-old invalid snapshots do not retry automatically. `piddi retry --help` explains
+Invalid harvest input, including a PATCH that cannot apply to the stored item,
+exits with status **65**. The deployed `piddi.service` uses
+`RestartPreventExitStatus=65` to leave harvest failed instead of repeatedly
+restarting and duplicating the same dump and failure records. Transient remote
+STAC and storage errors still use the normal restart policy.
+
+The failed publication remains unacknowledged and its checkpoint does not
+advance. Inspect the error log and saved event, resolve the cause, then explicitly
+start `piddi.service`. Starting it before resolving the cause retries and records
+the same event again. A later corrective Kafka event alone cannot unblock an
+earlier invalid event.
+
+For mapping failures, check `failures.jsonl` and the error log. A corrected Kafka
+event creates new work; old invalid snapshots do not retry automatically. `piddi retry --help` explains
 limited retries before successful project publication.
 
 State-changing recovery commands live under `piddi admin`. They preview by

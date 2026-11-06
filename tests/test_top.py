@@ -420,6 +420,55 @@ def test_top_harvest_reports_durable_writes_and_duplicate_events(tmp_path):
     assert "ΔWrites" not in result.output
 
 
+def test_failed_harvest_remains_visible_after_other_work_and_clears_on_restart(
+    tmp_path,
+):
+    db = tmp_path / "piddi.db"
+    config._set("catalog", "directory", str(tmp_path))
+    stats = Stats()
+    stats.configure_for_run(
+        enable_db=True,
+        db_path=str(db),
+        command="harvest",
+        selected_projects=("cmip6", "cmip7"),
+    )
+    stats.record_result(
+        ProcessingResult(
+            key="bad", plugin="cmip7", error="PATCH parent alternate missing"
+        )
+    )
+    stats.close(status="failed", error_summary="PATCH parent alternate missing")
+    stats.configure_for_run(
+        enable_db=True, db_path=str(db), command="sync", selected_projects=("cmip7",)
+    )
+    stats.close(status="completed")
+
+    def render():
+        status = read_status(db)
+        # Durable mapping/publication totals must not hide harvest errors.
+        status["handle_totals"] = [dict(project="cmip7", errors=2)]
+        stream = StringIO()
+        Console(file=stream, width=300).print(TopCommand._overview(status))
+        return stream.getvalue()
+
+    text = render()
+    assert "Harvest: failed · PATCH parent alternate missing" in text
+    assert "cmip7: errors recorded" in text
+    assert "cmip6: errors recorded" not in text
+    row = next(line for line in text.splitlines() if line.lstrip().startswith("cmip7 "))
+    assert "3" in row.split()
+    stats.configure_for_run(
+        enable_db=True, db_path=str(db), command="harvest", selected_projects=("cmip7",)
+    )
+    try:
+        text = render()
+        assert "Harvest: running" in text
+        assert "Harvest: failed" not in text
+        assert "cmip7: errors recorded" not in text
+    finally:
+        stats.close(status="completed")
+
+
 def test_top_json_uses_fixed_recent_history(tmp_path):
     db_path = tmp_path / "piddi.db"
     config._set("catalog", "directory", str(tmp_path))

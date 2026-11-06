@@ -33,6 +33,9 @@ may wait while another batch finishes. Pending work can grow during catch-up.
 
 **Errors** includes earlier failures; increases indicate new errors. Check log
 timestamps to match them to the current run. Rates and completion times are estimates.
+Rejected harvest events count alongside mapping/publication errors. A failed
+harvest shows `Harvest: failed` with its saved error summary until a newer
+harvest run supersedes it; completed mapping or publication does not hide it.
 
 Disk warnings start below **40 GiB** free; processing stops below **20 GiB** by
 default. See [Recovery](recovery.md#disk-safety-stop) for resuming after a disk stop.

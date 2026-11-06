@@ -1,5 +1,23 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- Optional duplicate Kafka event cleanup across closed plain/gzip dumps with
+  `piddi maintain --deduplicate-dumps`, dry-run previews, and the
+  `maintenance.deduplicate_dumps` setting for scheduled maintenance.
+
+### Fixed
+
+- Cache fingerprints for unchanged dump archives, skip unnecessary rewrites, and
+  report scan progress during deduplication maintenance.
+- Show stopped harvest failures and their saved error summaries in `piddi top`,
+  and retain harvest errors when displaying mapping/publication totals.
+- Stop automatic harvest service restarts on invalid publications (exit status
+  65), preventing repeated logs and dump records for a blocked Kafka event while
+  preserving its checkpoint and retries for transient failures.
+
 ## [2.4.0] - 2026-11-03
 
 ### Added

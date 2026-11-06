@@ -262,7 +262,7 @@ def test_empty_dump_directory_is_rejected_before_cleaning(restored, tmp_path):
             str(empty),
         ],
     )
-    assert result.exit_code == 1
+    assert result.exit_code == 65
     assert "No dump_messages_" in result.output
     with SQLiteCatalog("cmip6", output / "piddi.db", read_only=True) as catalog:
         assert catalog.get_checkpoint("topic", 0).next_offset == 102

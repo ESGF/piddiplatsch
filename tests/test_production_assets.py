@@ -115,6 +115,8 @@ def test_service_uses_production_config_and_silent_progress():
 
     assert "--config /etc/piddi/piddi.toml --silent harvest --idle-timeout 0" in unit
     assert "RequiresMountsFor=/var/lib/piddi" in unit
+    assert "Restart=on-failure" in unit
+    assert "RestartPreventExitStatus=65" in unit
 
 
 def test_ansible_deployment_is_safe_by_default(playbook):
