@@ -5,6 +5,8 @@ import click
 
 from piddiplatsch.commands.base import Command
 from piddiplatsch.config import config
+from piddiplatsch.config.schema import MaintenanceConfig
+from piddiplatsch.dump_maintenance import deduplicate_closed_dumps
 from piddiplatsch.maintenance import (
     clean_published_work,
     clean_status_history,
@@ -17,11 +19,23 @@ from piddiplatsch.output_maintenance import maintain_outputs
 @dataclass(kw_only=True)
 class MaintainCommand(Command):
     dry_run: bool = False
+    deduplicate_dumps: bool | None = None
 
     def execute(self):
         try:
+            settings = MaintenanceConfig.model_validate(
+                config.get("maintenance", {}) or {}
+            )
+            deduplicate = (
+                settings.deduplicate_dumps
+                if self.deduplicate_dumps is None
+                else self.deduplicate_dumps
+            )
             if not self.dry_run:
                 check_disk_space(force=True)
+            duplicates = (
+                deduplicate_closed_dumps(dry_run=self.dry_run) if deduplicate else 0
+            )
             paths = compress_closed_dumps(dry_run=self.dry_run)
             outputs = maintain_outputs(dry_run=self.dry_run)
             removed = clean_published_work(dry_run=self.dry_run)
@@ -32,6 +46,10 @@ class MaintainCommand(Command):
             for path in paths:
                 click.echo(str(path))
         action = "Would compress" if self.dry_run else "Compressed"
+        if deduplicate:
+            click.echo(
+                f"{'Would remove' if self.dry_run else 'Removed'} {duplicates} duplicate dump event(s)."
+            )
         click.echo(f"{action} {len(paths)} closed dump file(s).")
         if self.dry_run:
             for path in outputs.compressed:

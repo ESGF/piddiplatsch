@@ -87,6 +87,9 @@ again 20 seconds after each sync run finishes.
 ## Retention
 
 Maintenance compresses closed raw dumps and completed output by default.
+Set `maintenance.deduplicate_dumps = true` to remove identical coordinate-bearing
+Kafka events from closed raw dumps during daily maintenance. Today's UTC files,
+legacy records without coordinates, and conflicting payloads are retained.
 Automatic deletion is disabled:
 
 - `batch.retention_days = 0` keeps published database work history.

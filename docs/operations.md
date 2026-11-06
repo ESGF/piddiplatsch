@@ -63,3 +63,27 @@ piddi maintain --dry-run
 ```
 
 Review the plan before changing [retention settings](configuration.md#retention).
+
+To remove duplicate Kafka events from closed dumps, including gzip archives:
+
+```bash
+piddi maintain --deduplicate-dumps --dry-run
+piddi maintain --deduplicate-dumps
+```
+
+Deduplication keeps the first identical event across dump files in filename order.
+It requires valid Kafka topic, partition, and offset coordinates and compares the
+entire record, so conflicting payloads and legacy records without coordinates are
+retained. It does not change Kafka checkpoints, catalog data, or failure logs.
+Today's UTC dump files are skipped; they become eligible the following day.
+
+To include deduplication in the daily maintenance timer, enable:
+
+```toml
+[maintenance]
+deduplicate_dumps = true
+```
+
+Each run scans the closed dumps and uses temporary disk space for its index and
+one replacement file. Interrupted runs can be repeated safely. This is disabled
+by default; `--no-deduplicate-dumps` overrides the setting for one run.

@@ -75,6 +75,9 @@ retention_days = 0
 # directory = "/var/lib/piddi/batches"
 
 [maintenance]
+# Remove identical Kafka events from closed dumps before compression.
+# Includes .jsonl.gz archives; today's UTC files and conflicting payloads stay untouched.
+deduplicate_dumps = false
 # Gzip completed batch JSONL and closed publication receipts. Ready/failed
 # batches and receipts still needed by ready batches are retained unchanged.
 compress_outputs = true

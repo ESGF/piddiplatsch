@@ -578,11 +578,20 @@ def retry(work_ids, project):
 
 @cli.command("maintain")
 @click.option(
-    "--dry-run", is_flag=True, help="List closed dumps without compressing them."
+    "--dry-run",
+    is_flag=True,
+    help="Preview maintenance without changing dumps, outputs, or database work.",
 )
-def maintain(dry_run: bool):
+@click.option(
+    "--deduplicate-dumps/--no-deduplicate-dumps",
+    default=None,
+    help="Remove identical events across closed dumps (default: maintenance.deduplicate_dumps).",
+)
+def maintain(dry_run: bool, deduplicate_dumps: bool | None):
     """Compress closed dumps and delete expired published work; never VACUUM."""
-    commands.MaintainCommand(dry_run=dry_run).execute()
+    commands.MaintainCommand(
+        dry_run=dry_run, deduplicate_dumps=deduplicate_dumps
+    ).execute()
 
 
 # command config

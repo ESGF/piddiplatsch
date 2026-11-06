@@ -253,6 +253,7 @@ class MaintenanceConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     compress_outputs: bool = Field(default=True, strict=True)
+    deduplicate_dumps: bool = Field(default=False, strict=True)
     output_retention_days: int = Field(default=0, ge=0, strict=True)
 
 

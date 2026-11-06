@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+### Added
+
+- Optional duplicate Kafka event cleanup across closed plain/gzip dumps with
+  `piddi maintain --deduplicate-dumps`, dry-run previews, and the
+  `maintenance.deduplicate_dumps` setting for scheduled maintenance.
+
 ### Fixed
 
 - Show stopped harvest failures and their saved error summaries in `piddi top`,

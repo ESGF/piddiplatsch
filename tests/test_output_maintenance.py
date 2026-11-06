@@ -294,6 +294,7 @@ def test_symlinked_batch_payload_is_not_compressed(outputs, tmp_path):
         dict(output_retention_days=True),
         dict(output_retention_days=1.5),
         dict(compress_outputs="yes"),
+        dict(deduplicate_dumps="yes"),
     ],
 )
 def test_output_retention_configuration_requires_explicit_valid_values(settings):
