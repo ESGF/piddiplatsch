@@ -40,6 +40,39 @@ harvest run supersedes it; completed mapping or publication does not hide it.
 Disk warnings start below **40 GiB** free; processing stops below **20 GiB** by
 default. See [Recovery](recovery.md#disk-safety-stop) for resuming after a disk stop.
 
+## History
+
+Show daily processing activity per project for the last 30 UTC calendar days,
+including today:
+
+```console
+piddi insights
+piddi insights --days 7 --project cmip7
+piddi insights --days 90 --summary
+piddi insights --json
+```
+
+`--summary` shows totals per project instead of daily rows. JSON includes both.
+Use `--db /path/to/piddi.db` to inspect another database. The command reads the
+database without starting Kafka or contacting the Handle service.
+
+Events counts messages observed by harvest; Mapped counts successful mapping
+results. Prepared handles includes aliases, and Published handles counts successful
+Handle writes. Errors counts failed processing/publication attempts, so retries
+can contribute more than one error. These are monitoring counters, including
+replays and explicit file publications, rather than unique datasets or Handles.
+Each processing phase contributes only its own counters.
+
+Daily counters require `stats.enable_db = true` and are recorded with each
+heartbeat, using its UTC day. Activity between heartbeats around midnight is
+assigned to the later day. Detailed rate samples still cover only the last hour.
+Daily counters and completed run history follow `stats.sample_retention_days`
+(default 30; 0 keeps history indefinitely); increase retention before collecting
+longer histories. A larger `--days` window cannot recover deleted history.
+Missing days may indicate inactivity or unavailable monitoring data. Older runs
+without daily counters appear on their last heartbeat day with a warning;
+their original daily split cannot be reconstructed.
+
 ## Logs
 
 Show the latest errors:

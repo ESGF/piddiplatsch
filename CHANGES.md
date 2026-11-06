@@ -4,6 +4,8 @@
 
 ### Added
 
+- `piddi insights` shows daily event, Handle, and error counts per project for
+  30 days by default, with `--days`, `--project`, `--summary`, and JSON output.
 - Optional duplicate Kafka event cleanup across closed plain/gzip dumps with
   `piddi maintain --deduplicate-dumps`, dry-run previews, and the
   `maintenance.deduplicate_dumps` setting for scheduled maintenance.

@@ -16,12 +16,13 @@ import pytest
         ["config", "validate"],
         ["config", "show", "--section", "consumer"],
         ["top", "--db", "monitor.db", "--once"],
+        ["insights", "--db", "monitor.db", "--json"],
     ],
 )
 def test_config_commands_do_not_import_network_clients(tmp_path, command):
     source_root = Path(__file__).resolve().parents[1] / "src"
     config_path = Path(__file__).resolve().parent / "config.toml"
-    if command[0] == "top":
+    if command[0] in {"top", "insights"}:
         from piddiplatsch.catalog.sqlite import SQLiteCatalog
 
         SQLiteCatalog("cmip6", tmp_path / "monitor.db").close()
