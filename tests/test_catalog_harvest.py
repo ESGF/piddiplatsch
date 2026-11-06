@@ -368,10 +368,16 @@ def test_kafka_commit_failure_can_be_replayed_without_reapplying_patch(tmp_path)
 
 
 @pytest.mark.parametrize(
-    "value", [patch_message([]), publication("UNKNOWN"), [], {"data": []}]
+    "value, exit_code",
+    [
+        (patch_message([]), 1),
+        (publication("UNKNOWN"), 65),
+        ([], 65),
+        ({"data": []}, 65),
+    ],
 )
 def test_cli_failed_event_does_not_commit_or_consume_following_records(
-    value, monkeypatch
+    value, exit_code, monkeypatch
 ):
     config._set("stac", "base_url", "")
     consumer_class = MagicMock()
@@ -380,7 +386,7 @@ def test_cli_failed_event_does_not_commit_or_consume_following_records(
     monkeypatch.setattr("confluent_kafka.Consumer", consumer_class)
     monkeypatch.setattr("piddiplatsch.consumer.signal.signal", MagicMock())
     result = CliRunner().invoke(cli, ["--no-progress", "harvest", "--limit", "2"])
-    assert result.exit_code == 1
+    assert result.exit_code == exit_code
     client.commit.assert_not_called()
     client.poll.assert_called_once()
     client.close.assert_called_once()
@@ -395,8 +401,80 @@ def test_cli_malformed_json_is_fatal_without_acknowledgement(monkeypatch):
     monkeypatch.setattr("confluent_kafka.Consumer", consumer_class)
     monkeypatch.setattr("piddiplatsch.consumer.signal.signal", MagicMock())
     result = CliRunner().invoke(cli, ["--no-progress", "harvest", "--limit", "1"])
-    assert result.exit_code == 1
+    assert result.exit_code == 65
     assert "topic/0/0" in result.output
+    client.commit.assert_not_called()
+    client.close.assert_called_once()
+
+
+def test_cli_invalid_patch_blocks_service_restart_and_preserves_failed_offset(
+    tmp_path, monkeypatch
+):
+    config._set("consumer", "output_dir", str(tmp_path / "outputs"))
+    config._set("catalog", "directory", str(tmp_path / "catalog"))
+    patch = patch_message(
+        [
+            {
+                "op": "add",
+                "path": "/properties/alternate/replica",
+                "value": {"href": "https://replica.example"},
+            }
+        ]
+    )
+    consumer_class = MagicMock()
+    client = consumer_class.return_value
+    client.poll.side_effect = [
+        kafka_message(publication(), 0),
+        kafka_message(patch, 1),
+        kafka_message(publication(version=2), 2),
+    ]
+    remote = MagicMock(
+        side_effect=AssertionError("Invalid patches must not fetch remote state")
+    )
+    monkeypatch.setattr("piddiplatsch.utils.stac.RemoteStacClient.get_item", remote)
+    monkeypatch.setattr("confluent_kafka.Consumer", consumer_class)
+    monkeypatch.setattr("piddiplatsch.consumer.signal.signal", MagicMock())
+    result = CliRunner().invoke(cli, ["--no-progress", "harvest", "--limit", "3"])
+    assert result.exit_code == 65
+    assert "Harvest blocked by invalid input" in result.output
+    assert "alternate" in result.output
+    assert client.poll.call_count == 2
+    client.close.assert_called_once()
+    remote.assert_not_called()
+    with SQLiteCatalog(
+        "cmip6", tmp_path / "catalog/piddi.db", read_only=True
+    ) as catalog:
+        assert catalog.get_checkpoint("topic", 0).next_offset == 1
+        assert (
+            catalog.get_item("CMIP6", "CMIP6.dataset.v1").item
+            == publication()["data"]["payload"]["item"]
+        )
+        assert len(list(catalog.iter_pending(10))) == 1
+    dumped = [
+        json.loads(line)
+        for path in (tmp_path / "outputs/dump").glob("*.jsonl")
+        for line in path.read_text().splitlines()
+    ]
+    assert [record["source"]["offset"] for record in dumped] == [0, 1]
+    failures = list((tmp_path / "outputs/cmip6/failures/r0").glob("*.jsonl"))
+    assert len(failures) == 1
+    assert len(failures[0].read_text().splitlines()) == 1
+    assert json.loads(failures[0].read_text())["__infos__"]["kafka"]["offset"] == 1
+
+
+def test_cli_remote_failure_keeps_retryable_exit_status(monkeypatch):
+    config._set("stac", "base_url", "https://stac.example")
+    consumer_class = MagicMock()
+    client = consumer_class.return_value
+    client.poll.return_value = kafka_message(patch_message([]))
+    remote = MagicMock(side_effect=OSError("STAC service unavailable"))
+    monkeypatch.setattr("piddiplatsch.utils.stac.RemoteStacClient.get_item", remote)
+    monkeypatch.setattr("confluent_kafka.Consumer", consumer_class)
+    monkeypatch.setattr("piddiplatsch.consumer.signal.signal", MagicMock())
+    result = CliRunner().invoke(cli, ["--no-progress", "harvest", "--limit", "1"])
+    assert result.exit_code == 1
+    assert "Remote refresh failed" in result.output
+    remote.assert_called_once()
     client.commit.assert_not_called()
     client.close.assert_called_once()
 

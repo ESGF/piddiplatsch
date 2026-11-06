@@ -20,7 +20,7 @@ from piddiplatsch.core.messages import KafkaSource
 from piddiplatsch.core.plugin import normalize_project_id
 from piddiplatsch.core.registry import get_plugins
 from piddiplatsch.core.routing import extract_project_id
-from piddiplatsch.exceptions import CatalogError
+from piddiplatsch.exceptions import CatalogError, InvalidPublicationError
 from piddiplatsch.monitoring.disk import get_disk_guard
 from piddiplatsch.persist.dump import DumpRecorder
 from piddiplatsch.result import ProcessingResult
@@ -263,7 +263,7 @@ class CatalogHarvester:
         try:
             item = jsonpatch.JsonPatch(operations).apply(base.item)
         except (jsonpatch.JsonPatchException, jsonpatch.JsonPointerException) as exc:
-            raise CatalogError(
+            raise InvalidPublicationError(
                 f"Could not apply PATCH for {collection_id}/{item_id}: {exc}"
             ) from exc
         if not isinstance(item, dict) or item.get("id") != item_id:
@@ -280,12 +280,14 @@ class CatalogHarvester:
         self.disk_guard.check()
         project_id = extract_project_id(value)
         if project_id is None:
-            raise CatalogError("Publication project is missing")
+            raise InvalidPublicationError("Publication project is missing")
         plugin = self._plugins_by_project.get(normalize_project_id(project_id))
         if plugin is None:
             if self.ignore_unknown_projects:
                 return self._ignore_unknown(key, value, source, project_id)
-            raise CatalogError(f"Publication project is not registered: {project_id!r}")
+            raise InvalidPublicationError(
+                f"Publication project is not registered: {project_id!r}"
+            )
         project = plugin.name
         catalog = self._get_catalog(project)
         result = ProcessingResult(

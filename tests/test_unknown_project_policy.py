@@ -278,7 +278,7 @@ def test_harvest_unknown_project_flags_override_configuration_for_one_run(
     if flag:
         args.append(flag)
     result = CliRunner().invoke(cli, args)
-    assert result.exit_code == (0 if ignored else 1), result.output
+    assert result.exit_code == (0 if ignored else 65), result.output
     assert config.get("catalog", "ignore_unknown_projects") is configured
     assert (
         bool(list((tmp_path / "outputs/dump").glob("unknown_projects_*.jsonl")))

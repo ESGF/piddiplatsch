@@ -11,7 +11,13 @@ from piddiplatsch.commands.base import KafkaCommand
 from piddiplatsch.config import config
 from piddiplatsch.consumer import HarvestProcessor
 from piddiplatsch.core.registry import get_plugins
-from piddiplatsch.exceptions import CatalogError
+from piddiplatsch.exceptions import CatalogError, InvalidPublicationError
+
+
+class HarvestBlockedError(click.ClickException):
+    """EX_DATAERR prevents systemd from retrying a deterministic input failure."""
+
+    exit_code = 65
 
 
 @dataclass(kw_only=True)
@@ -102,7 +108,12 @@ class HarvestCommand(KafkaCommand):
                     limit=self.limit,
                     monitor_db=True,
                 )
-        except (CatalogError, ValueError, OSError) as exc:
+        except (InvalidPublicationError, ValueError) as exc:
+            raise HarvestBlockedError(
+                f"{exc}\nHarvest blocked by invalid input; resolve the cause before "
+                "restarting. Failed events remain unacknowledged."
+            ) from exc
+        except (CatalogError, OSError) as exc:
             raise click.ClickException(str(exc)) from exc
 
     def _preview(self, directory, clean_projects, archives):

@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+
+- Stop automatic harvest service restarts on invalid publications (exit status
+  65), preventing repeated logs and dump records for a blocked Kafka event while
+  preserving its checkpoint and retries for transient failures.
+
 ## [2.4.0] - 2026-11-03
 
 ### Added

@@ -13,6 +13,10 @@ class CatalogError(PiddiplatschError):
     """A local catalog operation failed; distinct from an absent entry."""
 
 
+class InvalidPublicationError(CatalogError):
+    """An invalid publication blocks harvest until an operator resolves it."""
+
+
 class BatchError(PiddiplatschError):
     """A mapping batch could not be sealed or published completely."""
 

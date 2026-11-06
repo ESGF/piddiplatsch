@@ -13,6 +13,8 @@ Group={{ piddi_group }}
 WorkingDirectory=/var/lib/piddi
 ExecStart={{ piddi_executable }} --config /etc/piddi/piddi.toml --silent harvest --idle-timeout 0
 Restart=on-failure
+# Invalid publication/configuration input needs operator intervention.
+RestartPreventExitStatus=65
 RestartSec=10s
 KillSignal=SIGINT
 TimeoutStopSec=60s
