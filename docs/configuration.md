@@ -81,7 +81,8 @@ again 20 seconds after each sync run finishes.
 | `plugins.<project>.force_dataset_pid` | `false`; generate dataset PIDs from versioned item IDs, with aliases for differing source PIDs. |
 | `logging.level` | `INFO`; progress summaries. |
 | `logging.file` | `pid.log` locally; also creates `pid.error.log`. |
-| `stats.enable_db` | `true`; enables live heartbeats and rates for `top`. |
+| `stats.enable_db` | `true`; enables live heartbeats and rates for `top`, and daily activity for `insights`. |
+| `stats.sample_retention_days` | `30`; retention for daily counters and completed monitoring runs. `0` keeps history indefinitely. |
 | `disk.warn_free_gib` / `disk.stop_free_gib` | `40` / `20`; warn or persistently stop on low space. |
 
 ## Retention

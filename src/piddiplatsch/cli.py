@@ -116,7 +116,7 @@ def cli(
     config.load_config_layers(config_file)
     # Inspection/reset must work without opening a possibly unwritable log.
     # Validation reports logging errors through its schema.
-    if ctx.invoked_subcommand in {"config", "admin"}:
+    if ctx.invoked_subcommand in {"config", "admin", "insights"}:
         return
     try:
         config.configure_logging(verbosity=verbosity, debug=debug, log=log)
@@ -706,6 +706,49 @@ def top(
         stale_after_seconds=(
             stale_after_seconds or stats_config.get("stale_after_seconds", 15)
         ),
+    ).execute()
+
+
+@cli.command("insights")
+@click.option(
+    "--days",
+    type=click.IntRange(min=1),
+    default=30,
+    show_default=True,
+    help="Number of UTC calendar days to include, including today.",
+)
+@click.option("--project", help="Show only one project.")
+@click.option(
+    "--db",
+    "db_path",
+    type=click.Path(path_type=Path, dir_okay=False),
+    help="Shared piddi.db (defaults to the configured catalog directory).",
+)
+@click.option(
+    "--json",
+    "json_output",
+    is_flag=True,
+    help="Print daily history and project totals as JSON.",
+)
+@click.option(
+    "--summary", is_flag=True, help="Show project totals instead of daily rows."
+)
+def insights(
+    days: int,
+    project: str | None,
+    db_path: Path | None,
+    json_output: bool,
+    summary: bool,
+) -> None:
+    """Show daily event, Handle, and error history for each project."""
+    from piddiplatsch.catalog.api import get_catalog_directory
+
+    commands.InsightsCommand(
+        db_path=db_path or get_catalog_directory() / "piddi.db",
+        days=days,
+        project=project,
+        json_output=json_output,
+        summary=summary,
     ).execute()
 
 

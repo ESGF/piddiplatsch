@@ -137,6 +137,9 @@ class StatusReporter(StatsReporter):
         self.samples = []
         self.sample_interval_seconds = sample_interval_seconds
         self._last_sample = 0.0
+        self.daily = {}
+        self.previous = {}
+        self.retention_days = sample_retention_days
 
     def log(self, summary):
         self.heartbeat(summary)
@@ -171,10 +174,31 @@ class StatusReporter(StatsReporter):
             with self.connection:
                 for row in projects or [{"project": ""}]:
                     name = row["project"]
+                    key = (run["run_id"], name)
+                    previous = self.previous.get(key, {})
+                    daily = self.daily.setdefault(key, {})
+                    day = now.date().isoformat()
+                    counts = daily.setdefault(day, {})
+                    for counter, value in row.items():
+                        if isinstance(value, int):
+                            counts[counter] = counts.get(counter, 0) + max(
+                                0, value - previous.get(counter, 0)
+                            )
+                    self.previous[key] = row
+                    if self.retention_days:
+                        first_day = (
+                            now.date() - datetime.timedelta(days=self.retention_days)
+                        ).isoformat()
+                        for expired in [date for date in daily if date < first_day]:
+                            del daily[expired]
                     payload = dict(
                         run=run,
                         storage=storage,
                         projects=[row] if name else [],
+                        daily=[
+                            dict(day=date, **values)
+                            for date, values in sorted(daily.items())
+                        ],
                         samples=[
                             sample
                             for sample in self.samples

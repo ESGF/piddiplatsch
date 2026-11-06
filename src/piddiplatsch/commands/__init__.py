@@ -19,6 +19,7 @@ _EXPORTS = {  # noqa: RUF067 - lazy public re-exports avoid loading network clie
     "RebuildWorkCommand": "rebuild",
     "CleanCommand": "clean",
     "TopCommand": "top",
+    "InsightsCommand": "insights",
 }
 
 __all__ = list(_EXPORTS)
