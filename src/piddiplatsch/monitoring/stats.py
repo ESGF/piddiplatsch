@@ -57,6 +57,7 @@ class CounterKey(StrEnum):
     ALIAS_HANDLES = "alias_handles"
     CATALOG_WRITES = "catalog_writes"
     CATALOG_REFRESHES = "catalog_refreshes"
+    PATCH_REPAIRS = "patch_repairs"
     RETRACTED = "retracted_messages"
     REPLICAS = "replicas"
     WARNINGS = "warnings"
@@ -97,6 +98,7 @@ class ConsoleReporter(StatsReporter):
         parts.append(f"{summary.get('errors', 0):,} errors")
         for key, label in (
             ("catalog_refreshes", "refreshed"),
+            ("patch_repairs", "patch repairs"),
             ("retries", "retries"),
             ("warnings", "warnings"),
             ("skipped_messages", "skipped"),
@@ -467,6 +469,14 @@ class Stats:
                 counters["catalog_refreshes"] += int(
                     getattr(result, "catalog_refreshed", False)
                 )
+                repairs = getattr(result, "patch_repairs", {})
+                repaired = sum(repairs.values())
+                counters["patch_repairs"] = counters.get("patch_repairs", 0) + repaired
+                self.increment(CounterKey.PATCH_REPAIRS, repaired)
+                self.increment(CounterKey.WARNINGS, repaired)
+                for rule, count in repairs.items():
+                    counter = f"patch_rule:{rule}"
+                    counters[counter] = counters.get(counter, 0) + count
                 self._last_success_time = datetime.datetime.now(datetime.UTC)
                 self.increment(
                     CounterKey.ALIAS_HANDLES, getattr(result, "num_alias_handles", 0)

@@ -235,6 +235,14 @@ class CatalogConfig(BaseModel):
     kafka_commit_batch_size: int = Field(default=100, ge=1, strict=True)
     kafka_commit_interval_seconds: float = Field(default=1.0, gt=0)
     version_history: bool = Field(default=True, strict=True)
+    patch_compatibility_rules: list[str] = Field(default_factory=list, strict=True)
+
+    @field_validator("patch_compatibility_rules")
+    @classmethod
+    def _check_patch_rules(cls, names):
+        from piddiplatsch.catalog.patches import validate_patch_rules
+
+        return validate_patch_rules(names)
 
 
 class BatchConfig(BaseModel):

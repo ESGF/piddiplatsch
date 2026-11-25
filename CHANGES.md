@@ -4,6 +4,9 @@
 
 ### Added
 
+- Opt-in, named PATCH compatibility rules for all harvest projects and dump
+  replay, starting with `missing_asset_alternate`, with warnings and per-rule
+  repair counts in `piddi top`.
 - `piddi insights` shows daily event, Handle, and error counts per project for
   30 days by default, with `--days`, `--project`, `--summary`, and JSON output.
 - Optional duplicate Kafka event cleanup across closed plain/gzip dumps with

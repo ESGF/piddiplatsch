@@ -223,6 +223,7 @@ class TopCommand(Command):
         for name in sorted(names):
             row = health.get(name, {})
             counts = totals.get(name, {})
+            alerts.extend(_patch_repair_alerts(name, status["runs"]))
             runs = [run for run in active if name in _run_projects(run)]
             publishers = [
                 run
@@ -312,6 +313,30 @@ class TopCommand(Command):
             *_processing_rate_lines(status.get("processing_rates", {})),
             *alerts,
         )
+
+
+def _patch_repair_alerts(name: str, runs: list[dict]) -> list[Text]:
+    rule_counts = {}
+    for run in runs:
+        if run["command"] != "harvest":
+            continue
+        for project in run["projects"]:
+            if project["project"] == name:
+                for counter, count in project.items():
+                    if counter.startswith("patch_rule:") and count:
+                        rule = counter.removeprefix("patch_rule:")
+                        rule_counts[rule] = rule_counts.get(rule, 0) + count
+    if not rule_counts:
+        return []
+    details = ", ".join(
+        f"{rule}: {count:,}" for rule, count in sorted(rule_counts.items())
+    )
+    return [
+        Text(
+            f"{name}: {sum(rule_counts.values()):,} patch compatibility repairs ({details}).",
+            style="yellow",
+        )
+    ]
 
 
 def _processing_rate_lines(rates):

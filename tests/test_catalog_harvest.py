@@ -485,6 +485,110 @@ def test_cli_remote_failure_keeps_retryable_exit_status(monkeypatch):
     client.close.assert_called_once()
 
 
+@pytest.mark.parametrize("project", ["CMIP6", "CMIP7", "CMIP6Plus", "CORDEX-CMIP6"])
+@pytest.mark.parametrize("fail_after_repair", [None, "operation", "validation"])
+def test_patch_rules_commit_atomically_across_projects_and_preserve_events(
+    tmp_path, monkeypatch, caplog, project, fail_after_repair
+):
+    from copy import deepcopy
+
+    config._set("catalog", "patch_compatibility_rules", ["missing_asset_alternate"])
+    post = publication(project)
+    post["data"]["payload"]["item"]["assets"] = {"file.nc": {"href": "original"}}
+    operations = [
+        {
+            "op": "add",
+            "path": "/assets/file.nc/alternate/replica",
+            "value": {"href": "replica"},
+        }
+    ]
+    if fail_after_repair == "operation":
+        operations.append({"op": "remove", "path": "/missing"})
+    elif fail_after_repair == "validation":
+        operations.append({"op": "replace", "path": "/id", "value": "wrong-item"})
+    patch = patch_message(operations, project=project)
+    original = deepcopy((post, patch))
+    remote = MagicMock(
+        side_effect=AssertionError("No remote state needed for compatibility rules")
+    )
+    monkeypatch.setattr("piddiplatsch.utils.stac.RemoteStacClient.get_item", remote)
+    with closing(CatalogHarvester(tmp_path)) as harvester:
+        harvester.process_with_source("post", post, KafkaSource("topic", 0, 0))
+        if fail_after_repair:
+            with pytest.raises((CatalogError, ValueError)):
+                harvester.process_with_source(
+                    "patch", patch, KafkaSource("topic", 0, 1)
+                )
+            assert "PATCH compatibility rule" not in caplog.text
+        else:
+            result = harvester.process_with_source(
+                "patch", patch, KafkaSource("topic", 0, 1)
+            )
+            assert result.patch_repairs == {"missing_asset_alternate": 1}
+            assert not result.catalog_refreshed
+            assert (
+                harvester.process_with_source(
+                    "patch", patch, KafkaSource("topic", 0, 1)
+                ).patch_repairs
+                == {}
+            )
+            assert "Kafka topic/0/1" in caplog.text
+        catalog = harvester._get_catalog(harvester.plugin_name_for(post))
+        assert catalog.get_checkpoint("topic", 0).next_offset == (
+            1 if fail_after_repair else 2
+        )
+        assert len(list(catalog.iter_pending(10))) == (1 if fail_after_repair else 2)
+        item = catalog.get_item(project, f"{project}.dataset.v1").item
+        if fail_after_repair:
+            assert item == post["data"]["payload"]["item"]
+        else:
+            assert (
+                item["assets"]["file.nc"]["alternate"]["replica"]["href"] == "replica"
+            )
+    assert (post, patch) == original
+    remote.assert_not_called()
+
+
+def test_compatibility_repairs_survive_monitoring_and_leave_dump_unchanged(
+    tmp_path, monkeypatch
+):
+    from piddiplatsch.monitoring.status import read_status
+
+    config._set("consumer", "output_dir", str(tmp_path / "outputs"))
+    config._set("catalog", "directory", str(tmp_path / "catalog"))
+    config._set("catalog", "patch_compatibility_rules", ["missing_asset_alternate"])
+    config._set("stats", "enable_db", True)
+    post = publication("CMIP7")
+    post["data"]["payload"]["item"]["assets"] = {"file.nc": {}}
+    patch = patch_message(
+        [{"op": "add", "path": "/assets/file.nc/alternate/replica", "value": {}}],
+        project="CMIP7",
+    )
+    consumer_class = MagicMock()
+    client = consumer_class.return_value
+    client.poll.side_effect = [kafka_message(post), kafka_message(patch, 1)]
+    monkeypatch.setattr("confluent_kafka.Consumer", consumer_class)
+    monkeypatch.setattr("piddiplatsch.consumer.signal.signal", MagicMock())
+    result = CliRunner().invoke(cli, ["--no-progress", "harvest", "--limit", "2"])
+    assert result.exit_code == 0, result.output
+    status = read_status(tmp_path / "catalog/piddi.db")
+    row = next(
+        row for row in status["runs"][0]["projects"] if row["project"] == "cmip7"
+    )
+    assert row["patch_repairs"] == row["patch_rule:missing_asset_alternate"] == 1
+    assert row["failed"] == 0
+    top = CliRunner().invoke(cli, ["top", "--once"])
+    assert top.exit_code == 0, top.output
+    assert "patch compatibility repairs" in top.output
+    assert "missing_asset_alternate" in top.output
+    dumped = [
+        json.loads(line)
+        for path in (tmp_path / "outputs/dump").glob("*.jsonl")
+        for line in path.read_text().splitlines()
+    ]
+    assert dumped[1]["payload"] == patch
+
+
 def test_partition_commit_error_is_not_treated_as_success(monkeypatch):
     from piddiplatsch.consumer import KafkaConsumer
 

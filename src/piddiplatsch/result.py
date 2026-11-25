@@ -25,6 +25,8 @@ class ProcessingResult:
     # Durable catalog outcomes; independent of prepared Handle counts.
     catalog_written: bool = False
     catalog_refreshed: bool = False
+    # Number of committed compatibility repairs per named rule.
+    patch_repairs: dict[str, int] = field(default_factory=dict)
 
     # Alias Handles are included in num_handles.
     num_alias_handles: int = 0
