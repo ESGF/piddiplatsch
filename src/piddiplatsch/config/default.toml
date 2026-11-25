@@ -55,6 +55,9 @@ kafka_commit_interval_seconds = 1.0
 # Link each dataset version to its nearest strictly older catalog item in map.
 # Uses the local catalog index; disable per run with map --no-version-history.
 version_history = true
+# Strict JSON Patch by default. Opt in to named compatibility rules, e.g.
+# patch_compatibility_rules = ["missing_asset_alternate"]
+patch_compatibility_rules = []
 # Default database: <consumer.output_dir>/piddi.db. Override its directory:
 # directory = "/var/lib/piddi"
 

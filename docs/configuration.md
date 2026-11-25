@@ -49,6 +49,35 @@ enabled. Changing a profile does not change PIDs already prepared by mapping.
 `[stac].base_url` supplies the remote service used when harvest needs a missing
 PATCH base. Override it under `[plugins.<project>.stac]` if needed. Map stays offline.
 
+## PATCH compatibility rules
+
+Harvest applies strict JSON Patch by default. Known event-stream differences can
+be handled by explicitly enabling named compatibility rules:
+
+```toml
+[catalog]
+patch_compatibility_rules = ["missing_asset_alternate"]
+```
+
+Rules apply to PATCH events across all projects and during dump recovery. They
+run in configured order immediately before each operation; POST events are
+unchanged. The `missing_asset_alternate` rule creates an empty `alternate` object
+only for an `add` to `/assets/<existing-asset>/alternate/<replica>`. Missing assets,
+existing `alternate` values (including `null`), and unrelated paths are not
+repaired. Unknown rule names are configuration errors; `[]` restores strict mode.
+
+The complete patch must still pass normal application and item validation.
+Compatibility never fetches remote state. Catalog snapshots and checkpoints
+commit together; a failure leaves both unchanged. After a successful commit,
+warnings identify each rule, repaired path, and Kafka topic/partition/offset.
+The original dump event is not modified. `piddi top` shows repair counts by rule
+and project for retained monitoring runs; `top --json` exposes the counters.
+
+To add another rule, implement and register a narrowly scoped preparation function
+in `catalog/patches.py`, then test its matching conditions, non-matching cases,
+operation order, and failed-patch rollback. Rules are built into Piddi rather than
+arbitrary executable expressions loaded from configuration.
+
 ## Scheduled batches
 
 ```toml

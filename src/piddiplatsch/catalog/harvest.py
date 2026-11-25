@@ -13,6 +13,7 @@ from piddiplatsch.catalog.api import get_catalog_path, open_catalog
 from piddiplatsch.catalog.base import BaseCatalog, BaseCatalogTransaction
 from piddiplatsch.catalog.models import CatalogEntry, KafkaCheckpoint
 from piddiplatsch.catalog.ownership import ensure_no_work_rebuild, harvest_lock
+from piddiplatsch.catalog.patches import PatchRepair, apply_patch, validate_patch_rules
 from piddiplatsch.catalog.remote import fetch_current_item
 from piddiplatsch.catalog.state import HarvestState
 from piddiplatsch.config import config
@@ -69,6 +70,9 @@ class CatalogHarvester:
         )
         if type(self.ignore_unknown_projects) is not bool:
             raise ValueError("catalog.ignore_unknown_projects must be a boolean")
+        self.patch_rules = validate_patch_rules(
+            config.get("catalog", "patch_compatibility_rules", [])
+        )
         self._unknown_recorder = None
         self.plugins = get_plugins("all")
         self._plugins_by_project = {
@@ -195,18 +199,20 @@ class CatalogHarvester:
         payload: dict,
         transaction: BaseCatalogTransaction,
         source: KafkaSource,
-    ) -> tuple[dict, dict | None]:
+    ) -> tuple[dict, dict | None, tuple[PatchRepair, ...]]:
         """Measure patch resolution; item validation and durable storage follow."""
         metrics = self._patch_metrics[project]
         started = perf_counter()
         metrics.attempts += 1
         try:
-            item, recovery = self._resolve_patch(project, payload, transaction, source)
+            item, recovery, repairs = self._resolve_patch(
+                project, payload, transaction, source
+            )
             if recovery is None:
                 metrics.local += 1
             else:
                 metrics.remote += 1
-            return item, recovery
+            return item, recovery, repairs
         finally:
             metrics.seconds += perf_counter() - started
             self._patches_since_log += 1
@@ -241,7 +247,7 @@ class CatalogHarvester:
         payload: dict,
         transaction: BaseCatalogTransaction,
         source: KafkaSource,
-    ) -> tuple[dict, dict | None]:
+    ) -> tuple[dict, dict | None, tuple[PatchRepair, ...]]:
         collection_id = payload.get("collection_id")
         item_id = payload.get("item_id")
         if not isinstance(collection_id, str) or not collection_id:
@@ -259,16 +265,19 @@ class CatalogHarvester:
         except (jsonpatch.JsonPatchException, TypeError) as exc:
             raise ValueError(f"Invalid PATCH operations: {exc}") from exc
         if base is None or base.remote_refresh is not None:
-            return self._remote_item(project, collection_id, item_id, source, base)
+            item, recovery = self._remote_item(
+                project, collection_id, item_id, source, base
+            )
+            return item, recovery, ()
         try:
-            item = jsonpatch.JsonPatch(operations).apply(base.item)
+            item, repairs = apply_patch(base.item, operations, self.patch_rules)
         except (jsonpatch.JsonPatchException, jsonpatch.JsonPointerException) as exc:
             raise InvalidPublicationError(
                 f"Could not apply PATCH for {collection_id}/{item_id}: {exc}"
             ) from exc
         if not isinstance(item, dict) or item.get("id") != item_id:
             raise ValueError("PATCH must preserve item identity")
-        return item, None
+        return item, None, repairs
 
     def process_with_source(
         self, key: str, value: dict, source: KafkaSource
@@ -301,9 +310,10 @@ class CatalogHarvester:
                 return result
             collection_id = payload.get("collection_id")
             recovery = None
+            repairs = ()
             method = payload.get("method", "POST")
             if method == "PATCH":
-                item, recovery = self._apply_patch(
+                item, recovery, repairs = self._apply_patch(
                     project, payload, transaction, source
                 )
                 result.patched = True
@@ -337,6 +347,20 @@ class CatalogHarvester:
             )
             transaction.set_checkpoint(
                 KafkaCheckpoint(source.topic, source.partition, source.offset + 1)
+            )
+        for repair in repairs:
+            result.patch_repairs[repair.rule] = (
+                result.patch_repairs.get(repair.rule, 0) + 1
+            )
+            LOGGER.warning(
+                "PATCH compatibility rule %s created %s for %s/%s at Kafka %s/%s/%s",
+                repair.rule,
+                repair.path,
+                entry.collection_id,
+                entry.item_id,
+                source.topic,
+                source.partition,
+                source.offset,
             )
         result.event_type = "patch" if method == "PATCH" else "full"
         result.catalog_written = True
