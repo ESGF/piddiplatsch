@@ -179,8 +179,8 @@ landing_page_url = "https://handle-esgf.dkrz.de/lp"
 # Limit the number of HAS_PARTS entries; -1 for unlimited.
 max_parts = -1
 
-# Asset keys excluded from HAS_PARTS generation (non-data assets, previews, etc.).
-excluded_asset_keys = ["reference_file", "globus", "thumbnail", "quicklook"]
+# Asset keys excluded from file Handles and HAS_PARTS (references, previews, etc.).
+excluded_asset_keys = ["reference_file", "globus", "thumbnail", "quicklook", "kerchunk", "CFA"]
 
 [plugins.cmip6.stac]
 collection = "CMIP6"
